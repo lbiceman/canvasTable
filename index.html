@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>canvas-table</title>
+    <style>
+        * {
+            border: 0;
+            padding: 0;
+            margin: 0;
+            list-style-type: none;
+            color: #555555;
+            font-size: 14px;
+        }
+        .container{
+            padding: 20px;
+        }
+        .table {
+            width: 3000px;
+            height: 1000px;
+            /* height: 60000px; */
+        }
+        .edit-input{
+            width: 200px;
+            height: 200px;
+            padding: 10px;
+            border-radius: 5px;
+            background-color: #AFE346;
+        }
+        .edit-input>textarea{
+            width: 100%;
+            height: 100%;
+            outline: none;
+        }
+        .canvasTable-input{
+            position: absolute;
+            padding: 0 10px;
+            border: 1px solid #bbbbbb;
+            border-radius: 5px;
+        }
+        .canvasTable-input:focus{
+            border: 1px solid #aaaaaa;
+        }
+        .canvasTable-menu{
+            width: 180px;
+            display: none;
+            position: absolute;
+            border: 1px solid #aaaaaa;
+            border-radius: 5px;
+            background-color: #ffffff;
+        }
+        .canvasTable-menu>ul>li{
+            padding: 5px 10px;
+            background-color: #ffffff;
+            cursor: pointer;
+            transition: all .15s linear;
+        }
+        .canvasTable-menu>ul>li:hover{
+            background-color: #dddddd;
+        }
+        .canvasTable-tootip{
+            display: none;
+            padding: 5px 10px;
+            position: absolute;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #ffffff;
+            border-radius: 5px;
+        }
+        .canvasTable-tootip::after{
+            content: "";
+            display: block;
+            position: absolute;
+            bottom: -12px;
+            left: 20px;
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 12px solid rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="table" id="canvasTable">
+        </div>
+    </div>
+    <script src="./index.js"></script>
+    <script>
+        (() => {
+            let head = [
+            {
+                variate: 'xvhao',
+                label: '序号'
+            },
+            {
+                variate: 'a',
+                label: '第a个'
+            }, {
+                variate: 'b',
+                label: '第b个'
+            }, {
+                variate: 'c',
+                label: '第c个',
+                child: [{
+                    variate: 'ca',
+                    label: '第ca个'
+                }, {
+                    variate: 'cb',
+                    label: '第cb个'
+                }]
+            }, {
+                variate: 'd',
+                label: '第d个'
+            }, {
+                variate: 'e',
+                label: '第e个'
+            }, {
+                variate: 'f',
+                label: '第f个'
+            }, {
+                variate: 'g',
+                label: '第g个',
+                child: [{
+                    variate: 'ga',
+                    label: '第ga个'
+                }, {
+                    variate: 'gb',
+                    label: '第gb个',
+                    child: [{
+                        variate: 'gba',
+                        label: "第gba个"
+                    }, {
+                        variate: 'gbb',
+                        label: "第gbb个",
+                        child: [{
+                            variate: 'gbba',
+                            label: '第gbba个'
+                        }, {
+                            variate: 'gbbb',
+                            label: '第gbbb个'
+                        }]
+                    }, ]
+                }]
+            }, {
+                variate: 'h',
+                label: '第h个'
+            }, {
+                variate: 'i',
+                label: '第i个'
+            }, {
+                variate: 'j',
+                label: '第j个'
+            }, ];
+            let data = [];
+            for (let i = 0; i < 20; i++) {
+                let item = {
+                    xvhao: i + 1,
+                    a: 'a213213213213213',
+                    b: 'b',
+                    c: 'c',
+                    d: 'd',
+                    e: 'e',
+                    f: 'f',
+                    g: 'g',
+                    h: 'h',
+                    i: 'i',
+                    j: 'j',
+                    ca: 'ca',
+                    cb: 'cb',
+                    ga: 'ga',
+                    gb: 'gb',
+                    gba: 'gba',
+                    gbb: 'gbb',
+                    gbba: 'gbba',
+                    gbbb: 'gbbb'
+                };
+                data.push(item)
+            }
+
+            window.onload = function() {
+                let table = new CanvasTable(document.getElementById('canvasTable'));
+                table.setConfig({
+                    head: head,
+                    data: data,
+                    height: 30,
+                    fontWidth: 30,
+                    edit: true,
+                    menu: [
+                        {label: "添加一行", type: "insertRow"},
+                        {label: "删除一行", type: "delRow"},
+                        {label: "更多", type: "more"},
+                    ]
+                });
+            }
+        })();
+    </script>
+</body>
+
+</html>
