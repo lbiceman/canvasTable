@@ -52,6 +52,13 @@
         return Object.getOwnPropertyNames(this).length == 0;
     }
 
+    function clearObj(obj) {
+        for(let key in obj) {
+            obj[key] = null;
+        }
+        return obj;
+    }
+
     function isArray(list) {
         let type = Object.prototype.toString.call(list);
         return type.slice(8, type.length - 1) == "Array";
@@ -109,12 +116,18 @@
             let type = e.target.getAttribute("type");
             switch(type) {
                 case "delRow":
+                    delRow(config, userPrevClickCoor);
                     break;
                 case "insertRow":
+                    insertRow(config, userPrevClickCoor);
                     break;
                 case "more":
                     break;
             }
+            userPrevClickCoor = {};
+            menuNode.css({
+                display: "none"
+            });
         })
     }
 
@@ -157,7 +170,7 @@
 
     // 修改单元格状态
     function updateCellState(config, cell, state) {
-        clearRect(cell.col.x, (cell.rowIndex + maxLvl) * config.height, cell.col.width, config.height);
+        // clearRect(cell.col.x, (cell.rowIndex + maxLvl) * config.height, cell.col.width, config.height);
         draw(
             cell.col.x + 0.5, 
             (cell.rowIndex + maxLvl) * config.height + 0.5, 
@@ -253,7 +266,7 @@
         ctx.fillStyle = style.fontColor || "#555555";
         ctx.textAlign = "left";
         let strLength = Math.ceil(width / 15);
-        if((type == 4) && label.length > strLength) {
+        if((type == 4) && label && label.length > strLength) {
             label = label.slice(0, strLength - 1) + "...";
         }
         ctx.fillText(label, (width / 10) + x, (height / 2) + y + 5);
@@ -348,7 +361,8 @@
             let x = e.offsetX;
             let y = e.offsetY;
             let cell = this.calcPosition(x, y);
-            if(cell == "head" || cell == "overflow") return this;
+            if(cell.col && !cell.col.edit) return;
+            if(cell == "head" || cell == "overflow" || !cell) return this;
             inputNode.setAttribute("row", cell.rowIndex);
             inputNode.setAttribute("col", cell.colIndex);
             inputNode.css({
@@ -386,7 +400,10 @@
             let x = e.offsetX;
             let y = e.offsetY;
             let cell = this.calcPosition(x, y);
-            if(cell == "head" || cell == "overflow") return this;
+            if(cell == "head" || cell == "overflow" || !cell) {
+                mouse.state = false;
+                return this;
+            }
             checkUserClickCoor(this.config, cell) && updateCellState(this.config, cell, true);
             inputNode.style.display = "none";
             menuNode.css({
@@ -405,7 +422,10 @@
             let x = e.offsetX;
             let y = e.offsetY;
             let cell = this.calcPosition(x, y);
-            if(cell == "head" || cell == "overflow") return this;
+            if(cell == "head" || cell == "overflow" || !cell) {
+                mouse.state = false;
+                return this;
+            }
             if(mouse.mouseMoveList.length > 0) batchUpdateCellState(this.config, false);
             mouse.mouseMoveList = [];
             mouse.mouseMoveList.push(cell);
@@ -420,21 +440,25 @@
             let x = e.offsetX;
             let y = e.offsetY;
             let cell = this.calcPosition(x, y);
-            if(cell == "head" || cell == "overflow") return;
+            if(cell == "head" || cell == "overflow" || !cell) {
+                mouse.state = false;
+                return this;
+            }
             if(mouse.state) {
                 checkCellExistence(cell) && batchUpdateCellState(this.config, true);
-            } else if(!mouse.state) {
-                if(cell.col.width < cell.row[cell.col.variate].length * this.config.fontWidth) {
-                    tooltipNode.innerHTML = cell.row[cell.col.variate];
-                    tooltipNode.css({
-                        display: "block",
-                        top: ((cell.rowIndex + 1 + maxLvl) * this.config.height) - (tooltipNode.offsetHeight + 20) + "px",
-                        left: cell.col.x + "px"
-                    })
-                } else {
-                    tooltipNode.style.display = "none";
-                }
-            }
+            } 
+            // else {
+            //     if(cell.col.width < cell.row[cell.col.variate].length * this.config.fontWidth) {
+            //         tooltipNode.innerHTML = cell.row[cell.col.variate];
+            //         tooltipNode.css({
+            //             display: "block",
+            //             top: ((cell.rowIndex + 1 + maxLvl) * this.config.height) - (tooltipNode.offsetHeight + 20) + "px",
+            //             left: cell.col.x + "px"
+            //         })
+            //     } else {
+            //         tooltipNode.style.display = "none";
+            //     }
+            // }
         })
     }
 
@@ -446,12 +470,49 @@
             let x = e.offsetX;
             let y = e.offsetY;
             let cell = this.calcPosition(x, y);
-            if(cell == "head" || cell == "overflow") return this;
+            if(cell == "head" || cell == "overflow" || !cell) {
+                mouse.state = false;
+                return this;
+            }
             if(time <= 200) {
                 canvasTableAddListenerClick(this.config, cell);
             }
             mouse.state = false;
         })
+    }
+
+    // 插入行
+    function insertRow(config, row) {
+        let list = [];
+        let nullRow = clearObj(clone(config.data[0]));
+        let firstData = config.data.slice(0, row.rowIndex + 1);
+        let lastData = config.data.slice(row.rowIndex + 1, config.data.length);
+        list = list.concat(firstData, nullRow, lastData);
+        config.data = list;
+        CanvasTable.prototype.drawData(config);
+    }
+
+    // 删除行
+    function delRow(config, row) {
+        let x = 0;
+        let y = 0;
+        let width = 0;
+        let height = 0;
+        let before = 0;
+        let after = 0;
+        for(let i = 0; i < config.data.length; i++) {
+            if(i < row.rowIndex) before++;
+            else if(i == row.rowIndex) continue;
+            else after++;
+        }
+        for(let i = 0; i < config.flatHead.length; i++) {
+            width += config.flatHead[i].width;
+        }
+        y = config.height * (maxLvl + before);
+        height = (after + 1) * config.height;
+        config.data.splice(row.rowIndex, 1);
+        clearRect(x, y, width, height + 1);
+        CanvasTable.prototype.drawData(config);
     }
 
     // 创建canvasTable对象
@@ -460,7 +521,6 @@
         console.log("start", startTime);
         this.node = node;
         createCanvas(node);
-        // createTooltip(node);
     }
 
     // 对canvasTable对象设置默认配置
@@ -490,7 +550,7 @@
         this.drawHead(this.config._head);
         // 对数组进行降维 数组递归显示数据会导致渲染效率降低
         this.config.flatHead = flatArr(this.config._head, []);
-        this.drawData();
+        this.drawData(this.config);
         if(this.config.edit) {
             canvasTableAddListenerDblClick.call(this);
             canvasTableAddListenerContextmenu.call(this);
@@ -520,15 +580,15 @@
     }
 
     // 绘制数据
-    CanvasTable.prototype.drawData = function() {
-        for(let i = 0, len = this.config.flatHead.length; i < len; i++) {
-            for(let j = 0, len2 = this.config.data.length; j < len2; j++) {
+    CanvasTable.prototype.drawData = function(config) {
+        for(let i = 0; i < config.flatHead.length; i++) {
+            for(let j = 0; j < config.data.length; j++) {
                 draw(
-                    this.config.flatHead[i].x,
-                    (j + maxLvl) * this.config.height,
-                    this.config.flatHead[i].width,
-                    this.config.height,
-                    this.config.data[j][this.config.flatHead[i].variate],
+                    config.flatHead[i].x,
+                    (j + maxLvl) * config.height,
+                    config.flatHead[i].width,
+                    config.height,
+                    config.data[j][config.flatHead[i].variate],
                     2<<1
                 )
             }
