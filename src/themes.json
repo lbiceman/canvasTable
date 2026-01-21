@@ -1,0 +1,62 @@
+{
+  "light": {
+    "name": "浅色模式",
+    "colors": {
+      "background": "#ffffff",
+      "foreground": "#333333",
+      "headerBackground": "#f5f5f5",
+      "headerText": "#333333",
+      "gridLine": "#e0e0e0",
+      "cellBackground": "#ffffff",
+      "cellText": "#333333",
+      "selectionBackground": "rgba(0, 0, 0, 0.05)",
+      "selectionBorder": "#808080",
+      "highlightBackground": "#e8e8e8",
+      "highlightHeaderBackground": "#d0d0d0",
+      "scrollbarTrack": "#f0f0f0",
+      "scrollbarThumb": "#c1c1c1",
+      "scrollbarThumbHover": "#a8a8a8",
+      "scrollbarThumbActive": "#787878",
+      "toolbarBackground": "#ffffff",
+      "toolbarBorder": "#666666",
+      "statusBarBackground": "#f5f5f5",
+      "statusBarText": "#737373",
+      "inputBackground": "#ffffff",
+      "inputBorder": "#666666",
+      "buttonBackground": "#ffffff",
+      "buttonText": "#333333",
+      "buttonBorder": "#666666",
+      "buttonHoverBackground": "#f5f5f5"
+    }
+  },
+  "dark": {
+    "name": "深色模式",
+    "colors": {
+      "background": "#1e1e1e",
+      "foreground": "#e0e0e0",
+      "headerBackground": "#2d2d2d",
+      "headerText": "#e0e0e0",
+      "gridLine": "#3d3d3d",
+      "cellBackground": "#1e1e1e",
+      "cellText": "#e0e0e0",
+      "selectionBackground": "rgba(255, 255, 255, 0.08)",
+      "selectionBorder": "#666666",
+      "highlightBackground": "#3a3a3a",
+      "highlightHeaderBackground": "#4a4a4a",
+      "scrollbarTrack": "#2d2d2d",
+      "scrollbarThumb": "#555555",
+      "scrollbarThumbHover": "#666666",
+      "scrollbarThumbActive": "#777777",
+      "toolbarBackground": "#252525",
+      "toolbarBorder": "#3d3d3d",
+      "statusBarBackground": "#252525",
+      "statusBarText": "#888888",
+      "inputBackground": "#2d2d2d",
+      "inputBorder": "#3d3d3d",
+      "buttonBackground": "#2d2d2d",
+      "buttonText": "#e0e0e0",
+      "buttonBorder": "#3d3d3d",
+      "buttonHoverBackground": "#3a3a3a"
+    }
+  }
+}

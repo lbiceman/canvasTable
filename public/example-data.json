@@ -1,0 +1,188 @@
+{
+  "version": "1.0",
+  "timestamp": "2025-09-01T05:00:00.000Z",
+  "metadata": {
+    "rowCount": 1000,
+    "colCount": 26,
+    "defaultRowHeight": 25,
+    "defaultColWidth": 100
+  },
+  "data": {
+    "cells": [
+      {
+        "row": 0,
+        "col": 0,
+        "content": "产品名称",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 0,
+        "col": 1,
+        "content": "价格",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 0,
+        "col": 2,
+        "content": "库存",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 0,
+        "col": 3,
+        "content": "分类",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 1,
+        "col": 0,
+        "content": "iPhone 15",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 1,
+        "col": 1,
+        "content": "7999",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 1,
+        "col": 2,
+        "content": "50",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 1,
+        "col": 3,
+        "content": "手机",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 2,
+        "col": 0,
+        "content": "MacBook Pro",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 2,
+        "col": 1,
+        "content": "15999",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 2,
+        "col": 2,
+        "content": "25",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 2,
+        "col": 3,
+        "content": "电脑",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 3,
+        "col": 0,
+        "content": "iPad Air",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 3,
+        "col": 1,
+        "content": "4599",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 3,
+        "col": 2,
+        "content": "80",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 3,
+        "col": 3,
+        "content": "平板",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": false
+      },
+      {
+        "row": 5,
+        "col": 0,
+        "content": "合并单元格示例 - 产品总结",
+        "rowSpan": 1,
+        "colSpan": 4,
+        "isMerged": false
+      },
+      {
+        "row": 5,
+        "col": 1,
+        "content": "",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": true,
+        "mergeParent": {
+          "row": 5,
+          "col": 0
+        }
+      },
+      {
+        "row": 5,
+        "col": 2,
+        "content": "",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": true,
+        "mergeParent": {
+          "row": 5,
+          "col": 0
+        }
+      },
+      {
+        "row": 5,
+        "col": 3,
+        "content": "",
+        "rowSpan": 1,
+        "colSpan": 1,
+        "isMerged": true,
+        "mergeParent": {
+          "row": 5,
+          "col": 0
+        }
+      }
+    ],
+    "rowHeights": [],
+    "colWidths": []
+  }
+}

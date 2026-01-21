@@ -1,0 +1,526 @@
+:root {
+  /* 主题变量 - 默认浅色主题 */
+  --theme-background: #ffffff;
+  --theme-foreground: #333333;
+  --theme-header-bg: #f5f5f5;
+  --theme-header-text: #333333;
+  --theme-grid-line: #e0e0e0;
+  --theme-cell-bg: #ffffff;
+  --theme-cell-text: #333333;
+  --theme-selection-bg: rgba(0, 0, 0, 0.05);
+  --theme-selection-border: #808080;
+  --theme-highlight-bg: #e8e8e8;
+  --theme-highlight-header-bg: #d0d0d0;
+  --theme-scrollbar-track: #f0f0f0;
+  --theme-scrollbar-thumb: #c1c1c1;
+  --theme-scrollbar-thumb-hover: #a8a8a8;
+  --theme-scrollbar-thumb-active: #787878;
+  --theme-toolbar-bg: #ffffff;
+  --theme-toolbar-border: #666666;
+  --theme-status-bg: #f5f5f5;
+  --theme-status-text: #737373;
+  --theme-input-bg: #ffffff;
+  --theme-input-border: #666666;
+  --theme-button-bg: #ffffff;
+  --theme-button-text: #333333;
+  --theme-button-border: #666666;
+  --theme-button-hover-bg: #f5f5f5;
+
+  --radius: 0.375rem;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --header-height: 28px;
+  --header-width: 40px;
+  --toolbar-height: 44px;
+  --status-height: 24px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background-color: var(--theme-background);
+  color: var(--theme-foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--theme-background);
+}
+
+/* Toolbar styles */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 12px;
+  background-color: var(--theme-toolbar-bg);
+  border-bottom: 1px solid var(--theme-toolbar-border);
+  height: var(--toolbar-height);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.separator {
+  height: 18px;
+  width: 1px;
+  background-color: var(--theme-toolbar-border);
+  margin: 0 2px;
+}
+
+/* Cell info styles */
+.cell-info {
+  display: flex;
+  align-items: center;
+  background-color: var(--theme-input-bg);
+  border: 1px solid var(--theme-input-border);
+  border-radius: var(--radius);
+  height: 30px;
+  overflow: hidden;
+}
+
+#selected-cell {
+  font-weight: 500;
+  color: var(--theme-foreground);
+  min-width: 32px;
+  text-align: center;
+  border-right: 1px solid var(--theme-input-border);
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  background-color: var(--theme-header-bg);
+}
+
+#cell-content {
+  border: none;
+  outline: none;
+  padding: 0 8px;
+  width: 140px;
+  font-size: 13px;
+  height: 100%;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+}
+
+#set-content {
+  background: var(--theme-button-bg);
+  border: none;
+  color: var(--theme-button-text);
+  cursor: pointer;
+  padding: 0 8px;
+  border-radius: 0;
+  border-left: 1px solid var(--theme-input-border);
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#set-content:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+#set-content svg {
+  width: 14px;
+  height: 14px;
+  color: var(--theme-button-text);
+}
+
+/* Button styles */
+button {
+  background-color: var(--theme-button-bg);
+  color: var(--theme-button-text);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  padding: 0 12px;
+  height: 30px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+button:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--theme-background), 0 0 0 3px var(--theme-button-border);
+}
+
+button svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Spreadsheet container */
+.spreadsheet-container {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  background-color: var(--theme-cell-bg);
+}
+
+#excel-canvas {
+  position: absolute;
+  cursor: cell;
+}
+
+/* 自定义滚动条 */
+.scrollbar {
+  position: absolute;
+  background-color: var(--theme-scrollbar-track);
+  border-radius: 6px;
+  z-index: 100;
+}
+
+.scrollbar-vertical {
+  right: 2px;
+  top: 44px;
+  width: 12px;
+  bottom: 16px;
+}
+
+.scrollbar-horizontal {
+  bottom: 2px;
+  left: 40px;
+  height: 12px;
+  right: 16px;
+}
+
+.scrollbar-thumb {
+  position: absolute;
+  background-color: var(--theme-scrollbar-thumb);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.scrollbar-thumb:hover {
+  background-color: var(--theme-scrollbar-thumb-hover);
+}
+
+.scrollbar-thumb:active {
+  background-color: var(--theme-scrollbar-thumb-active);
+}
+
+.scrollbar-vertical .scrollbar-thumb {
+  width: 8px;
+  left: 2px;
+  min-height: 30px;
+}
+
+.scrollbar-horizontal .scrollbar-thumb {
+  height: 8px;
+  top: 2px;
+  min-width: 30px;
+}
+
+/* Status bar */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+  background-color: var(--theme-status-bg);
+  border-top: 1px solid var(--theme-toolbar-border);
+  font-size: 12px;
+  color: var(--theme-status-text);
+  height: var(--status-height);
+  align-items: center;
+}
+
+/* 内联编辑器 */
+.inline-editor {
+  position: absolute;
+  background-color: var(--theme-cell-bg);
+  border: 2px solid var(--theme-foreground);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  padding: 0;
+  margin: 0;
+  z-index: 1000;
+  box-sizing: border-box;
+}
+
+.inline-editor input {
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+  background-color: var(--theme-cell-bg);
+  color: var(--theme-cell-text);
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+}
+
+#viewport-info, #memory-usage, #cell-count {
+  font-size: 12px;
+  color: var(--theme-status-text);
+}
+
+h1 {
+  font-size: 3.2em;
+  line-height: 1.1;
+}
+
+.card {
+  padding: 2em;
+}
+
+
+/* UI Controls - 更多面板样式 */
+.ui-toggle-button {
+  position: fixed;
+  top: 7px;
+  right: 7%;
+  background: #007bff;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,123,255,0.3);
+  z-index: 1001;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.ui-toggle-button:hover {
+  background: #0056b3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,123,255,0.4);
+}
+
+.ui-control-panel {
+  position: fixed;
+  top: 60px;
+  right: 10px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  z-index: 1000;
+  min-width: 220px;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: none;
+  opacity: 0;
+  transform: translateY(-10px);
+  transition: all 0.3s ease;
+}
+
+.ui-control-panel.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ui-panel-title-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #007bff;
+}
+
+.ui-panel-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--theme-foreground);
+}
+
+.ui-close-button {
+  background: none;
+  border: none;
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--theme-status-text);
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  line-height: 1;
+}
+
+.ui-close-button:hover {
+  background-color: var(--theme-button-hover-bg);
+  color: #dc3545;
+}
+
+.ui-button-group {
+  margin-bottom: 20px;
+  padding: 15px;
+  background: var(--theme-header-bg);
+  border-radius: 8px;
+  border: 1px solid var(--theme-grid-line);
+}
+
+.ui-group-title {
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--theme-foreground);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 6px;
+  line-height: 1.2;
+}
+
+.ui-theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ui-theme-option {
+  display: flex;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--theme-background);
+  border: 2px solid var(--theme-grid-line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.ui-theme-option:hover {
+  border-color: var(--theme-status-text);
+  background: var(--theme-header-bg);
+}
+
+.ui-theme-option.selected {
+  background: var(--theme-highlight-bg);
+  border-color: #007bff;
+}
+
+.ui-theme-option input[type="radio"] {
+  margin-right: 10px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ui-theme-label {
+  font-size: 14px;
+  color: var(--theme-foreground);
+  line-height: 1;
+}
+
+.ui-theme-icon {
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.ui-panel-button {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 6px;
+  background: var(--theme-background);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-foreground);
+  transition: all 0.2s ease;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.ui-panel-button:hover {
+  background-color: var(--theme-button-hover-bg);
+  border-color: var(--theme-status-text);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ui-example-button {
+  width: 100%;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #28a745, #20c997);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.ui-example-button:hover {
+  background: linear-gradient(135deg, #218838, #1ea085);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(40,167,69,0.3);
+}
+
+.ui-message {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 15px 25px;
+  border-radius: 8px;
+  color: white;
+  font-weight: bold;
+  z-index: 2000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.ui-message-success {
+  background: #28a745;
+}
+
+.ui-message-error {
+  background: #dc3545;
+}
