@@ -601,3 +601,105 @@ h1 {
 .context-menu-btn:hover {
   background: #0056b3;
 }
+
+/* 字体颜色选择器样式 */
+.font-color-picker {
+  display: flex;
+  align-items: center;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  padding: 0 8px;
+  height: 30px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.font-color-picker:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-color-picker label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-button-text);
+}
+
+.font-color-picker label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.font-color-picker input[type="color"] {
+  width: 20px;
+  height: 20px;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.font-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.font-color-picker input[type="color"]::-webkit-color-swatch {
+  border: 1px solid var(--theme-button-border);
+  border-radius: 3px;
+}
+
+/* 背景颜色选择器样式 */
+.bg-color-picker {
+  display: flex;
+  align-items: center;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  padding: 0 8px;
+  height: 30px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.bg-color-picker:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.bg-color-picker label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-button-text);
+}
+
+.bg-color-picker label svg {
+  width: 14px;
+  height: 14px;
+}
+
+.bg-color-picker input[type="color"] {
+  width: 20px;
+  height: 20px;
+  border: none;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  margin-left: 6px;
+}
+
+.bg-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.bg-color-picker input[type="color"]::-webkit-color-swatch {
+  border: 1px solid var(--theme-button-border);
+  border-radius: 3px;
+}

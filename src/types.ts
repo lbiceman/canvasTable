@@ -5,6 +5,8 @@ export interface Cell {
   colSpan: number;
   isMerged: boolean;
   mergeParent?: { row: number; col: number };
+  fontColor?: string;
+  bgColor?: string;
 }
 
 // 表格数据结构

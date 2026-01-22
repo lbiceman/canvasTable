@@ -453,7 +453,6 @@ export class SpreadsheetRenderer {
     const { offsetX, offsetY } = this.viewport;
     
     this.ctx.font = `${fontSize}px ${fontFamily}`;
-    this.ctx.fillStyle = this.themeColors.cellText;
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
     
@@ -483,14 +482,20 @@ export class SpreadsheetRenderer {
             totalHeight += this.model.getRowHeight(row + r);
           }
           
+          // 裁剪区域，避免绘制到标题区域
+          this.ctx.save();
+          this.ctx.beginPath();
+          this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+          this.ctx.clip();
+          
+          // 绘制背景颜色
+          if (cellInfo.bgColor) {
+            this.ctx.fillStyle = cellInfo.bgColor;
+            this.ctx.fillRect(currentX, currentY, totalWidth, totalHeight);
+          }
+          
           // 绘制单元格内容
           if (cellInfo.content) {
-            // 裁剪区域，避免绘制到标题区域
-            this.ctx.save();
-            this.ctx.beginPath();
-            this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
-            this.ctx.clip();
-            
             // 文本截断处理
             const maxTextWidth = totalWidth - 2 * cellPadding;
             let text = cellInfo.content;
@@ -504,15 +509,16 @@ export class SpreadsheetRenderer {
               text += '...';
             }
             
-            this.ctx.fillStyle = this.themeColors.cellText;
+            // 使用单元格的字体颜色，如果没有设置则使用主题默认颜色
+            this.ctx.fillStyle = cellInfo.fontColor || this.themeColors.cellText;
             this.ctx.fillText(
               text,
               currentX + cellPadding,
               currentY + totalHeight / 2
             );
-            
-            this.ctx.restore();
           }
+          
+          this.ctx.restore();
         }
         
         currentX += colWidth;

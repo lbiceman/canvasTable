@@ -387,6 +387,18 @@ export class SpreadsheetApp {
       splitButton.addEventListener('click', this.handleSplitCells.bind(this));
     }
     
+    // 字体颜色选择器事件
+    const fontColorInput = document.getElementById('font-color') as HTMLInputElement;
+    if (fontColorInput) {
+      fontColorInput.addEventListener('input', this.handleFontColorChange.bind(this));
+    }
+    
+    // 背景颜色选择器事件
+    const bgColorInput = document.getElementById('bg-color') as HTMLInputElement;
+    if (bgColorInput) {
+      bgColorInput.addEventListener('input', this.handleBgColorChange.bind(this));
+    }
+    
     const setContentButton = document.getElementById('set-content');
     if (setContentButton) {
       setContentButton.addEventListener('click', this.handleSetContent.bind(this));
@@ -818,6 +830,44 @@ export class SpreadsheetApp {
     } else {
       alert('选择区域中没有可拆分的合并单元格');
     }
+  }
+
+  // 处理字体颜色变化
+  private handleFontColorChange(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const fontColorInput = document.getElementById('font-color') as HTMLInputElement;
+    if (!fontColorInput) return;
+    
+    const color = fontColorInput.value;
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    
+    // 设置选中区域的字体颜色
+    this.model.setRangeFontColor(startRow, startCol, endRow, endCol, color);
+    
+    // 重新渲染
+    this.renderer.render();
+  }
+
+  // 处理背景颜色变化
+  private handleBgColorChange(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const bgColorInput = document.getElementById('bg-color') as HTMLInputElement;
+    if (!bgColorInput) return;
+    
+    const color = bgColorInput.value;
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    
+    // 设置选中区域的背景颜色
+    this.model.setRangeBgColor(startRow, startCol, endRow, endCol, color);
+    
+    // 重新渲染
+    this.renderer.render();
   }
 
   // 处理设置单元格内容
