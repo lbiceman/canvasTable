@@ -524,3 +524,80 @@ h1 {
 .ui-message-error {
   background: #dc3545;
 }
+
+/* 右键菜单样式 */
+.context-menu {
+  position: fixed;
+  background: var(--theme-background);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 160px;
+  padding: 4px 0;
+}
+
+.context-menu .context-menu-item:last-child {
+  border-bottom: none;
+}
+
+.context-menu-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid #ccc;
+  color: var(--theme-foreground);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.context-menu-item:hover {
+  background-color: var(--theme-highlight-bg);
+}
+
+.context-menu-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+}
+
+.context-menu-input-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-menu-input {
+  width: 50px;
+  height: 24px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 4px;
+  margin: 0 5px;
+  padding: 0 6px;
+  font-size: 13px;
+  text-align: center;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+}
+
+.context-menu-input:focus {
+  outline: none;
+  border-color: #007bff;
+}
+
+.context-menu-btn {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  background: #007bff;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.context-menu-btn:hover {
+  background: #0056b3;
+}

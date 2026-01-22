@@ -26,6 +26,10 @@ export class SpreadsheetApp {
   private scrollDragStartX = 0;
   private scrollDragStartScrollY = 0;
   private scrollDragStartScrollX = 0;
+
+  // 右键菜单
+  private contextMenu: HTMLDivElement | null = null;
+  private contextMenuRow: number | null = null;
   
   constructor(_containerId: string) {
     // 创建模型
@@ -59,6 +63,9 @@ export class SpreadsheetApp {
     
     // 创建滚动条
     this.createScrollbars();
+    
+    // 创建右键菜单
+    this.createContextMenu();
     
     // 设置滚动回调
     this.renderer.setScrollChangeCallback(this.handleScrollChange.bind(this));
@@ -99,6 +106,116 @@ export class SpreadsheetApp {
     
     // 绑定滚动条事件
     this.bindScrollbarEvents();
+  }
+
+  // 创建右键菜单
+  private createContextMenu(): void {
+    this.contextMenu = document.createElement('div');
+    this.contextMenu.className = 'context-menu';
+    this.contextMenu.style.display = 'none';
+    
+    // 添加行选项（带输入框）
+    const insertItem = document.createElement('div');
+    insertItem.className = 'context-menu-item context-menu-input-item';
+    
+    const insertLabel = document.createElement('span');
+    insertLabel.textContent = '添加';
+    
+    const insertInput = document.createElement('input');
+    insertInput.type = 'number';
+    insertInput.min = '1';
+    insertInput.value = '1';
+    insertInput.className = 'context-menu-input';
+    insertInput.addEventListener('click', (e) => e.stopPropagation());
+    insertInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        this.insertRows(parseInt(insertInput.value, 10) || 1);
+      }
+    });
+    
+    const insertSuffix = document.createElement('span');
+    insertSuffix.textContent = '行';
+    
+    const insertBtn = document.createElement('button');
+    insertBtn.className = 'context-menu-btn';
+    insertBtn.textContent = '确定';
+    insertBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.insertRows(parseInt(insertInput.value, 10) || 1);
+    });
+    
+    insertItem.appendChild(insertLabel);
+    insertItem.appendChild(insertInput);
+    insertItem.appendChild(insertSuffix);
+    insertItem.appendChild(insertBtn);
+    
+    // 删除行选项
+    const deleteItem = document.createElement('div');
+    deleteItem.className = 'context-menu-item';
+    deleteItem.innerHTML = '<span class="context-menu-icon">🗑️</span>删除当前行';
+    deleteItem.addEventListener('click', () => this.deleteCurrentRow());
+    
+    this.contextMenu.appendChild(insertItem);
+    this.contextMenu.appendChild(deleteItem);
+    document.body.appendChild(this.contextMenu);
+    
+    // 点击其他地方关闭菜单
+    document.addEventListener('click', (e) => {
+      if (this.contextMenu && !this.contextMenu.contains(e.target as Node)) {
+        this.hideContextMenu();
+      }
+    });
+  }
+
+  // 插入行
+  private insertRows(count: number): void {
+    const rowToInsert = this.contextMenuRow;
+    this.hideContextMenu();
+    
+    if (rowToInsert !== null && count > 0) {
+      const success = this.model.insertRows(rowToInsert + 1, count);
+      if (success) {
+        this.renderer.render();
+        this.updateScrollbars();
+        this.updateStatusBar();
+      }
+    }
+  }
+
+  // 显示右键菜单
+  private showContextMenu(x: number, y: number, row: number): void {
+    if (!this.contextMenu) return;
+    
+    this.contextMenuRow = row;
+    this.contextMenu.style.left = `${x}px`;
+    this.contextMenu.style.top = `${y}px`;
+    this.contextMenu.style.display = 'block';
+  }
+
+  // 隐藏右键菜单
+  private hideContextMenu(): void {
+    if (this.contextMenu) {
+      this.contextMenu.style.display = 'none';
+    }
+    this.contextMenuRow = null;
+  }
+
+  // 删除当前选中的行
+  private deleteCurrentRow(): void {
+    const rowToDelete = this.contextMenuRow;
+    this.hideContextMenu();
+    
+    if (rowToDelete !== null) {
+      const success = this.model.deleteRows(rowToDelete, 1);
+      if (success) {
+        this.currentSelection = null;
+        this.renderer.clearSelection();
+        this.renderer.clearHighlight();
+        this.renderer.render();
+        this.updateScrollbars();
+        this.updateStatusBar();
+      }
+    }
   }
 
   // 绑定滚动条事件
@@ -254,6 +371,7 @@ export class SpreadsheetApp {
     this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
     this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
     this.canvas.addEventListener('dblclick', this.handleDoubleClick.bind(this));
+    this.canvas.addEventListener('contextmenu', this.handleContextMenu.bind(this));
     
     // 滚轮事件
     this.canvas.addEventListener('wheel', this.handleWheel.bind(this), { passive: false });
@@ -333,6 +451,20 @@ export class SpreadsheetApp {
     
     // 滚动
     this.renderer.scrollBy(deltaX, deltaY);
+  }
+
+  // 处理右键菜单事件
+  private handleContextMenu(event: MouseEvent): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    // 检查是否点击了行号区域
+    const clickedRow = this.renderer.getRowHeaderAtPosition(x, y);
+    if (clickedRow !== null) {
+      event.preventDefault();
+      this.showContextMenu(event.clientX, event.clientY, clickedRow);
+    }
   }
 
   // 处理鼠标按下事件

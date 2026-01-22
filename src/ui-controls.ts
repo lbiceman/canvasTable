@@ -7,13 +7,13 @@ export class UIControls {
   private app: SpreadsheetApp;
   private controlPanel: HTMLElement | null = null;
   private isVisible: boolean = false;
-  private currentTheme: ThemeType = 'light';
+  private currentTheme: ThemeType = 'dark';
 
   constructor(app: SpreadsheetApp) {
     this.app = app;
     this.createToggleButton();
     this.createControlPanel();
-    this.applyTheme('light');
+    this.applyTheme('dark');
   }
 
   private createToggleButton(): void {
@@ -112,11 +112,11 @@ export class UIControls {
     themeOptions.className = 'ui-theme-options';
 
     // 浅色主题选项
-    const lightOption = this.createThemeOption('light', themes.light.name, true);
+    const lightOption = this.createThemeOption('light', themes.light.name, false);
     themeOptions.appendChild(lightOption);
 
     // 深色主题选项
-    const darkOption = this.createThemeOption('dark', themes.dark.name, false);
+    const darkOption = this.createThemeOption('dark', themes.dark.name, true);
     themeOptions.appendChild(darkOption);
 
     group.appendChild(themeOptions);
