@@ -3,6 +3,7 @@ import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection } from './types';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
+import { SearchDialog, SearchResult } from './search-dialog';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -12,6 +13,7 @@ export class SpreadsheetApp {
   private selectionStart: CellPosition | null = null;
   private inlineEditor: InlineEditor;
   private dataManager: DataManager;
+  private searchDialog: SearchDialog;
   
   // 滚动条元素
   private vScrollbar: HTMLDivElement | null = null;
@@ -43,6 +45,12 @@ export class SpreadsheetApp {
     
     // 创建数据管理器
     this.dataManager = new DataManager(this.model);
+    
+    // 创建搜索对话框
+    this.searchDialog = new SearchDialog();
+    this.searchDialog.setSearchHandler(this.handleSearch.bind(this));
+    this.searchDialog.setNavigateHandler(this.handleSearchNavigate.bind(this));
+    this.searchDialog.setNoResultsHandler(this.handleSearchNoResults.bind(this));
     
     // 渲染配置
     const config: RenderConfig = {
@@ -447,9 +455,20 @@ export class SpreadsheetApp {
       return;
     }
     
-    // 如果焦点在输入框中，则忽略
+    // 如果焦点在输入框中（除了搜索框的特殊快捷键），则忽略
     const activeElement = document.activeElement;
     if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+      // 允许 Escape 关闭搜索框
+      if (event.key === 'Escape' && this.searchDialog.isVisible()) {
+        this.searchDialog.hide();
+        return;
+      }
+      // 允许 Ctrl+F 打开搜索框
+      if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+        event.preventDefault();
+        this.searchDialog.show();
+        return;
+      }
       return;
     }
     
@@ -485,6 +504,13 @@ export class SpreadsheetApp {
     if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
       event.preventDefault();
       this.handleRedo();
+      return;
+    }
+    
+    // 查找 Ctrl+F / Cmd+F
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+      event.preventDefault();
+      this.searchDialog.show();
       return;
     }
     
@@ -889,6 +915,50 @@ export class SpreadsheetApp {
     if (redoButton) {
       redoButton.disabled = !this.model.canRedo();
     }
+  }
+
+  // 处理搜索
+  private handleSearch(keyword: string): SearchResult[] {
+    const results: SearchResult[] = [];
+    const lowerKeyword = keyword.toLowerCase();
+    
+    for (let row = 0; row < this.model.getRowCount(); row++) {
+      for (let col = 0; col < this.model.getColCount(); col++) {
+        const cell = this.model.getCell(row, col);
+        if (cell && cell.content && cell.content.toLowerCase().includes(lowerKeyword)) {
+          results.push({
+            row,
+            col,
+            content: cell.content
+          });
+        }
+      }
+    }
+    
+    return results;
+  }
+
+  // 处理搜索结果导航
+  private handleSearchNavigate(result: SearchResult): void {
+    // 选中找到的单元格
+    this.currentSelection = {
+      startRow: result.row,
+      startCol: result.col,
+      endRow: result.row,
+      endCol: result.col
+    };
+    
+    this.renderer.setSelection(result.row, result.col, result.row, result.col);
+    this.renderer.scrollToCell(result.row, result.col);
+    this.renderer.clearHighlight();
+    this.updateSelectedCellInfo();
+  }
+
+  // 处理搜索无结果
+  private handleSearchNoResults(): void {
+    this.currentSelection = null;
+    this.renderer.clearSelection();
+    this.renderer.clearHighlight();
   }
 
   // 处理窗口大小改变
