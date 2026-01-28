@@ -964,18 +964,21 @@ export class SpreadsheetModel {
         }
       }
 
-      // 导入行高和列宽
-      if (data.rowHeights) {
+      // 导入行高和列宽（支持顶层或data内部两种格式）
+      const rowHeightsData = importData.rowHeights || data.rowHeights;
+      const colWidthsData = importData.colWidths || data.colWidths;
+      
+      if (rowHeightsData) {
         // 支持新格式（对象）和旧格式（数组）
-        if (Array.isArray(data.rowHeights)) {
-          for (let i = 0; i < data.rowHeights.length && i < this.data.rowHeights.length; i++) {
-            if (data.rowHeights[i]) {
-              this.data.rowHeights[i] = data.rowHeights[i];
+        if (Array.isArray(rowHeightsData)) {
+          for (let i = 0; i < rowHeightsData.length && i < this.data.rowHeights.length; i++) {
+            if (rowHeightsData[i]) {
+              this.data.rowHeights[i] = rowHeightsData[i];
             }
           }
         } else {
           // 新格式：对象 { index: height }
-          Object.entries(data.rowHeights).forEach(([index, height]) => {
+          Object.entries(rowHeightsData).forEach(([index, height]) => {
             const i = parseInt(index);
             if (i >= 0 && i < this.data.rowHeights.length) {
               this.data.rowHeights[i] = height as number;
@@ -984,17 +987,17 @@ export class SpreadsheetModel {
         }
       }
       
-      if (data.colWidths) {
+      if (colWidthsData) {
         // 支持新格式（对象）和旧格式（数组）
-        if (Array.isArray(data.colWidths)) {
-          for (let j = 0; j < data.colWidths.length && j < this.data.colWidths.length; j++) {
-            if (data.colWidths[j]) {
-              this.data.colWidths[j] = data.colWidths[j];
+        if (Array.isArray(colWidthsData)) {
+          for (let j = 0; j < colWidthsData.length && j < this.data.colWidths.length; j++) {
+            if (colWidthsData[j]) {
+              this.data.colWidths[j] = colWidthsData[j];
             }
           }
         } else {
           // 新格式：对象 { index: width }
-          Object.entries(data.colWidths).forEach(([index, width]) => {
+          Object.entries(colWidthsData).forEach(([index, width]) => {
             const j = parseInt(index);
             if (j >= 0 && j < this.data.colWidths.length) {
               this.data.colWidths[j] = width as number;
