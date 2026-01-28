@@ -1,4 +1,5 @@
 import { Cell, SpreadsheetData, CellPosition } from './types';
+import { HistoryManager, HistoryAction } from './history-manager';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -19,8 +20,12 @@ export class SpreadsheetModel {
   private mergeCache: { [key: string]: any } = {}; // 合并操作缓存
   private contentCache: { [key: string]: string } = {}; // 内容缓存
   private isDirty: boolean = false; // 数据变更标记
+  private historyManager: HistoryManager;
 
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
+    // 初始化历史管理器
+    this.historyManager = new HistoryManager();
+    
     // 初始化表格数据
     this.data = {
       cells: [],
@@ -66,16 +71,36 @@ export class SpreadsheetModel {
     const cacheKey = `${row}-${col}`;
     const cell = this.data.cells[row][col];
     
-    // 如果内容没有变化，直接返回
-    if (this.contentCache[cacheKey] === content) {
-      return;
-    }
+    // 获取旧内容用于撤销
+    let oldContent = '';
+    let targetRow = row;
+    let targetCol = col;
     
     // 如果是被合并的单元格，则设置合并父单元格的内容
     if (cell.isMerged && cell.mergeParent) {
-      const { row: parentRow, col: parentCol } = cell.mergeParent;
-      this.data.cells[parentRow][parentCol].content = content;
-      this.contentCache[`${parentRow}-${parentCol}`] = content;
+      targetRow = cell.mergeParent.row;
+      targetCol = cell.mergeParent.col;
+      oldContent = this.data.cells[targetRow][targetCol].content;
+    } else {
+      oldContent = cell.content;
+    }
+    
+    // 如果内容没有变化，直接返回
+    if (oldContent === content) {
+      return;
+    }
+    
+    // 记录历史
+    this.historyManager.record({
+      type: 'setCellContent',
+      data: { row: targetRow, col: targetCol, content },
+      undoData: { row: targetRow, col: targetCol, content: oldContent }
+    });
+    
+    // 设置内容
+    if (cell.isMerged && cell.mergeParent) {
+      this.data.cells[targetRow][targetCol].content = content;
+      this.contentCache[`${targetRow}-${targetCol}`] = content;
     } else {
       cell.content = content;
       this.contentCache[cacheKey] = content;
@@ -83,6 +108,18 @@ export class SpreadsheetModel {
     
     this.isDirty = true;
     this.clearCacheIfNeeded();
+  }
+  
+  // 设置单元格内容（不记录历史，用于撤销/重做）
+  public setCellContentNoHistory(row: number, col: number, content: string): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+    
+    const cell = this.data.cells[row][col];
+    cell.content = content;
+    this.contentCache[`${row}-${col}`] = content;
+    this.isDirty = true;
   }
 
   // 设置单元格字体颜色
@@ -1156,5 +1193,64 @@ export class SpreadsheetModel {
       mergedCells,
       dataSize
     };
+  }
+
+  // 撤销
+  public undo(): boolean {
+    const action = this.historyManager.getUndoAction();
+    if (!action) return false;
+    
+    this.historyManager.pauseRecording();
+    this.applyAction(action.undoData, action.type);
+    this.historyManager.resumeRecording();
+    
+    return true;
+  }
+
+  // 重做
+  public redo(): boolean {
+    const action = this.historyManager.getRedoAction();
+    if (!action) return false;
+    
+    this.historyManager.pauseRecording();
+    this.applyAction(action.data, action.type);
+    this.historyManager.resumeRecording();
+    
+    return true;
+  }
+
+  // 应用操作
+  private applyAction(data: any, type: string): void {
+    switch (type) {
+      case 'setCellContent':
+        this.setCellContentNoHistory(data.row, data.col, data.content);
+        break;
+      case 'setFontColor':
+        if (this.isValidPosition(data.row, data.col)) {
+          this.data.cells[data.row][data.col].fontColor = data.color;
+        }
+        break;
+      case 'setBgColor':
+        if (this.isValidPosition(data.row, data.col)) {
+          this.data.cells[data.row][data.col].bgColor = data.color;
+        }
+        break;
+    }
+    this.isDirty = true;
+  }
+
+  // 是否可以撤销
+  public canUndo(): boolean {
+    return this.historyManager.canUndo();
+  }
+
+  // 是否可以重做
+  public canRedo(): boolean {
+    return this.historyManager.canRedo();
+  }
+
+  // 获取历史管理器
+  public getHistoryManager(): HistoryManager {
+    return this.historyManager;
   }
 }

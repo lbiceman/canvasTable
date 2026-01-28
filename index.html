@@ -13,6 +13,19 @@
     <div id="app">
       <div class="toolbar">
         <div class="toolbar-group">
+          <button id="undo-btn" title="撤销 (Ctrl+Z)" disabled>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1.84998 7.49998C1.84998 4.66458 4.05979 1.84998 7.49998 1.84998C10.945 1.84998 13.15 4.66458 13.15 7.49998C13.15 10.3354 10.945 13.15 7.49998 13.15C6.5941 13.15 5.72086 12.9138 4.95634 12.4893L5.44367 11.6106C6.07324 11.9586 6.77013 12.15 7.49998 12.15C10.3276 12.15 12.15 9.79523 12.15 7.49998C12.15 5.20473 10.3276 2.84998 7.49998 2.84998C4.67236 2.84998 2.84998 5.20473 2.84998 7.49998H4.24998L2.04998 10.2L-0.150024 7.49998H1.84998Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
+            </svg>
+            <span>撤销</span>
+          </button>
+          <button id="redo-btn" title="重做 (Ctrl+Y)" disabled>
+            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M13.15 7.49998C13.15 4.66458 10.9402 1.84998 7.50002 1.84998C4.05983 1.84998 1.85002 4.66458 1.85002 7.49998C1.85002 10.3354 4.05983 13.15 7.50002 13.15C8.40589 13.15 9.27914 12.9138 10.0437 12.4893L9.55633 11.6106C8.92676 11.9586 8.22987 12.15 7.50002 12.15C4.67239 12.15 2.85002 9.79523 2.85002 7.49998C2.85002 5.20473 4.67239 2.84998 7.50002 2.84998C10.3276 2.84998 12.15 5.20473 12.15 7.49998H10.75L12.95 10.2L15.15 7.49998H13.15Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
+            </svg>
+            <span>重做</span>
+          </button>
+          <div class="separator"></div>
           <button id="merge-cells" title="合并选中的单元格">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2 2.5C2 2.22386 2.22386 2 2.5 2H12.5C12.7761 2 13 2.22386 13 2.5V12.5C13 12.7761 12.7761 13 12.5 13H2.5C2.22386 13 2 12.7761 2 12.5V2.5ZM3 3V7H7V3H3ZM8 3V7H12V3H8ZM3 8V12H7V8H3ZM8 8V12H12V8H8Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>

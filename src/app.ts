@@ -387,6 +387,17 @@ export class SpreadsheetApp {
       splitButton.addEventListener('click', this.handleSplitCells.bind(this));
     }
     
+    // 撤销/重做按钮事件
+    const undoButton = document.getElementById('undo-btn');
+    if (undoButton) {
+      undoButton.addEventListener('click', this.handleUndo.bind(this));
+    }
+    
+    const redoButton = document.getElementById('redo-btn');
+    if (redoButton) {
+      redoButton.addEventListener('click', this.handleRedo.bind(this));
+    }
+    
     // 字体颜色选择器事件
     const fontColorInput = document.getElementById('font-color') as HTMLInputElement;
     if (fontColorInput) {
@@ -422,8 +433,462 @@ export class SpreadsheetApp {
       });
     }
     
+    // 键盘事件
+    document.addEventListener('keydown', this.handleKeyDown.bind(this));
+    
     // 初始化大小
     this.handleResize();
+  }
+
+  // 处理键盘事件
+  private handleKeyDown(event: KeyboardEvent): void {
+    // 如果内联编辑器正在编辑，则忽略键盘事件
+    if (this.inlineEditor.isEditing()) {
+      return;
+    }
+    
+    // 如果焦点在输入框中，则忽略
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
+      return;
+    }
+    
+    // 复制 Ctrl+C / Cmd+C
+    if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
+      event.preventDefault();
+      this.handleCopy();
+      return;
+    }
+    
+    // 粘贴 Ctrl+V / Cmd+V
+    if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
+      event.preventDefault();
+      this.handlePaste();
+      return;
+    }
+    
+    // 剪切 Ctrl+X / Cmd+X
+    if ((event.ctrlKey || event.metaKey) && event.key === 'x') {
+      event.preventDefault();
+      this.handleCut();
+      return;
+    }
+    
+    // 撤销 Ctrl+Z / Cmd+Z
+    if ((event.ctrlKey || event.metaKey) && event.key === 'z' && !event.shiftKey) {
+      event.preventDefault();
+      this.handleUndo();
+      return;
+    }
+    
+    // 重做 Ctrl+Y / Cmd+Y 或 Ctrl+Shift+Z / Cmd+Shift+Z
+    if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || (event.key === 'z' && event.shiftKey))) {
+      event.preventDefault();
+      this.handleRedo();
+      return;
+    }
+    
+    // 方向键导航
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
+      event.preventDefault();
+      this.handleArrowKey(event.key, event.shiftKey);
+      return;
+    }
+    
+    // Tab 键切换单元格
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      this.handleTabKey(event.shiftKey);
+      return;
+    }
+    
+    // Enter 键向下移动或进入编辑
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.handleEnterKey();
+      return;
+    }
+    
+    // Delete / Backspace 删除内容
+    if (event.key === 'Delete' || event.key === 'Backspace') {
+      event.preventDefault();
+      this.handleDeleteKey();
+      return;
+    }
+    
+    // Escape 取消选择
+    if (event.key === 'Escape') {
+      this.currentSelection = null;
+      this.renderer.clearSelection();
+      this.renderer.clearHighlight();
+      this.renderer.render();
+      return;
+    }
+    
+    // F2 进入编辑模式（保留原内容）
+    if (event.key === 'F2') {
+      event.preventDefault();
+      this.startEditing(false);
+      return;
+    }
+    
+    // 直接输入字符进入编辑模式（清空原内容）
+    if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      this.startEditing(true, event.key);
+      return;
+    }
+  }
+
+  // 开始编辑当前选中的单元格
+  private startEditing(clearContent: boolean, initialChar?: string): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const { startRow, startCol } = this.currentSelection;
+    
+    // 获取单元格信息
+    const cellInfo = this.model.getMergedCellInfo(startRow, startCol);
+    if (!cellInfo) {
+      return;
+    }
+    
+    // 获取单元格在画布上的位置
+    const cellRect = this.renderer.getCellRect(cellInfo.row, cellInfo.col);
+    if (!cellRect) {
+      return;
+    }
+    
+    const canvasRect = this.canvas.getBoundingClientRect();
+    
+    // 确定初始内容
+    const initialContent = clearContent ? (initialChar || '') : (cellInfo.content || '');
+    
+    // 显示内联编辑器
+    this.inlineEditor.show(
+      canvasRect.left + cellRect.x + 1,
+      canvasRect.top + cellRect.y + 1,
+      cellRect.width - 2,
+      cellRect.height - 2,
+      initialContent,
+      cellInfo.row,
+      cellInfo.col,
+      (value) => {
+        this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+        this.updateSelectedCellInfo();
+        this.renderer.render();
+        this.updateUndoRedoButtons();
+      }
+    );
+  }
+
+  // 处理方向键
+  private handleArrowKey(key: string, shiftKey: boolean): void {
+    if (!this.currentSelection) {
+      // 如果没有选择，默认选择 A1
+      this.currentSelection = { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+    }
+    
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    
+    // 计算移动方向
+    let deltaRow = 0;
+    let deltaCol = 0;
+    
+    switch (key) {
+      case 'ArrowUp': deltaRow = -1; break;
+      case 'ArrowDown': deltaRow = 1; break;
+      case 'ArrowLeft': deltaCol = -1; break;
+      case 'ArrowRight': deltaCol = 1; break;
+    }
+    
+    if (shiftKey) {
+      // Shift + 方向键：扩展选择区域
+      const newEndRow = Math.max(0, Math.min(endRow + deltaRow, this.model.getRowCount() - 1));
+      const newEndCol = Math.max(0, Math.min(endCol + deltaCol, this.model.getColCount() - 1));
+      
+      this.currentSelection = {
+        startRow,
+        startCol,
+        endRow: newEndRow,
+        endCol: newEndCol
+      };
+      
+      this.renderer.setSelection(
+        Math.min(startRow, newEndRow),
+        Math.min(startCol, newEndCol),
+        Math.max(startRow, newEndRow),
+        Math.max(startCol, newEndCol)
+      );
+    } else {
+      // 普通方向键：移动选择
+      const newRow = Math.max(0, Math.min(startRow + deltaRow, this.model.getRowCount() - 1));
+      const newCol = Math.max(0, Math.min(startCol + deltaCol, this.model.getColCount() - 1));
+      
+      this.currentSelection = {
+        startRow: newRow,
+        startCol: newCol,
+        endRow: newRow,
+        endCol: newCol
+      };
+      
+      this.renderer.setSelection(newRow, newCol, newRow, newCol);
+      
+      // 确保选中的单元格可见
+      this.renderer.scrollToCell(newRow, newCol);
+    }
+    
+    // 清除行/列高亮
+    this.renderer.clearHighlight();
+    
+    // 更新单元格信息显示
+    this.updateSelectedCellInfo();
+  }
+
+  // 处理 Tab 键
+  private handleTabKey(shiftKey: boolean): void {
+    if (!this.currentSelection) {
+      this.currentSelection = { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+    }
+    
+    const { startRow, startCol } = this.currentSelection;
+    
+    let newRow = startRow;
+    let newCol = startCol;
+    
+    if (shiftKey) {
+      // Shift+Tab：向左移动
+      newCol--;
+      if (newCol < 0) {
+        newCol = this.model.getColCount() - 1;
+        newRow--;
+        if (newRow < 0) {
+          newRow = 0;
+          newCol = 0;
+        }
+      }
+    } else {
+      // Tab：向右移动
+      newCol++;
+      if (newCol >= this.model.getColCount()) {
+        newCol = 0;
+        newRow++;
+        if (newRow >= this.model.getRowCount()) {
+          newRow = this.model.getRowCount() - 1;
+          newCol = this.model.getColCount() - 1;
+        }
+      }
+    }
+    
+    this.currentSelection = {
+      startRow: newRow,
+      startCol: newCol,
+      endRow: newRow,
+      endCol: newCol
+    };
+    
+    this.renderer.setSelection(newRow, newCol, newRow, newCol);
+    this.renderer.scrollToCell(newRow, newCol);
+    this.renderer.clearHighlight();
+    this.updateSelectedCellInfo();
+  }
+
+  // 处理 Enter 键
+  private handleEnterKey(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const { startRow, startCol } = this.currentSelection;
+    
+    // 向下移动一行
+    const newRow = Math.min(startRow + 1, this.model.getRowCount() - 1);
+    
+    this.currentSelection = {
+      startRow: newRow,
+      startCol: startCol,
+      endRow: newRow,
+      endCol: startCol
+    };
+    
+    this.renderer.setSelection(newRow, startCol, newRow, startCol);
+    this.renderer.scrollToCell(newRow, startCol);
+    this.renderer.clearHighlight();
+    this.updateSelectedCellInfo();
+  }
+
+  // 处理 Delete 键
+  private handleDeleteKey(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+    
+    // 清除选中区域的内容
+    for (let row = minRow; row <= maxRow; row++) {
+      for (let col = minCol; col <= maxCol; col++) {
+        this.model.setCellContent(row, col, '');
+      }
+    }
+    
+    this.renderer.render();
+    this.updateSelectedCellInfo();
+    this.updateUndoRedoButtons();
+  }
+
+  // 剪贴板数据
+  private clipboardData: { content: string[][]; startRow: number; startCol: number } | null = null;
+  private isCut: boolean = false;
+
+  // 处理复制
+  private handleCopy(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+    
+    // 收集选中区域的内容
+    const content: string[][] = [];
+    for (let row = minRow; row <= maxRow; row++) {
+      const rowData: string[] = [];
+      for (let col = minCol; col <= maxCol; col++) {
+        const cell = this.model.getCell(row, col);
+        rowData.push(cell?.content || '');
+      }
+      content.push(rowData);
+    }
+    
+    this.clipboardData = { content, startRow: minRow, startCol: minCol };
+    this.isCut = false;
+    
+    // 同时复制到系统剪贴板（纯文本格式，用 Tab 分隔）
+    const textContent = content.map(row => row.join('\t')).join('\n');
+    navigator.clipboard.writeText(textContent).catch(() => {
+      // 忽略剪贴板错误
+    });
+  }
+
+  // 处理剪切
+  private handleCut(): void {
+    this.handleCopy();
+    this.isCut = true;
+  }
+
+  // 处理粘贴
+  private async handlePaste(): Promise<void> {
+    if (!this.currentSelection) {
+      return;
+    }
+    
+    const { startRow, startCol } = this.currentSelection;
+    
+    // 优先尝试从系统剪贴板读取
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        // 解析剪贴板文本（Tab 分隔列，换行分隔行）
+        const rows = text.split('\n').map(row => row.split('\t'));
+        
+        for (let i = 0; i < rows.length; i++) {
+          for (let j = 0; j < rows[i].length; j++) {
+            const targetRow = startRow + i;
+            const targetCol = startCol + j;
+            
+            if (targetRow < this.model.getRowCount() && targetCol < this.model.getColCount()) {
+              this.model.setCellContent(targetRow, targetCol, rows[i][j]);
+            }
+          }
+        }
+        
+        this.renderer.render();
+        this.updateSelectedCellInfo();
+        this.updateUndoRedoButtons();
+        return;
+      }
+    } catch {
+      // 系统剪贴板不可用，使用内部剪贴板
+    }
+    
+    // 使用内部剪贴板
+    if (!this.clipboardData) {
+      return;
+    }
+    
+    const { content } = this.clipboardData;
+    
+    for (let i = 0; i < content.length; i++) {
+      for (let j = 0; j < content[i].length; j++) {
+        const targetRow = startRow + i;
+        const targetCol = startCol + j;
+        
+        if (targetRow < this.model.getRowCount() && targetCol < this.model.getColCount()) {
+          this.model.setCellContent(targetRow, targetCol, content[i][j]);
+        }
+      }
+    }
+    
+    // 如果是剪切操作，清除原位置的内容
+    if (this.isCut && this.clipboardData) {
+      const { startRow: srcRow, startCol: srcCol } = this.clipboardData;
+      for (let i = 0; i < content.length; i++) {
+        for (let j = 0; j < content[i].length; j++) {
+          const row = srcRow + i;
+          const col = srcCol + j;
+          // 避免清除粘贴目标位置
+          if (row < startRow || row >= startRow + content.length ||
+              col < startCol || col >= startCol + content[0].length) {
+            this.model.setCellContent(row, col, '');
+          }
+        }
+      }
+      this.isCut = false;
+    }
+    
+    this.renderer.render();
+    this.updateSelectedCellInfo();
+    this.updateUndoRedoButtons();
+  }
+
+  // 处理撤销
+  private handleUndo(): void {
+    if (this.model.undo()) {
+      this.renderer.render();
+      this.updateSelectedCellInfo();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 处理重做
+  private handleRedo(): void {
+    if (this.model.redo()) {
+      this.renderer.render();
+      this.updateSelectedCellInfo();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 更新撤销/重做按钮状态
+  private updateUndoRedoButtons(): void {
+    const undoButton = document.getElementById('undo-btn') as HTMLButtonElement;
+    const redoButton = document.getElementById('redo-btn') as HTMLButtonElement;
+    
+    if (undoButton) {
+      undoButton.disabled = !this.model.canUndo();
+    }
+    if (redoButton) {
+      redoButton.disabled = !this.model.canRedo();
+    }
   }
 
   // 处理窗口大小改变
