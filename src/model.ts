@@ -1,5 +1,5 @@
 import { Cell, SpreadsheetData, CellPosition } from './types';
-import { HistoryManager, HistoryAction } from './history-manager';
+import { HistoryManager } from './history-manager';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -861,6 +861,22 @@ export class SpreadsheetModel {
 
   // 导出JSON数据
   public exportToJSON(): string {
+    // 收集非默认的行高
+    const customRowHeights: { [key: number]: number } = {};
+    for (let i = 0; i < this.data.rowHeights.length; i++) {
+      if (this.data.rowHeights[i] !== DEFAULT_ROW_HEIGHT) {
+        customRowHeights[i] = this.data.rowHeights[i];
+      }
+    }
+    
+    // 收集非默认的列宽
+    const customColWidths: { [key: number]: number } = {};
+    for (let j = 0; j < this.data.colWidths.length; j++) {
+      if (this.data.colWidths[j] !== DEFAULT_COL_WIDTH) {
+        customColWidths[j] = this.data.colWidths[j];
+      }
+    }
+    
     const exportData = {
       version: "1.0",
       timestamp: new Date().toISOString(),
@@ -872,8 +888,8 @@ export class SpreadsheetModel {
       },
       data: {
         cells: [] as any[],
-        rowHeights: this.data.rowHeights,
-        colWidths: this.data.colWidths
+        rowHeights: customRowHeights,
+        colWidths: customColWidths
       }
     };
 
@@ -882,7 +898,7 @@ export class SpreadsheetModel {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
         
-        // 只保存有内容、合并信息或字体颜色的单元格
+        // 只保存有内容、合并信息或颜色的单元格
         if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor) {
           exportData.data.cells.push({
             row: i,
@@ -948,19 +964,42 @@ export class SpreadsheetModel {
         }
       }
 
-      // 导入行高和列宽（只有非空数组才覆盖）
-      if (data.rowHeights && data.rowHeights.length > 0) {
-        for (let i = 0; i < data.rowHeights.length && i < this.data.rowHeights.length; i++) {
-          if (data.rowHeights[i]) {
-            this.data.rowHeights[i] = data.rowHeights[i];
+      // 导入行高和列宽
+      if (data.rowHeights) {
+        // 支持新格式（对象）和旧格式（数组）
+        if (Array.isArray(data.rowHeights)) {
+          for (let i = 0; i < data.rowHeights.length && i < this.data.rowHeights.length; i++) {
+            if (data.rowHeights[i]) {
+              this.data.rowHeights[i] = data.rowHeights[i];
+            }
           }
+        } else {
+          // 新格式：对象 { index: height }
+          Object.entries(data.rowHeights).forEach(([index, height]) => {
+            const i = parseInt(index);
+            if (i >= 0 && i < this.data.rowHeights.length) {
+              this.data.rowHeights[i] = height as number;
+            }
+          });
         }
       }
-      if (data.colWidths && data.colWidths.length > 0) {
-        for (let j = 0; j < data.colWidths.length && j < this.data.colWidths.length; j++) {
-          if (data.colWidths[j]) {
-            this.data.colWidths[j] = data.colWidths[j];
+      
+      if (data.colWidths) {
+        // 支持新格式（对象）和旧格式（数组）
+        if (Array.isArray(data.colWidths)) {
+          for (let j = 0; j < data.colWidths.length && j < this.data.colWidths.length; j++) {
+            if (data.colWidths[j]) {
+              this.data.colWidths[j] = data.colWidths[j];
+            }
           }
+        } else {
+          // 新格式：对象 { index: width }
+          Object.entries(data.colWidths).forEach(([index, width]) => {
+            const j = parseInt(index);
+            if (j >= 0 && j < this.data.colWidths.length) {
+              this.data.colWidths[j] = width as number;
+            }
+          });
         }
       }
 

@@ -867,4 +867,60 @@ export class SpreadsheetRenderer {
       this.scrollTo(newScrollX, newScrollY);
     }
   }
+
+  // 检测是否在行高调整区域（行号底部边框附近）
+  public getRowResizeAtPosition(x: number, y: number): number | null {
+    const { headerWidth, headerHeight } = this.config;
+    const resizeThreshold = 5; // 检测范围（像素）
+    
+    // 必须在行号区域内
+    if (x > headerWidth || y <= headerHeight) {
+      return null;
+    }
+    
+    // 遍历可见行，检查是否在某行的底部边框附近
+    let currentY = headerHeight + this.viewport.offsetY;
+    
+    for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      const rowHeight = this.model.getRowHeight(row);
+      const borderY = currentY + rowHeight;
+      
+      // 检查是否在边框附近
+      if (Math.abs(y - borderY) <= resizeThreshold) {
+        return row;
+      }
+      
+      currentY += rowHeight;
+    }
+    
+    return null;
+  }
+
+  // 检测是否在列宽调整区域（列号右侧边框附近）
+  public getColResizeAtPosition(x: number, y: number): number | null {
+    const { headerWidth, headerHeight } = this.config;
+    const resizeThreshold = 5; // 检测范围（像素）
+    
+    // 必须在列号区域内
+    if (x <= headerWidth || y > headerHeight) {
+      return null;
+    }
+    
+    // 遍历可见列，检查是否在某列的右侧边框附近
+    let currentX = headerWidth + this.viewport.offsetX;
+    
+    for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+      const colWidth = this.model.getColWidth(col);
+      const borderX = currentX + colWidth;
+      
+      // 检查是否在边框附近
+      if (Math.abs(x - borderX) <= resizeThreshold) {
+        return col;
+      }
+      
+      currentX += colWidth;
+    }
+    
+    return null;
+  }
 }

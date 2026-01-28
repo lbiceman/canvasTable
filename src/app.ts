@@ -33,6 +33,16 @@ export class SpreadsheetApp {
   private contextMenu: HTMLDivElement | null = null;
   private contextMenuRow: number | null = null;
   
+  // 行高/列宽调整状态
+  private isResizingRow = false;
+  private isResizingCol = false;
+  private resizeRowIndex: number = -1;
+  private resizeColIndex: number = -1;
+  private resizeStartY: number = 0;
+  private resizeStartX: number = 0;
+  private resizeStartHeight: number = 0;
+  private resizeStartWidth: number = 0;
+  
   constructor(_containerId: string) {
     // 创建模型
     this.model = new SpreadsheetModel();
@@ -1025,6 +1035,28 @@ export class SpreadsheetApp {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     
+    // 检查是否在行高调整区域
+    const rowResizeInfo = this.renderer.getRowResizeAtPosition(x, y);
+    if (rowResizeInfo !== null) {
+      this.isResizingRow = true;
+      this.resizeRowIndex = rowResizeInfo;
+      this.resizeStartY = event.clientY;
+      this.resizeStartHeight = this.model.getRowHeight(rowResizeInfo);
+      this.canvas.style.cursor = 'row-resize';
+      return;
+    }
+    
+    // 检查是否在列宽调整区域
+    const colResizeInfo = this.renderer.getColResizeAtPosition(x, y);
+    if (colResizeInfo !== null) {
+      this.isResizingCol = true;
+      this.resizeColIndex = colResizeInfo;
+      this.resizeStartX = event.clientX;
+      this.resizeStartWidth = this.model.getColWidth(colResizeInfo);
+      this.canvas.style.cursor = 'col-resize';
+      return;
+    }
+    
     // 检查是否点击了行号区域
     const clickedRow = this.renderer.getRowHeaderAtPosition(x, y);
     if (clickedRow !== null) {
@@ -1183,6 +1215,38 @@ export class SpreadsheetApp {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
     
+    // 处理行高调整拖拽
+    if (this.isResizingRow) {
+      const deltaY = event.clientY - this.resizeStartY;
+      const newHeight = Math.max(20, this.resizeStartHeight + deltaY);
+      this.model.setRowHeight(this.resizeRowIndex, newHeight);
+      this.renderer.render();
+      this.updateScrollbars();
+      return;
+    }
+    
+    // 处理列宽调整拖拽
+    if (this.isResizingCol) {
+      const deltaX = event.clientX - this.resizeStartX;
+      const newWidth = Math.max(30, this.resizeStartWidth + deltaX);
+      this.model.setColWidth(this.resizeColIndex, newWidth);
+      this.renderer.render();
+      this.updateScrollbars();
+      return;
+    }
+    
+    // 检查是否在调整区域，更新鼠标样式
+    const rowResizeInfo = this.renderer.getRowResizeAtPosition(x, y);
+    const colResizeInfo = this.renderer.getColResizeAtPosition(x, y);
+    
+    if (rowResizeInfo !== null) {
+      this.canvas.style.cursor = 'row-resize';
+    } else if (colResizeInfo !== null) {
+      this.canvas.style.cursor = 'col-resize';
+    } else if (!this.selectionStart) {
+      this.canvas.style.cursor = 'default';
+    }
+    
     if (this.selectionStart) {
       // 更新选择区域
       const cellPosition = this.renderer.getCellAtPosition(x, y);
@@ -1225,6 +1289,15 @@ export class SpreadsheetApp {
   // 处理鼠标松开事件
   private handleMouseUp(): void {
     this.selectionStart = null;
+    
+    // 重置行高/列宽调整状态
+    if (this.isResizingRow || this.isResizingCol) {
+      this.isResizingRow = false;
+      this.isResizingCol = false;
+      this.resizeRowIndex = -1;
+      this.resizeColIndex = -1;
+      this.canvas.style.cursor = 'default';
+    }
   }
 
   /**
