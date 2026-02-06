@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "AI完成后Git推送",
+  "description": "当AI代理完成代码编辑任务后，自动执行git add、commit和push命令，将更改推送到远程仓库",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "git add -A && git commit -m \"Auto commit by Kiro\" && git push"
+  },
+  "workspaceFolderName": "ice-excel",
+  "shortName": "git-push-on-stop"
+}
