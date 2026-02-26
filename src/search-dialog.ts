@@ -134,7 +134,7 @@ export class SearchDialog {
       this.results = this.onSearch(keyword);
       this.currentIndex = this.results.length > 0 ? 0 : -1;
       this.updateResultsInfo();
-      
+
       if (this.currentIndex >= 0) {
         this.navigateToCurrent();
       } else {
@@ -145,7 +145,7 @@ export class SearchDialog {
 
   private next(): void {
     if (this.results.length === 0) return;
-    
+
     this.currentIndex = (this.currentIndex + 1) % this.results.length;
     this.updateResultsInfo();
     this.navigateToCurrent();
@@ -153,7 +153,7 @@ export class SearchDialog {
 
   private prev(): void {
     if (this.results.length === 0) return;
-    
+
     this.currentIndex = (this.currentIndex - 1 + this.results.length) % this.results.length;
     this.updateResultsInfo();
     this.navigateToCurrent();

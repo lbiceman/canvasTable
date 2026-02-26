@@ -1,5 +1,5 @@
 // 操作类型
-export type ActionType = 
+export type ActionType =
   | 'setCellContent'
   | 'mergeCells'
   | 'splitCell'
@@ -26,12 +26,12 @@ export class HistoryManager {
   // 记录操作
   public record(action: HistoryAction): void {
     if (!this.isRecording) return;
-    
+
     this.undoStack.push(action);
-    
+
     // 新操作会清空重做栈
     this.redoStack = [];
-    
+
     // 限制历史记录数量
     if (this.undoStack.length > this.maxHistory) {
       this.undoStack.shift();

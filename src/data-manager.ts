@@ -13,14 +13,14 @@ export class DataManager {
     const jsonData = this.model.exportToJSON();
     const blob = new Blob([jsonData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const link = document.createElement('a');
     link.href = url;
     link.download = filename || `spreadsheet-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     URL.revokeObjectURL(url);
   }
 
@@ -29,14 +29,14 @@ export class DataManager {
     const jsonData = this.model.exportSimpleJSON();
     const blob = new Blob([jsonData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    
+
     const link = document.createElement('a');
     link.href = url;
     link.download = filename || `spreadsheet-simple-${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     URL.revokeObjectURL(url);
   }
 
@@ -46,14 +46,14 @@ export class DataManager {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.json';
-      
+
       input.onchange = (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (!file) {
           resolve(false);
           return;
         }
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           try {
@@ -65,15 +65,15 @@ export class DataManager {
             resolve(false);
           }
         };
-        
+
         reader.onerror = () => {
           console.error('文件读取错误');
           resolve(false);
         };
-        
+
         reader.readAsText(file);
       };
-      
+
       input.click();
     });
   }
@@ -84,14 +84,14 @@ export class DataManager {
       const input = document.createElement('input');
       input.type = 'file';
       input.accept = '.json';
-      
+
       input.onchange = (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (!file) {
           resolve(false);
           return;
         }
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
           try {
@@ -103,15 +103,15 @@ export class DataManager {
             resolve(false);
           }
         };
-        
+
         reader.onerror = () => {
           console.error('文件读取错误');
           resolve(false);
         };
-        
+
         reader.readAsText(file);
       };
-      
+
       input.click();
     });
   }
@@ -123,7 +123,7 @@ export class DataManager {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const jsonData = await response.text();
       return this.model.importFromJSON(jsonData);
     } catch (error) {
@@ -151,7 +151,7 @@ export class DataManager {
       if (!jsonData) {
         return false;
       }
-      
+
       return this.model.importFromJSON(jsonData);
     } catch (error) {
       console.error('从本地存储加载失败:', error);

@@ -281,7 +281,6 @@ export class UIControls {
     return this.isVisible;
   }
 
-
   private async handleImport(): Promise<void> {
     try {
       const success = await this.app.importFromFile();
@@ -370,9 +369,9 @@ export class UIControls {
     const messageDiv = document.createElement('div');
     messageDiv.textContent = message;
     messageDiv.className = `ui-message ui-message-${type}`;
-    
+
     document.body.appendChild(messageDiv);
-    
+
     setTimeout(() => {
       document.body.removeChild(messageDiv);
     }, 3000);

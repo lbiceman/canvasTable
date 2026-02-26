@@ -25,7 +25,7 @@ export class SpreadsheetModel {
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
     this.historyManager = new HistoryManager();
-    
+
     // 初始化表格数据
     this.data = {
       cells: [],
@@ -37,7 +37,7 @@ export class SpreadsheetModel {
     for (let i = 0; i < rows; i++) {
       this.data.cells[i] = [];
       this.data.rowHeights[i] = DEFAULT_ROW_HEIGHT;
-      
+
       for (let j = 0; j < cols; j++) {
         this.data.cells[i][j] = {
           content: '',
@@ -70,12 +70,12 @@ export class SpreadsheetModel {
 
     const cacheKey = `${row}-${col}`;
     const cell = this.data.cells[row][col];
-    
+
     // 获取旧内容用于撤销
     let oldContent = '';
     let targetRow = row;
     let targetCol = col;
-    
+
     // 如果是被合并的单元格，则设置合并父单元格的内容
     if (cell.isMerged && cell.mergeParent) {
       targetRow = cell.mergeParent.row;
@@ -84,19 +84,19 @@ export class SpreadsheetModel {
     } else {
       oldContent = cell.content;
     }
-    
+
     // 如果内容没有变化，直接返回
     if (oldContent === content) {
       return;
     }
-    
+
     // 记录历史
     this.historyManager.record({
       type: 'setCellContent',
       data: { row: targetRow, col: targetCol, content },
       undoData: { row: targetRow, col: targetCol, content: oldContent }
     });
-    
+
     // 设置内容
     if (cell.isMerged && cell.mergeParent) {
       this.data.cells[targetRow][targetCol].content = content;
@@ -105,17 +105,17 @@ export class SpreadsheetModel {
       cell.content = content;
       this.contentCache[cacheKey] = content;
     }
-    
+
     this.isDirty = true;
     this.clearCacheIfNeeded();
   }
-  
+
   // 设置单元格内容（不记录历史，用于撤销/重做）
   public setCellContentNoHistory(row: number, col: number, content: string): void {
     if (!this.isValidPosition(row, col)) {
       return;
     }
-    
+
     const cell = this.data.cells[row][col];
     cell.content = content;
     this.contentCache[`${row}-${col}`] = content;
@@ -129,7 +129,7 @@ export class SpreadsheetModel {
     }
 
     const cell = this.data.cells[row][col];
-    
+
     // 如果是被合并的单元格，则设置合并父单元格的字体颜色
     if (cell.isMerged && cell.mergeParent) {
       const { row: parentRow, col: parentCol } = cell.mergeParent;
@@ -137,7 +137,7 @@ export class SpreadsheetModel {
     } else {
       cell.fontColor = color;
     }
-    
+
     this.isDirty = true;
   }
 
@@ -153,7 +153,7 @@ export class SpreadsheetModel {
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
-        
+
         // 如果是被合并的单元格，设置其父单元格的颜色
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
@@ -171,7 +171,7 @@ export class SpreadsheetModel {
         }
       }
     }
-    
+
     this.isDirty = true;
   }
 
@@ -182,7 +182,7 @@ export class SpreadsheetModel {
     }
 
     const cell = this.data.cells[row][col];
-    
+
     // 如果是被合并的单元格，则设置合并父单元格的背景颜色
     if (cell.isMerged && cell.mergeParent) {
       const { row: parentRow, col: parentCol } = cell.mergeParent;
@@ -190,7 +190,7 @@ export class SpreadsheetModel {
     } else {
       cell.bgColor = color;
     }
-    
+
     this.isDirty = true;
   }
 
@@ -206,7 +206,7 @@ export class SpreadsheetModel {
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
-        
+
         // 如果是被合并的单元格，设置其父单元格的颜色
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
@@ -224,7 +224,7 @@ export class SpreadsheetModel {
         }
       }
     }
-    
+
     this.isDirty = true;
   }
 
@@ -234,7 +234,7 @@ export class SpreadsheetModel {
     if (!this.isValidRange(startRow, startCol, endRow, endCol)) {
       return false;
     }
-    
+
     // 如果只选择了一个单元格，不执行合并操作
     if (startRow === endRow && startCol === endCol) {
       return false;
@@ -246,7 +246,7 @@ export class SpreadsheetModel {
     for (let i = startRow; i <= endRow; i++) {
       for (let j = startCol; j <= endCol; j++) {
         const cell = this.data.cells[i][j];
-        
+
         // 如果是合并单元格的父单元格，直接拆分
         if (cell.rowSpan > 1 || cell.colSpan > 1) {
           console.log(`拆分现有合并单元格: (${i},${j})`);
@@ -275,7 +275,7 @@ export class SpreadsheetModel {
     // 第三步：执行新的合并
     const rowSpan = endRow - startRow + 1;
     const colSpan = endCol - startCol + 1;
-    
+
     // 设置合并父单元格
     const parentCell = this.data.cells[startRow][startCol];
     parentCell.rowSpan = rowSpan;
@@ -283,7 +283,7 @@ export class SpreadsheetModel {
     parentCell.content = content;
     parentCell.isMerged = false;
     delete parentCell.mergeParent;
-    
+
     // 标记被合并的单元格
     for (let i = startRow; i <= endRow; i++) {
       for (let j = startCol; j <= endCol; j++) {
@@ -294,25 +294,25 @@ export class SpreadsheetModel {
         }
       }
     }
-    
+
     // 清理缓存并标记数据变更
     this.clearAllCache();
     this.isDirty = true;
-    
+
     console.log(`合并成功: (${startRow},${startCol}) 到 (${endRow},${endCol}), 内容: "${content}"`);
     return true;
   }
 
   /**
    * 拆分单元格 - 完全参考Excel的实现
-   * 
+   *
    * Excel中的拆分单元格逻辑：
    * 1. 只有合并单元格才能被拆分
    * 2. 拆分后，只有左上角单元格保留内容
    * 3. 拆分后，所有单元格恢复为默认大小
    * 4. 拆分操作不会影响其他合并单元格
    * 5. 可以通过菜单或快捷键拆分单元格
-   * 
+   *
    * @param row 要拆分的单元格行索引
    * @param col 要拆分的单元格列索引
    * @returns 是否成功拆分
@@ -334,7 +334,7 @@ export class SpreadsheetModel {
     }
 
     const parentCell = this.data.cells[parentRow][parentCol];
-    
+
     // 检查是否是合并单元格
     if (parentCell.rowSpan === 1 && parentCell.colSpan === 1) {
       return false; // 不是合并单元格，无需拆分
@@ -427,7 +427,7 @@ export class SpreadsheetModel {
   public getColCount(): number {
     return this.data.cells[0].length;
   }
-  
+
   // 在指定位置插入行
   public insertRows(rowIndex: number, count: number): boolean {
     if (rowIndex < 0 || rowIndex > this.getRowCount() || count <= 0) {
@@ -536,7 +536,7 @@ export class SpreadsheetModel {
     for (let i = startRow; i <= endRow; i++) {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
-        
+
         // 如果是合并单元格的父单元格
         if ((cell.rowSpan > 1 || cell.colSpan > 1) && !processedCells.has(`${i},${j}`)) {
           this.splitCell(i, j);
@@ -558,19 +558,19 @@ export class SpreadsheetModel {
   public expandRows(newRowCount: number): void {
     const currentRowCount = this.getRowCount();
     const colCount = this.getColCount();
-    
+
     // 限制最大行数
     newRowCount = Math.min(newRowCount, MAX_ROWS);
-    
+
     if (newRowCount <= currentRowCount) {
       return; // 无需扩展
     }
-    
+
     // 添加新行
     for (let i = currentRowCount; i < newRowCount; i++) {
       this.data.cells[i] = [];
       this.data.rowHeights[i] = DEFAULT_ROW_HEIGHT;
-      
+
       for (let j = 0; j < colCount; j++) {
         this.data.cells[i][j] = {
           content: '',
@@ -586,19 +586,19 @@ export class SpreadsheetModel {
   public expandCols(newColCount: number): void {
     const rowCount = this.getRowCount();
     const currentColCount = this.getColCount();
-    
+
     // 限制最大列数
     newColCount = Math.min(newColCount, MAX_COLS);
-    
+
     if (newColCount <= currentColCount) {
       return; // 无需扩展
     }
-    
+
     // 添加新列
     for (let j = currentColCount; j < newColCount; j++) {
       this.data.colWidths[j] = DEFAULT_COL_WIDTH;
     }
-    
+
     // 为每行添加新单元格
     for (let i = 0; i < rowCount; i++) {
       for (let j = currentColCount; j < newColCount; j++) {
@@ -674,23 +674,23 @@ export class SpreadsheetModel {
 
   // 验证位置是否有效
   private isValidPosition(row: number, col: number): boolean {
-    return row >= 0 && row < this.data.cells.length && 
+    return row >= 0 && row < this.data.cells.length &&
            col >= 0 && col < this.data.cells[0].length;
   }
 
   // 验证范围是否有效
   private isValidRange(startRow: number, startCol: number, endRow: number, endCol: number): boolean {
-    return this.isValidPosition(startRow, startCol) && 
+    return this.isValidPosition(startRow, startCol) &&
            this.isValidPosition(endRow, endCol) &&
            startRow <= endRow && startCol <= endCol;
   }
 
   // 获取合并单元格的实际位置和大小
-  public getMergedCellInfo(row: number, col: number): { 
-    row: number; 
-    col: number; 
-    rowSpan: number; 
-    colSpan: number; 
+  public getMergedCellInfo(row: number, col: number): {
+    row: number;
+    col: number;
+    rowSpan: number;
+    colSpan: number;
     content: string;
     fontColor?: string;
     bgColor?: string;
@@ -700,7 +700,7 @@ export class SpreadsheetModel {
     }
 
     const cell = this.data.cells[row][col];
-    
+
     // 如果是被合并的单元格，返回合并父单元格的信息
     if (cell.isMerged && cell.mergeParent) {
       const { row: parentRow, col: parentCol } = cell.mergeParent;
@@ -715,7 +715,7 @@ export class SpreadsheetModel {
         bgColor: parentCell.bgColor
       };
     }
-    
+
     // 如果是合并父单元格或普通单元格
     return {
       row,
@@ -735,14 +735,14 @@ export class SpreadsheetModel {
       // 保留最近使用的一半缓存
       const keepCount = Math.floor(CACHE_SIZE_LIMIT / 2);
       const keysToKeep = contentKeys.slice(-keepCount);
-      
+
       const newCache: { [key: string]: string } = {};
       keysToKeep.forEach(key => {
         newCache[key] = this.contentCache[key];
       });
       this.contentCache = newCache;
     }
-    
+
     const mergeKeys = Object.keys(this.mergeCache);
     if (mergeKeys.length > CACHE_SIZE_LIMIT) {
       this.mergeCache = {};
@@ -752,7 +752,7 @@ export class SpreadsheetModel {
   // 批量设置单元格内容
   public setBatchCellContent(updates: Array<{row: number, col: number, content: string}>): void {
     const batchSize = Math.min(updates.length, BATCH_SIZE);
-    
+
     for (let i = 0; i < updates.length; i += batchSize) {
       const batch = updates.slice(i, i + batchSize);
       batch.forEach(({row, col, content}) => {
@@ -838,7 +838,7 @@ export class SpreadsheetModel {
 
     // 确保目标区域有足够空间
     const maxRow = targetRow + rowCount - 1;
-    
+
     if (maxRow >= this.getRowCount()) {
       this.expandRows(maxRow + 1);
     }
@@ -849,7 +849,7 @@ export class SpreadsheetModel {
         const sourceCell = cells[i][j];
         const destRow = targetRow + i;
         const destCol = targetCol + j;
-        
+
         if (this.isValidPosition(destRow, destCol)) {
           this.setCellContent(destRow, destCol, sourceCell.content);
         }
@@ -868,7 +868,7 @@ export class SpreadsheetModel {
         customRowHeights[i] = this.data.rowHeights[i];
       }
     }
-    
+
     // 收集非默认的列宽
     const customColWidths: { [key: number]: number } = {};
     for (let j = 0; j < this.data.colWidths.length; j++) {
@@ -876,7 +876,7 @@ export class SpreadsheetModel {
         customColWidths[j] = this.data.colWidths[j];
       }
     }
-    
+
     const exportData = {
       version: "1.0",
       timestamp: new Date().toISOString(),
@@ -897,7 +897,7 @@ export class SpreadsheetModel {
     for (let i = 0; i < this.getRowCount(); i++) {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
-        
+
         // 只保存有内容、合并信息或颜色的单元格
         if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor) {
           exportData.data.cells.push({
@@ -922,7 +922,7 @@ export class SpreadsheetModel {
   public importFromJSON(jsonData: string): boolean {
     try {
       const importData = JSON.parse(jsonData);
-      
+
       // 验证数据格式
       if (!importData.version || !importData.data) {
         console.error('无效的JSON数据格式');
@@ -930,12 +930,12 @@ export class SpreadsheetModel {
       }
 
       const { metadata, data } = importData;
-      
+
       // 重新初始化表格
       if (metadata) {
         const rows = metadata.rowCount || DEFAULT_ROWS;
         const cols = metadata.colCount || DEFAULT_COLS;
-        
+
         // 重新初始化数据结构
         this.data = {
           cells: [],
@@ -947,7 +947,7 @@ export class SpreadsheetModel {
         for (let i = 0; i < rows; i++) {
           this.data.cells[i] = [];
           this.data.rowHeights[i] = DEFAULT_ROW_HEIGHT;
-          
+
           for (let j = 0; j < cols; j++) {
             this.data.cells[i][j] = {
               content: '',
@@ -967,7 +967,7 @@ export class SpreadsheetModel {
       // 导入行高和列宽（支持顶层或data内部两种格式）
       const rowHeightsData = importData.rowHeights || data.rowHeights;
       const colWidthsData = importData.colWidths || data.colWidths;
-      
+
       if (rowHeightsData) {
         // 支持新格式（对象）和旧格式（数组）
         if (Array.isArray(rowHeightsData)) {
@@ -986,7 +986,7 @@ export class SpreadsheetModel {
           });
         }
       }
-      
+
       if (colWidthsData) {
         // 支持新格式（对象）和旧格式（数组）
         if (Array.isArray(colWidthsData)) {
@@ -1010,7 +1010,7 @@ export class SpreadsheetModel {
       if (data.cells && Array.isArray(data.cells)) {
         data.cells.forEach((cellData: any) => {
           const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor } = cellData;
-          
+
           if (this.isValidPosition(row, col)) {
             this.data.cells[row][col] = {
               content: content || '',
@@ -1039,7 +1039,7 @@ export class SpreadsheetModel {
   // 导出为简化的数据格式（仅包含内容）
   public exportSimpleJSON(): string {
     const simpleData: { [key: string]: string } = {};
-    
+
     for (let i = 0; i < this.getRowCount(); i++) {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
@@ -1058,10 +1058,10 @@ export class SpreadsheetModel {
   public importFromSimpleJSON(jsonData: string): boolean {
     try {
       const simpleData = JSON.parse(jsonData);
-      
+
       // 清空当前数据
       this.clearAllContent();
-      
+
       // 导入数据
       Object.entries(simpleData).forEach(([cellAddress, content]) => {
         const position = this.parseCellAddress(cellAddress);
@@ -1082,12 +1082,12 @@ export class SpreadsheetModel {
   private getCellAddress(row: number, col: number): string {
     let colName = '';
     let colIndex = col;
-    
+
     while (colIndex >= 0) {
       colName = String.fromCharCode(65 + (colIndex % 26)) + colName;
       colIndex = Math.floor(colIndex / 26) - 1;
     }
-    
+
     return colName + (row + 1);
   }
 
@@ -1095,16 +1095,16 @@ export class SpreadsheetModel {
   private parseCellAddress(address: string): { row: number; col: number } | null {
     const match = address.match(/^([A-Z]+)(\d+)$/);
     if (!match) return null;
-    
+
     const colName = match[1];
     const rowNum = parseInt(match[2]) - 1;
-    
+
     let col = 0;
     for (let i = 0; i < colName.length; i++) {
       col = col * 26 + (colName.charCodeAt(i) - 64);
     }
     col -= 1;
-    
+
     return { row: rowNum, col };
   }
 
@@ -1120,7 +1120,7 @@ export class SpreadsheetModel {
         };
       }
     }
-    
+
     this.clearAllCache();
     this.isDirty = true;
   }
@@ -1131,12 +1131,12 @@ export class SpreadsheetModel {
     const endAddr = `${String.fromCharCode(65 + endCol)}${endRow + 1}`;
     console.log(`
 === 检查区域 ${startAddr}:${endAddr} 的合并状态 ===`);
-    
+
     for (let i = startRow; i <= endRow; i++) {
       for (let j = startCol; j <= endCol; j++) {
         const cell = this.data.cells[i][j];
         const cellAddr = `${String.fromCharCode(65 + j)}${i + 1}`;
-        
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const parentAddr = `${String.fromCharCode(65 + parentCol)}${parentRow + 1}`;
@@ -1151,7 +1151,7 @@ export class SpreadsheetModel {
         }
       }
     }
-    
+
     // 简单的合并检查
     const canMerge = this.canMergeRange(startRow, startCol, endRow, endCol);
     console.log(`
@@ -1166,7 +1166,7 @@ export class SpreadsheetModel {
       console.log(`  ❌ 无效范围`);
       return false;
     }
-    
+
     if (startRow === endRow && startCol === endCol) {
       console.log(`  ❌ 只选择了一个单元格`);
       return false;
@@ -1175,24 +1175,24 @@ export class SpreadsheetModel {
     for (let i = startRow; i <= endRow; i++) {
       for (let j = startCol; j <= endCol; j++) {
         const cell = this.data.cells[i][j];
-        
+
         if (cell.rowSpan > 1 || cell.colSpan > 1) {
           const mergeEndRow = i + cell.rowSpan - 1;
           const mergeEndCol = j + cell.colSpan - 1;
-          
+
           if (mergeEndRow > endRow || mergeEndCol > endCol) {
             console.log(`  ❌ 现有合并单元格 (${i},${j}) 超出选择区域`);
             return false;
           }
         }
-        
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const parentCell = this.data.cells[parentRow][parentCol];
           const parentEndRow = parentRow + parentCell.rowSpan - 1;
           const parentEndCol = parentCol + parentCell.colSpan - 1;
-          
-          if (parentRow < startRow || parentEndRow > endRow || 
+
+          if (parentRow < startRow || parentEndRow > endRow ||
               parentCol < startCol || parentEndCol > endCol) {
             console.log(`  ❌ 父单元格 (${parentRow},${parentCol}) 超出选择区域`);
             return false;
@@ -1200,7 +1200,7 @@ export class SpreadsheetModel {
         }
       }
     }
-    
+
     console.log(`  ✅ 可以合并`);
     return true;
   }
@@ -1215,7 +1215,7 @@ export class SpreadsheetModel {
     let filledCells = 0;
     let mergedCells = 0;
     const totalCells = this.getRowCount() * this.getColCount();
-    
+
     for (let i = 0; i < this.getRowCount(); i++) {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
@@ -1223,12 +1223,12 @@ export class SpreadsheetModel {
         if (cell.isMerged || cell.rowSpan > 1 || cell.colSpan > 1) mergedCells++;
       }
     }
-    
+
     const jsonSize = new Blob([this.exportToJSON()]).size;
-    const dataSize = jsonSize < 1024 ? `${jsonSize} B` : 
+    const dataSize = jsonSize < 1024 ? `${jsonSize} B` :
                     jsonSize < 1024 * 1024 ? `${(jsonSize / 1024).toFixed(1)} KB` :
                     `${(jsonSize / (1024 * 1024)).toFixed(1)} MB`;
-    
+
     return {
       totalCells,
       filledCells,
@@ -1241,11 +1241,11 @@ export class SpreadsheetModel {
   public undo(): boolean {
     const action = this.historyManager.getUndoAction();
     if (!action) return false;
-    
+
     this.historyManager.pauseRecording();
     this.applyAction(action.undoData, action.type);
     this.historyManager.resumeRecording();
-    
+
     return true;
   }
 
@@ -1253,11 +1253,11 @@ export class SpreadsheetModel {
   public redo(): boolean {
     const action = this.historyManager.getRedoAction();
     if (!action) return false;
-    
+
     this.historyManager.pauseRecording();
     this.applyAction(action.data, action.type);
     this.historyManager.resumeRecording();
-    
+
     return true;
   }
 
