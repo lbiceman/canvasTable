@@ -771,6 +771,20 @@ export class SpreadsheetModel {
     this.isDirty = false;
   }
 
+  /**
+   * 从 SpreadsheetData 直接加载文档数据（协同模式同步用）
+   * 直接替换内部数据结构，无需格式转换
+   */
+  public loadFromData(source: SpreadsheetData): void {
+    this.data = {
+      cells: source.cells,
+      rowHeights: source.rowHeights,
+      colWidths: source.colWidths,
+    };
+    this.clearAllCache();
+    this.isDirty = false;
+  }
+
   // 清空所有缓存
   public clearAllCache(): void {
     this.contentCache = {};

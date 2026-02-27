@@ -19,3 +19,6 @@ npm-debug.log*
 # Local env
 .env
 .env.local
+
+# 房间持久化数据
+server/data/

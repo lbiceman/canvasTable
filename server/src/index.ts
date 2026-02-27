@@ -8,7 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { RoomManager } from './room-manager.ts';
 import { WebSocketMessage, CollabOperation } from './types.ts';
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = Number(process.env.PORT) || 8081;
 
 const roomManager = new RoomManager();
 
@@ -262,5 +262,15 @@ wss.on('connection', (ws: WebSocket) => {
 });
 
 console.log(`协同编辑服务器已启动，端口: ${PORT}`);
+
+// 服务器关闭时保存所有房间数据
+const gracefulShutdown = (): void => {
+  console.log('服务器关闭中，保存所有房间数据...');
+  roomManager.saveAll();
+  process.exit(0);
+};
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
 
 export { wss, roomManager };

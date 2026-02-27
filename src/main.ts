@@ -164,7 +164,7 @@ const initCollaboration = (app: SpreadsheetApp): void => {
   const userName = urlParams.get('userName') || `用户${Math.floor(Math.random() * 1000)}`;
 
   // WebSocket 服务器地址（默认本地开发服务器）
-  const wsUrl = urlParams.get('wsUrl') || `ws://${window.location.hostname}:8080`;
+  const wsUrl = urlParams.get('wsUrl') || `ws://${window.location.hostname}:8081`;
 
   // 显示协同状态 UI
   const collabStatusEl = document.getElementById('collab-status');
@@ -200,18 +200,7 @@ const initCollaboration = (app: SpreadsheetApp): void => {
     },
     onDocumentSync: (data) => {
       // 用服务器文档状态替换本地数据
-      model.importFromJSON(JSON.stringify({
-        version: '1.0',
-        metadata: {
-          rowCount: data.cells.length,
-          colCount: data.cells[0]?.length || 100,
-        },
-        data: {
-          cells: [],
-          rowHeights: {},
-          colWidths: {},
-        },
-      }));
+      model.loadFromData(data);
       app.resetAndRender();
       updateConnectionUI('connected');
       // 同步完成后更新在线用户数（+1 算上自己）

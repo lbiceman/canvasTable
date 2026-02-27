@@ -14,12 +14,16 @@ import {
   USER_COLORS,
 } from './types.ts';
 import { createOTServer, OTServerState, receiveOperation, getOperationsSince, ReceiveResult } from './ot-server.ts';
+import { saveRoom, loadRoom } from './database.ts';
 
 // 默认行列数
 const DEFAULT_ROWS = 50;
 const DEFAULT_COLS = 26;
 const DEFAULT_ROW_HEIGHT = 28;
 const DEFAULT_COL_WIDTH = 100;
+
+// 保存防抖间隔（毫秒）
+const SAVE_DEBOUNCE_MS = 2000;
 
 /**
  * 创建空白文档
@@ -39,6 +43,99 @@ const createEmptyDocument = (): SpreadsheetData => {
 };
 
 /**
+ * 将操作应用到文档快照上，保持文档状态与操作历史同步
+ */
+const applyOperationToDocument = (doc: SpreadsheetData, op: CollabOperation): void => {
+  const { cells, rowHeights, colWidths } = doc;
+
+  switch (op.type) {
+    case 'cellEdit': {
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].content = op.content;
+      }
+      break;
+    }
+    case 'cellMerge': {
+      const { startRow, startCol, endRow, endCol } = op;
+      for (let r = startRow; r <= endRow && r < cells.length; r++) {
+        for (let c = startCol; c <= endCol && c < cells[0].length; c++) {
+          if (r === startRow && c === startCol) {
+            cells[r][c].rowSpan = endRow - startRow + 1;
+            cells[r][c].colSpan = endCol - startCol + 1;
+            cells[r][c].isMerged = false;
+          } else {
+            cells[r][c].isMerged = true;
+            cells[r][c].mergeParent = { row: startRow, col: startCol };
+            cells[r][c].rowSpan = 1;
+            cells[r][c].colSpan = 1;
+          }
+        }
+      }
+      break;
+    }
+    case 'cellSplit': {
+      const cell = cells[op.row]?.[op.col];
+      if (!cell) break;
+      const rs = cell.rowSpan;
+      const cs = cell.colSpan;
+      for (let r = op.row; r < op.row + rs && r < cells.length; r++) {
+        for (let c = op.col; c < op.col + cs && c < cells[0].length; c++) {
+          cells[r][c].rowSpan = 1;
+          cells[r][c].colSpan = 1;
+          cells[r][c].isMerged = false;
+          delete cells[r][c].mergeParent;
+        }
+      }
+      break;
+    }
+    case 'rowInsert': {
+      const colCount = cells[0]?.length ?? DEFAULT_COLS;
+      const newRows = Array.from({ length: op.count }, () =>
+        Array.from({ length: colCount }, () => ({
+          content: '',
+          rowSpan: 1,
+          colSpan: 1,
+          isMerged: false,
+        }))
+      );
+      cells.splice(op.rowIndex, 0, ...newRows);
+      const newHeights = Array.from({ length: op.count }, () => DEFAULT_ROW_HEIGHT);
+      rowHeights.splice(op.rowIndex, 0, ...newHeights);
+      break;
+    }
+    case 'rowDelete': {
+      cells.splice(op.rowIndex, op.count);
+      rowHeights.splice(op.rowIndex, op.count);
+      break;
+    }
+    case 'rowResize': {
+      if (op.rowIndex < rowHeights.length) {
+        rowHeights[op.rowIndex] = op.height;
+      }
+      break;
+    }
+    case 'colResize': {
+      if (op.colIndex < colWidths.length) {
+        colWidths[op.colIndex] = op.width;
+      }
+      break;
+    }
+    case 'fontColor': {
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].fontColor = op.color;
+      }
+      break;
+    }
+    case 'bgColor': {
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].bgColor = op.color;
+      }
+      break;
+    }
+  }
+};
+
+/**
  * 房间管理器
  */
 export class RoomManager {
@@ -46,24 +143,73 @@ export class RoomManager {
   private rooms: Map<string, Room> = new Map();
   // 每个房间的 OT 服务端状态
   private otStates: Map<string, OTServerState> = new Map();
+  // 保存防抖定时器
+  private saveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
 
   /**
    * 获取或创建房间
+   * 优先从数据库加载已有数据，不存在则创建空白文档
    */
   getOrCreateRoom(roomId: string): Room {
     let room = this.rooms.get(roomId);
     if (!room) {
-      room = {
-        roomId,
-        document: createEmptyDocument(),
-        operations: [],
-        revision: 0,
-        clients: new Map(),
-      };
+      // 尝试从数据库加载
+      const persisted = loadRoom(roomId);
+      if (persisted) {
+        room = {
+          roomId,
+          document: persisted.document,
+          operations: persisted.operations,
+          revision: persisted.revision,
+          clients: new Map(),
+        };
+        // 恢复 OT 状态
+        const otState = createOTServer();
+        otState.operations = persisted.operations;
+        otState.revision = persisted.revision;
+        this.otStates.set(roomId, otState);
+        console.log(`从数据库恢复房间 ${roomId}，修订号: ${persisted.revision}`);
+      } else {
+        room = {
+          roomId,
+          document: createEmptyDocument(),
+          operations: [],
+          revision: 0,
+          clients: new Map(),
+        };
+        this.otStates.set(roomId, createOTServer());
+      }
       this.rooms.set(roomId, room);
-      this.otStates.set(roomId, createOTServer());
     }
     return room;
+  }
+
+  /**
+   * 防抖保存房间数据到数据库
+   * 避免每次操作都写磁盘，合并短时间内的多次写入
+   */
+  private scheduleSave(roomId: string): void {
+    const existing = this.saveTimers.get(roomId);
+    if (existing) {
+      clearTimeout(existing);
+    }
+    const timer = setTimeout(() => {
+      this.saveTimers.delete(roomId);
+      this.persistRoom(roomId);
+    }, SAVE_DEBOUNCE_MS);
+    this.saveTimers.set(roomId, timer);
+  }
+
+  /**
+   * 立即保存房间数据到数据库
+   */
+  private persistRoom(roomId: string): void {
+    const room = this.rooms.get(roomId);
+    const otState = this.otStates.get(roomId);
+    if (!room || !otState) return;
+
+    saveRoom(roomId, room.document, otState.revision, otState.operations);
+    console.log(`房间 ${roomId} 数据已保存，修订号: ${otState.revision}`);
   }
 
   /**
@@ -105,7 +251,17 @@ export class RoomManager {
 
     room.clients.delete(userId);
 
-    // 如果房间为空，保留房间数据（不立即清理，以便重连）
+    // 如果房间为空，立即保存数据到数据库
+    if (room.clients.size === 0) {
+      // 取消防抖定时器，立即保存
+      const timer = this.saveTimers.get(roomId);
+      if (timer) {
+        clearTimeout(timer);
+        this.saveTimers.delete(roomId);
+      }
+      this.persistRoom(roomId);
+    }
+
     return room.clients.size > 0;
   }
 
@@ -155,7 +311,11 @@ export class RoomManager {
       if (room) {
         room.revision = result.revision;
         room.operations.push(result.transformedOp);
+        // 将操作应用到文档快照，保持文档状态最新
+        applyOperationToDocument(room.document, result.transformedOp);
       }
+      // 防抖保存到数据库
+      this.scheduleSave(roomId);
     }
     return result;
   }
@@ -228,5 +388,20 @@ export class RoomManager {
    */
   hasRoom(roomId: string): boolean {
     return this.rooms.has(roomId);
+  }
+
+  /**
+   * 保存所有房间数据（用于服务器关闭时）
+   */
+  saveAll(): void {
+    for (const roomId of this.rooms.keys()) {
+      // 取消防抖定时器
+      const timer = this.saveTimers.get(roomId);
+      if (timer) {
+        clearTimeout(timer);
+        this.saveTimers.delete(roomId);
+      }
+      this.persistRoom(roomId);
+    }
   }
 }
