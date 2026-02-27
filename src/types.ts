@@ -55,3 +55,25 @@ export interface RenderConfig {
   selectionColor: string;
   selectionBorderColor: string;
 }
+
+// ============================================================
+// 协同编辑相关类型导出
+// ============================================================
+
+// 从协同模块重新导出核心类型，方便外部使用
+export type {
+  CollabOperation,
+  OperationType,
+  CellEditOp,
+  CellMergeOp,
+  CellSplitOp,
+  RowInsertOp,
+  RowDeleteOp,
+  RowResizeOp,
+  ColResizeOp,
+  FontColorOp,
+  BgColorOp,
+  RemoteUser,
+  MessageType,
+  WebSocketMessage,
+} from './collaboration/types';

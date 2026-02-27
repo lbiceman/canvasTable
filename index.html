@@ -71,6 +71,29 @@
           <div class="status">
             <span id="viewport-info">视图: 行 1-20, 列 A-Z</span>
           </div>
+          <!-- 协同状态指示器（协同模式下显示） -->
+          <div id="collab-status" class="collab-status" style="display: none;">
+            <span id="collab-connection" class="collab-connection disconnected" title="连接状态">
+              <span class="collab-dot"></span>
+              <span id="collab-connection-text">未连接</span>
+            </span>
+            <span id="collab-users" class="collab-users" title="在线用户">
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7.5 0.875C5.49797 0.875 3.875 2.49797 3.875 4.5C3.875 6.50203 5.49797 8.125 7.5 8.125C9.50203 8.125 11.125 6.50203 11.125 4.5C11.125 2.49797 9.50203 0.875 7.5 0.875ZM4.825 4.5C4.825 3.02264 6.02264 1.825 7.5 1.825C8.97736 1.825 10.175 3.02264 10.175 4.5C10.175 5.97736 8.97736 7.175 7.5 7.175C6.02264 7.175 4.825 5.97736 4.825 4.5ZM2.5 14C2.5 11.2386 4.73858 9 7.5 9C10.2614 9 12.5 11.2386 12.5 14H11.5C11.5 11.7909 9.70914 10 7.5 10C5.29086 10 3.5 11.7909 3.5 14H2.5Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
+              </svg>
+              <span id="collab-user-count">0</span>
+              <!-- 在线用户下拉列表 -->
+              <div id="collab-user-dropdown" class="collab-user-dropdown">
+                <div class="collab-user-dropdown-title">在线用户</div>
+                <ul id="collab-user-list" class="collab-user-list"></ul>
+              </div>
+            </span>
+            <span id="collab-sync" class="collab-sync" style="display: none;" title="同步中">
+              <svg width="14" height="14" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1.90321 7.29677C1.90321 10.341 4.11041 12.4147 6.58893 12.8439C6.87255 12.893 7.06266 13.1627 7.01355 13.4464C6.96444 13.73 6.69471 13.9201 6.41109 13.871C3.49942 13.3668 0.953213 10.9127 0.953213 7.29677C0.953213 5.76009 1.55074 4.55245 2.41316 3.77997L1.23 3.77997C0.953857 3.77997 0.73 3.55611 0.73 3.27997C0.73 3.00383 0.953857 2.77997 1.23 2.77997L3.73 2.77997C4.00614 2.77997 4.23 3.00383 4.23 3.27997L4.23 5.77997C4.23 6.05611 4.00614 6.27997 3.73 6.27997C3.45386 6.27997 3.23 6.05611 3.23 5.77997L3.23 4.34639C2.45426 5.03425 1.90321 6.01236 1.90321 7.29677ZM13.0468 7.29677C13.0468 4.25257 10.8396 2.17888 8.36109 1.74966C8.07747 1.70055 7.88736 1.43082 7.93647 1.1472C7.98558 0.863579 8.25531 0.673466 8.53893 0.722578C11.4506 1.22685 13.9968 3.68097 13.9968 7.29677C13.9968 8.83346 13.3993 10.0411 12.5369 10.8136L13.72 10.8136C13.9961 10.8136 14.22 11.0374 14.22 11.3136C14.22 11.5897 13.9961 11.8136 13.72 11.8136L11.22 11.8136C10.9439 11.8136 10.72 11.5897 10.72 11.3136L10.72 8.81357C10.72 8.53743 10.9439 8.31357 11.22 8.31357C11.4961 8.31357 11.72 8.53743 11.72 8.81357L11.72 10.247C12.4957 9.55918 13.0468 8.58107 13.0468 7.29677Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
+              </svg>
+            </span>
+          </div>
         </div>
       </div>
       <div class="spreadsheet-container">
@@ -81,9 +104,12 @@
           <span id="memory-usage">无限滚动 - 按需加载数据</span>
         </div>
         <div class="status-item">
+          <span id="collab-sync-status" class="collab-sync-text" style="display: none;">同步中...</span>
           <span id="cell-count">1,000 行 × 100 列</span>
         </div>
       </div>
+      <!-- 协同通知容器 -->
+      <div id="collab-notifications" class="collab-notifications"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

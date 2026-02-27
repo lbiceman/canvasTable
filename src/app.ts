@@ -4,6 +4,8 @@ import { RenderConfig, CellPosition, Selection } from './types';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
 import { SearchDialog, SearchResult } from './search-dialog';
+import { CollaborationEngine } from './collaboration/collaboration-engine';
+import { CollabOperation } from './collaboration/types';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -14,6 +16,9 @@ export class SpreadsheetApp {
   private inlineEditor: InlineEditor;
   private dataManager: DataManager;
   private searchDialog: SearchDialog;
+
+  // 协同引擎（协同模式下设置）
+  private collaborationEngine: CollaborationEngine | null = null;
 
   // 滚动条元素
   private vScrollbar: HTMLDivElement | null = null;
@@ -193,6 +198,15 @@ export class SpreadsheetApp {
     if (rowToInsert !== null && count > 0) {
       const success = this.model.insertRows(rowToInsert + 1, count);
       if (success) {
+        // 协同模式下提交操作
+        if (this.isCollaborationMode()) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'rowInsert',
+            rowIndex: rowToInsert + 1,
+            count,
+          });
+        }
         this.renderer.render();
         this.updateScrollbars();
         this.updateStatusBar();
@@ -226,6 +240,15 @@ export class SpreadsheetApp {
     if (rowToDelete !== null) {
       const success = this.model.deleteRows(rowToDelete, 1);
       if (success) {
+        // 协同模式下提交操作
+        if (this.isCollaborationMode()) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'rowDelete',
+            rowIndex: rowToDelete,
+            count: 1,
+          });
+        }
         this.currentSelection = null;
         this.renderer.clearSelection();
         this.renderer.clearHighlight();
@@ -558,6 +581,10 @@ export class SpreadsheetApp {
       this.renderer.clearSelection();
       this.renderer.clearHighlight();
       this.renderer.render();
+      // 协同模式下广播清除光标
+      if (this.isCollaborationMode()) {
+        this.collaborationEngine!.sendCursor(null);
+      }
       return;
     }
 
@@ -611,7 +638,19 @@ export class SpreadsheetApp {
       cellInfo.row,
       cellInfo.col,
       (value) => {
+        const previousContent = this.model.getCell(cellInfo.row, cellInfo.col)?.content ?? '';
         this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+        // 协同模式下提交操作
+        if (this.isCollaborationMode()) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'cellEdit',
+            row: cellInfo.row,
+            col: cellInfo.col,
+            content: value,
+            previousContent,
+          });
+        }
         this.updateSelectedCellInfo();
         this.renderer.render();
         this.updateUndoRedoButtons();
@@ -769,7 +808,19 @@ export class SpreadsheetApp {
     // 清除选中区域的内容
     for (let row = minRow; row <= maxRow; row++) {
       for (let col = minCol; col <= maxCol; col++) {
+        const previousContent = this.model.getCell(row, col)?.content ?? '';
         this.model.setCellContent(row, col, '');
+        // 协同模式下提交操作
+        if (this.isCollaborationMode() && previousContent !== '') {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'cellEdit',
+            row,
+            col,
+            content: '',
+            previousContent,
+          });
+        }
       }
     }
 
@@ -898,6 +949,16 @@ export class SpreadsheetApp {
 
   // 处理撤销
   private handleUndo(): void {
+    if (this.isCollaborationMode()) {
+      // 协同模式下委托给协同引擎
+      const inverseOp = this.collaborationEngine!.undo();
+      if (inverseOp) {
+        this.renderer.render();
+        this.updateSelectedCellInfo();
+        this.updateUndoRedoButtons();
+      }
+      return;
+    }
     if (this.model.undo()) {
       this.renderer.render();
       this.updateSelectedCellInfo();
@@ -907,6 +968,16 @@ export class SpreadsheetApp {
 
   // 处理重做
   private handleRedo(): void {
+    if (this.isCollaborationMode()) {
+      // 协同模式下委托给协同引擎
+      const op = this.collaborationEngine!.redo();
+      if (op) {
+        this.renderer.render();
+        this.updateSelectedCellInfo();
+        this.updateUndoRedoButtons();
+      }
+      return;
+    }
     if (this.model.redo()) {
       this.renderer.render();
       this.updateSelectedCellInfo();
@@ -918,6 +989,16 @@ export class SpreadsheetApp {
   private updateUndoRedoButtons(): void {
     const undoButton = document.getElementById('undo-btn') as HTMLButtonElement;
     const redoButton = document.getElementById('redo-btn') as HTMLButtonElement;
+
+    if (this.isCollaborationMode()) {
+      if (undoButton) {
+        undoButton.disabled = !this.collaborationEngine!.canUndo();
+      }
+      if (redoButton) {
+        redoButton.disabled = !this.collaborationEngine!.canRedo();
+      }
+      return;
+    }
 
     if (undoButton) {
       undoButton.disabled = !this.model.canUndo();
@@ -1189,8 +1270,21 @@ export class SpreadsheetApp {
             cellInfo.row,               // 行索引
             cellInfo.col,               // 列索引
             (value) => {                // 保存回调函数
+              // 获取旧内容
+              const previousContent = this.model.getCell(cellInfo.row, cellInfo.col)?.content ?? '';
               // 设置单元格内容
               this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+              // 协同模式下提交操作
+              if (this.isCollaborationMode() && value !== previousContent) {
+                this.submitCollabOperation({
+                  ...this.createBaseOp(),
+                  type: 'cellEdit',
+                  row: cellInfo.row,
+                  col: cellInfo.col,
+                  content: value,
+                  previousContent,
+                });
+              }
 
               // 更新单元格信息显示
               this.updateSelectedCellInfo();
@@ -1290,11 +1384,38 @@ export class SpreadsheetApp {
   private handleMouseUp(): void {
     this.selectionStart = null;
 
-    // 重置行高/列宽调整状态
-    if (this.isResizingRow || this.isResizingCol) {
+    // 协同模式下广播最终选择区域
+    if (this.isCollaborationMode() && this.currentSelection) {
+      this.collaborationEngine!.sendCursor(this.currentSelection);
+    }
+
+    // 重置行高/列宽调整状态，并在协同模式下提交操作
+    if (this.isResizingRow) {
+      if (this.isCollaborationMode()) {
+        const newHeight = this.model.getRowHeight(this.resizeRowIndex);
+        this.submitCollabOperation({
+          ...this.createBaseOp(),
+          type: 'rowResize',
+          rowIndex: this.resizeRowIndex,
+          height: newHeight,
+        });
+      }
       this.isResizingRow = false;
-      this.isResizingCol = false;
       this.resizeRowIndex = -1;
+      this.canvas.style.cursor = 'default';
+    }
+
+    if (this.isResizingCol) {
+      if (this.isCollaborationMode()) {
+        const newWidth = this.model.getColWidth(this.resizeColIndex);
+        this.submitCollabOperation({
+          ...this.createBaseOp(),
+          type: 'colResize',
+          colIndex: this.resizeColIndex,
+          width: newWidth,
+        });
+      }
+      this.isResizingCol = false;
       this.resizeColIndex = -1;
       this.canvas.style.cursor = 'default';
     }
@@ -1331,6 +1452,17 @@ export class SpreadsheetApp {
 
     // 合并多个单元格
     if (this.model.mergeCells(minRow, minCol, maxRow, maxCol)) {
+      // 协同模式下提交操作
+      if (this.isCollaborationMode()) {
+        this.submitCollabOperation({
+          ...this.createBaseOp(),
+          type: 'cellMerge',
+          startRow: minRow,
+          startCol: minCol,
+          endRow: maxRow,
+          endCol: maxCol,
+        });
+      }
       // 更新选择区域为合并后的单元格
       this.currentSelection = {
         startRow: minRow,
@@ -1383,6 +1515,15 @@ export class SpreadsheetApp {
         if (rowSpan > 1 || colSpan > 1) {
           // 拆分单元格
           if (this.model.splitCell(row, col)) {
+            // 协同模式下提交操作
+            if (this.isCollaborationMode()) {
+              this.submitCollabOperation({
+                ...this.createBaseOp(),
+                type: 'cellSplit',
+                row,
+                col,
+              });
+            }
             // 重新渲染
             this.renderer.render();
 
@@ -1420,6 +1561,15 @@ export class SpreadsheetApp {
             if (row >= minRow && col >= minCol && endMergeRow <= maxRow && endMergeCol <= maxCol) {
               // 拆分单元格
               if (this.model.splitCell(row, col)) {
+                // 协同模式下提交操作
+                if (this.isCollaborationMode()) {
+                  this.submitCollabOperation({
+                    ...this.createBaseOp(),
+                    type: 'cellSplit',
+                    row,
+                    col,
+                  });
+                }
                 splitCount++;
                 processedCells.add(`${row},${col}`);
               }
@@ -1455,6 +1605,25 @@ export class SpreadsheetApp {
     // 设置选中区域的字体颜色
     this.model.setRangeFontColor(startRow, startCol, endRow, endCol, color);
 
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontColor',
+            row: r,
+            col: c,
+            color,
+          });
+        }
+      }
+    }
+
     // 重新渲染
     this.renderer.render();
   }
@@ -1474,6 +1643,25 @@ export class SpreadsheetApp {
     // 设置选中区域的背景颜色
     this.model.setRangeBgColor(startRow, startCol, endRow, endCol, color);
 
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'bgColor',
+            row: r,
+            col: c,
+            color,
+          });
+        }
+      }
+    }
+
     // 重新渲染
     this.renderer.render();
   }
@@ -1487,8 +1675,23 @@ export class SpreadsheetApp {
       const contentInput = document.getElementById('cell-content') as HTMLInputElement;
       const content = contentInput.value;
 
+      // 获取旧内容
+      const previousContent = this.model.getCell(startRow, startCol)?.content ?? '';
+
       // 设置单元格内容
       this.model.setCellContent(startRow, startCol, content);
+
+      // 协同模式下提交操作
+      if (this.isCollaborationMode() && content !== previousContent) {
+        this.submitCollabOperation({
+          ...this.createBaseOp(),
+          type: 'cellEdit',
+          row: startRow,
+          col: startCol,
+          content,
+          previousContent,
+        });
+      }
 
       // 重新渲染
       this.renderer.render();
@@ -1543,6 +1746,11 @@ export class SpreadsheetApp {
         // 更新单元格内容输入框
         cellContentInput.value = cellInfo.content || '';
       }
+    }
+
+    // 协同模式下广播光标位置
+    if (this.isCollaborationMode() && this.currentSelection) {
+      this.collaborationEngine!.sendCursor(this.currentSelection);
     }
   }
 
@@ -1654,5 +1862,64 @@ export class SpreadsheetApp {
   public setTheme(colors: any): void {
     this.renderer.setThemeColors(colors);
     this.renderer.render();
+  }
+
+  // ============================================================
+  // 协同编辑集成
+  // ============================================================
+
+  /**
+   * 设置协同引擎
+   * 由 main.ts 在协同模式初始化时调用
+   */
+  public setCollaborationEngine(engine: CollaborationEngine | null): void {
+    this.collaborationEngine = engine;
+    if (engine) {
+      this.renderer.setCursorAwareness(engine.getCursorAwareness());
+    } else {
+      this.renderer.setCursorAwareness(null);
+    }
+  }
+
+  /**
+   * 获取协同引擎
+   */
+  public getCollaborationEngine(): CollaborationEngine | null {
+    return this.collaborationEngine;
+  }
+
+  /**
+   * 是否处于协同模式
+   */
+  public isCollaborationMode(): boolean {
+    return this.collaborationEngine !== null && this.collaborationEngine.isInitialized();
+  }
+
+  /**
+   * 获取渲染器（供外部使用）
+   */
+  public getRenderer(): SpreadsheetRenderer {
+    return this.renderer;
+  }
+
+  /**
+   * 提交协同操作（内部辅助方法）
+   * 在协同模式下将操作提交到协同引擎
+   */
+  private submitCollabOperation(op: CollabOperation): void {
+    if (this.collaborationEngine && this.collaborationEngine.isInitialized()) {
+      this.collaborationEngine.submitOperation(op);
+    }
+  }
+
+  /**
+   * 创建基础操作对象（内部辅助方法）
+   */
+  private createBaseOp(): { userId: string; timestamp: number; revision: number } {
+    return {
+      userId: this.collaborationEngine?.getUserId() ?? '',
+      timestamp: Date.now(),
+      revision: 0,
+    };
   }
 }

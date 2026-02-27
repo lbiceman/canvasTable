@@ -1,0 +1,160 @@
+import {
+  CollabOperation,
+  OperationType,
+  CellEditOp,
+  CellMergeOp,
+  CellSplitOp,
+  RowInsertOp,
+  RowDeleteOp,
+  RowResizeOp,
+  ColResizeOp,
+  FontColorOp,
+  BgColorOp,
+} from './types';
+
+// 所有合法的操作类型
+const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
+  'cellEdit',
+  'cellMerge',
+  'cellSplit',
+  'rowInsert',
+  'rowDelete',
+  'rowResize',
+  'colResize',
+  'fontColor',
+  'bgColor',
+]);
+
+/**
+ * 将协同操作对象序列化为 JSON 字符串
+ */
+export const serializeOperation = (op: CollabOperation): string => {
+  return JSON.stringify(op);
+};
+
+/**
+ * 将 JSON 字符串反序列化为协同操作对象
+ * 对输入进行校验，确保数据完整性
+ */
+export const deserializeOperation = (json: string): CollabOperation => {
+  const parsed: unknown = JSON.parse(json);
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    throw new Error('无效的操作数据：不是对象');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+
+  // 校验基础字段
+  if (typeof obj.type !== 'string' || !VALID_OPERATION_TYPES.has(obj.type as OperationType)) {
+    throw new Error(`无效的操作类型: ${String(obj.type)}`);
+  }
+  if (typeof obj.userId !== 'string') {
+    throw new Error('缺少 userId 字段');
+  }
+  if (typeof obj.timestamp !== 'number') {
+    throw new Error('缺少 timestamp 字段');
+  }
+  if (typeof obj.revision !== 'number') {
+    throw new Error('缺少 revision 字段');
+  }
+
+  // 按类型校验特定字段
+  const type = obj.type as OperationType;
+
+  switch (type) {
+    case 'cellEdit':
+      validateCellEditOp(obj);
+      return obj as unknown as CellEditOp;
+
+    case 'cellMerge':
+      validateCellMergeOp(obj);
+      return obj as unknown as CellMergeOp;
+
+    case 'cellSplit':
+      validateCellSplitOp(obj);
+      return obj as unknown as CellSplitOp;
+
+    case 'rowInsert':
+      validateRowInsertOp(obj);
+      return obj as unknown as RowInsertOp;
+
+    case 'rowDelete':
+      validateRowDeleteOp(obj);
+      return obj as unknown as RowDeleteOp;
+
+    case 'rowResize':
+      validateRowResizeOp(obj);
+      return obj as unknown as RowResizeOp;
+
+    case 'colResize':
+      validateColResizeOp(obj);
+      return obj as unknown as ColResizeOp;
+
+    case 'fontColor':
+      validateFontColorOp(obj);
+      return obj as unknown as FontColorOp;
+
+    case 'bgColor':
+      validateBgColorOp(obj);
+      return obj as unknown as BgColorOp;
+
+    default:
+      throw new Error(`未知的操作类型: ${type}`);
+  }
+};
+
+// ============================================================
+// 各操作类型的字段校验函数
+// ============================================================
+
+const validateCellEditOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('cellEdit: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('cellEdit: 缺少 col');
+  if (typeof obj.content !== 'string') throw new Error('cellEdit: 缺少 content');
+  if (typeof obj.previousContent !== 'string') throw new Error('cellEdit: 缺少 previousContent');
+};
+
+const validateCellMergeOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.startRow !== 'number') throw new Error('cellMerge: 缺少 startRow');
+  if (typeof obj.startCol !== 'number') throw new Error('cellMerge: 缺少 startCol');
+  if (typeof obj.endRow !== 'number') throw new Error('cellMerge: 缺少 endRow');
+  if (typeof obj.endCol !== 'number') throw new Error('cellMerge: 缺少 endCol');
+};
+
+const validateCellSplitOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('cellSplit: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('cellSplit: 缺少 col');
+};
+
+const validateRowInsertOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.rowIndex !== 'number') throw new Error('rowInsert: 缺少 rowIndex');
+  if (typeof obj.count !== 'number') throw new Error('rowInsert: 缺少 count');
+};
+
+const validateRowDeleteOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.rowIndex !== 'number') throw new Error('rowDelete: 缺少 rowIndex');
+  if (typeof obj.count !== 'number') throw new Error('rowDelete: 缺少 count');
+};
+
+const validateRowResizeOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.rowIndex !== 'number') throw new Error('rowResize: 缺少 rowIndex');
+  if (typeof obj.height !== 'number') throw new Error('rowResize: 缺少 height');
+};
+
+const validateColResizeOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.colIndex !== 'number') throw new Error('colResize: 缺少 colIndex');
+  if (typeof obj.width !== 'number') throw new Error('colResize: 缺少 width');
+};
+
+const validateFontColorOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontColor: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontColor: 缺少 col');
+  if (typeof obj.color !== 'string') throw new Error('fontColor: 缺少 color');
+};
+
+const validateBgColorOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('bgColor: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('bgColor: 缺少 col');
+  if (typeof obj.color !== 'string') throw new Error('bgColor: 缺少 color');
+};

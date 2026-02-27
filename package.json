@@ -9,8 +9,10 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "fast-check": "^4.5.3",
     "typescript": "^5.2.2",
     "vite": "^6.4.1",
-    "vite-node": "^5.3.0"
+    "vite-node": "^5.3.0",
+    "vitest": "^4.0.18"
   }
 }

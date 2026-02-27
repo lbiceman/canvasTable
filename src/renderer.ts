@@ -1,5 +1,6 @@
 import { SpreadsheetModel } from './model';
 import { Viewport, Selection, RenderConfig, CellPosition } from './types';
+import { CursorAwareness } from './collaboration/cursor-awareness';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -15,6 +16,9 @@ export class SpreadsheetRenderer {
   private highlightedRow: number | null = null;
   // 高亮列
   private highlightedCol: number | null = null;
+
+  // 光标感知模块（协同编辑时设置）
+  private cursorAwareness: CursorAwareness | null = null;
 
   // 主题颜色
   private themeColors: {
@@ -98,6 +102,11 @@ export class SpreadsheetRenderer {
       highlightBackground: colors.highlightBackground || '#e8e8e8',
       highlightHeaderBackground: colors.highlightHeaderBackground || '#d0d0d0'
     };
+  }
+
+  // 设置光标感知模块
+  public setCursorAwareness(cursorAwareness: CursorAwareness | null): void {
+    this.cursorAwareness = cursorAwareness;
   }
 
   // 滚动到指定位置
@@ -229,6 +238,11 @@ export class SpreadsheetRenderer {
     // 绘制选择区域
     if (this.selection) {
       this.renderSelection();
+    }
+
+    // 绘制远程用户光标（协同编辑）
+    if (this.cursorAwareness) {
+      this.cursorAwareness.renderCursors(this.ctx, this.viewport, this.model, this.config);
     }
 
     // 绘制行标题（在单元格之上）
