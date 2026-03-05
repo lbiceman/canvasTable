@@ -499,6 +499,7 @@ export class CollaborationEngine {
           colSpan: cell.colSpan,
           fontColor: cell.fontColor,
           bgColor: cell.bgColor,
+          fontSize: cell.fontSize,
         };
       },
       getRowHeight(row: number) {

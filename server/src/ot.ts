@@ -12,6 +12,7 @@ import {
   RowResizeOp,
   FontColorOp,
   BgColorOp,
+  FontSizeOp,
 } from './types.ts';
 
 // 深拷贝操作对象
@@ -77,6 +78,12 @@ const transformBgColorVsRowInsert = (op: BgColorOp, insertOp: RowInsertOp): BgCo
   return result;
 };
 
+const transformFontSizeVsRowInsert = (op: FontSizeOp, insertOp: RowInsertOp): FontSizeOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -124,6 +131,14 @@ const transformFontColorVsRowDelete = (op: FontColorOp, deleteOp: RowDeleteOp): 
 };
 
 const transformBgColorVsRowDelete = (op: BgColorOp, deleteOp: RowDeleteOp): BgColorOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontSizeVsRowDelete = (op: FontSizeOp, deleteOp: RowDeleteOp): FontSizeOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -247,6 +262,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'rowResize': return transformRowResizeVsRowInsert(opA, opB);
       case 'fontColor': return transformFontColorVsRowInsert(opA, opB);
       case 'bgColor': return transformBgColorVsRowInsert(opA, opB);
+      case 'fontSize': return transformFontSizeVsRowInsert(opA, opB);
     }
   }
 
@@ -260,6 +276,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'rowResize': return transformRowResizeVsRowDelete(opA, opB);
       case 'fontColor': return transformFontColorVsRowDelete(opA, opB);
       case 'bgColor': return transformBgColorVsRowDelete(opA, opB);
+      case 'fontSize': return transformFontSizeVsRowDelete(opA, opB);
     }
   }
 
@@ -281,6 +298,14 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
         return result;
       }
       case 'bgColor': {
+        const result = cloneOp(opA);
+        if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontSize': {
         const result = cloneOp(opA);
         if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
           result.row = opB.startRow;

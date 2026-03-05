@@ -132,6 +132,13 @@ const applyOperationToDocument = (doc: SpreadsheetData, op: CollabOperation): vo
       }
       break;
     }
+    case 'fontSize': {
+      // 字体大小是单元格级别设置
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].fontSize = op.size;
+      }
+      break;
+    }
   }
 };
 

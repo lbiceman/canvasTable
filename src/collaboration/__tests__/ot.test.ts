@@ -146,6 +146,7 @@ const createMockModel = (): ModelReader => ({
     colSpan: 1,
     fontColor: '#FF0000',
     bgColor: '#00FF00',
+    fontSize: 14,
   }),
   getRowHeight: () => 25,
   getColWidth: () => 100,

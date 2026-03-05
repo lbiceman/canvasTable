@@ -703,6 +703,68 @@ h1 {
   border-radius: 3px;
 }
 
+/* 字体大小选择器样式 */
+.font-size-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.font-size-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.font-size-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+#font-size-text {
+  font-size: 12px;
+}
+
+.font-size-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 70px;
+}
+
+.font-size-dropdown.visible {
+  display: block;
+}
+
+.font-size-option {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.font-size-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-size-option.active {
+  background-color: var(--theme-selection-bg);
+  font-weight: 600;
+}
+
 /* 搜索对话框样式 */
 .search-dialog {
   position: fixed;

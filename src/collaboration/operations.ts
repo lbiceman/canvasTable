@@ -10,6 +10,7 @@ import {
   ColResizeOp,
   FontColorOp,
   BgColorOp,
+  FontSizeOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -23,6 +24,7 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'colResize',
   'fontColor',
   'bgColor',
+  'fontSize',
 ]);
 
 /**
@@ -99,6 +101,10 @@ export const deserializeOperation = (json: string): CollabOperation => {
       validateBgColorOp(obj);
       return obj as unknown as BgColorOp;
 
+    case 'fontSize':
+      validateFontSizeOp(obj);
+      return obj as unknown as FontSizeOp;
+
     default:
       throw new Error(`未知的操作类型: ${type}`);
   }
@@ -157,4 +163,10 @@ const validateBgColorOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('bgColor: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('bgColor: 缺少 col');
   if (typeof obj.color !== 'string') throw new Error('bgColor: 缺少 color');
+};
+
+const validateFontSizeOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontSize: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontSize: 缺少 col');
+  if (typeof obj.size !== 'number') throw new Error('fontSize: 缺少 size');
 };

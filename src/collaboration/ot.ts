@@ -8,6 +8,7 @@ import {
   RowResizeOp,
   FontColorOp,
   BgColorOp,
+  FontSizeOp,
 } from './types';
 
 // ============================================================
@@ -114,6 +115,15 @@ const transformBgColorVsRowInsert = (
   return result;
 };
 
+const transformFontSizeVsRowInsert = (
+  op: FontSizeOp,
+  insertOp: RowInsertOp
+): FontSizeOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -180,6 +190,17 @@ const transformBgColorVsRowDelete = (
   op: BgColorOp,
   deleteOp: RowDeleteOp
 ): BgColorOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontSizeVsRowDelete = (
+  op: FontSizeOp,
+  deleteOp: RowDeleteOp
+): FontSizeOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -381,6 +402,8 @@ const transformSingle = (
         return transformFontColorVsRowInsert(opA, opB);
       case 'bgColor':
         return transformBgColorVsRowInsert(opA, opB);
+      case 'fontSize':
+        return transformFontSizeVsRowInsert(opA, opB);
     }
   }
 
@@ -403,6 +426,8 @@ const transformSingle = (
         return transformFontColorVsRowDelete(opA, opB);
       case 'bgColor':
         return transformBgColorVsRowDelete(opA, opB);
+      case 'fontSize':
+        return transformFontSizeVsRowDelete(opA, opB);
     }
   }
 
@@ -439,6 +464,20 @@ const transformSingle = (
         return result;
       }
       case 'bgColor': {
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontSize': {
+        // 如果字体大小操作在合并范围内，调整到父单元格
         const result = cloneOp(opA);
         if (
           opA.row >= opB.startRow &&
@@ -525,7 +564,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -655,6 +694,16 @@ export const invertOperation = (
       return {
         ...op,
         color: cell?.bgColor ?? '',
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'fontSize': {
+      // 反向操作：恢复原始字体大小
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        size: cell?.fontSize ?? 12,
         timestamp: Date.now(),
       };
     }

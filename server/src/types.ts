@@ -11,6 +11,7 @@ export interface Cell {
   mergeParent?: { row: number; col: number };
   fontColor?: string;
   bgColor?: string;
+  fontSize?: number;
 }
 
 // 表格数据结构
@@ -41,7 +42,8 @@ export type OperationType =
   | 'rowResize'
   | 'colResize'
   | 'fontColor'
-  | 'bgColor';
+  | 'bgColor'
+  | 'fontSize';
 
 export interface BaseOperation {
   type: OperationType;
@@ -110,6 +112,13 @@ export interface BgColorOp extends BaseOperation {
   color: string;
 }
 
+export interface FontSizeOp extends BaseOperation {
+  type: 'fontSize';
+  row: number;
+  col: number;
+  size: number;
+}
+
 export type CollabOperation =
   | CellEditOp
   | CellMergeOp
@@ -119,7 +128,8 @@ export type CollabOperation =
   | RowResizeOp
   | ColResizeOp
   | FontColorOp
-  | BgColorOp;
+  | BgColorOp
+  | FontSizeOp;
 
 // ============================================================
 // WebSocket 协议消息类型

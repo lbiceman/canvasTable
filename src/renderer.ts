@@ -50,6 +50,9 @@ export class SpreadsheetRenderer {
   // 滚动相关回调
   private onScrollChange?: (scrollX: number, scrollY: number, maxScrollX: number, maxScrollY: number) => void;
 
+  // 单元格内容字体大小（独立于标题字体大小）
+  private cellFontSize: number;
+
   constructor(
     canvas: HTMLCanvasElement,
     model: SpreadsheetModel,
@@ -59,6 +62,7 @@ export class SpreadsheetRenderer {
     this.ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
     this.model = model;
     this.config = config;
+    this.cellFontSize = config.fontSize; // 初始值与配置一致
 
     // 初始化视口
     this.viewport = {
@@ -463,10 +467,10 @@ export class SpreadsheetRenderer {
 
   // 绘制单元格
   private renderCells(): void {
-    const { headerWidth, headerHeight, cellPadding, fontSize, fontFamily } = this.config;
+    const { headerWidth, headerHeight, cellPadding, fontFamily } = this.config;
     const { offsetX, offsetY } = this.viewport;
 
-    this.ctx.font = `${fontSize}px ${fontFamily}`;
+    this.ctx.font = `${this.cellFontSize}px ${fontFamily}`;
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
 
@@ -501,6 +505,9 @@ export class SpreadsheetRenderer {
           this.ctx.beginPath();
           this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
           this.ctx.clip();
+
+          // save/restore 会重置字体，需要重新设置
+          this.ctx.font = `${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
 
           // 绘制背景颜色
           if (cellInfo.bgColor) {
@@ -725,6 +732,11 @@ export class SpreadsheetRenderer {
   // 获取渲染配置
   public getConfig(): RenderConfig {
     return { ...this.config };
+  }
+
+  // 设置单元格内容字体大小（不影响行列标题）
+  public setFontSize(size: number): void {
+    this.cellFontSize = size;
   }
 
   // 将列索引转换为字母

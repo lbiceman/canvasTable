@@ -143,6 +143,9 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'bgColor':
       model.setCellBgColor(op.row, op.col, op.color);
       break;
+    case 'fontSize':
+      model.setCellFontSize(op.row, op.col, op.size);
+      break;
   }
 };
 
@@ -179,6 +182,7 @@ const initCollaboration = (app: SpreadsheetApp): void => {
   // 设置回调
   const callbacks: CollaborationCallbacks = {
     onRemoteOperation: () => {
+      // 远程操作已应用到模型，重新渲染
       app.render();
     },
     onConnectionStatusChange: (status: ConnectionStatus) => {

@@ -451,6 +451,9 @@ export class SpreadsheetApp {
       bgColorInput.addEventListener('input', this.handleBgColorChange.bind(this));
     }
 
+    // 初始化字体大小选择器
+    this.initFontSizePicker();
+
     const setContentButton = document.getElementById('set-content');
     if (setContentButton) {
       setContentButton.addEventListener('click', this.handleSetContent.bind(this));
@@ -1590,6 +1593,98 @@ export class SpreadsheetApp {
     }
   }
 
+  // 可选字号列表（偶数）
+  private static readonly FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48];
+
+  // 初始化字体大小选择器
+  private initFontSizePicker(): void {
+    const btn = document.getElementById('font-size-btn');
+    const dropdown = document.getElementById('font-size-dropdown');
+    const textEl = document.getElementById('font-size-text');
+    if (!btn || !dropdown || !textEl) return;
+
+    // 默认显示 12px
+    textEl.textContent = '12px';
+
+    // 生成下拉选项
+    SpreadsheetApp.FONT_SIZES.forEach((size) => {
+      const option = document.createElement('div');
+      option.className = `font-size-option${size === 12 ? ' active' : ''}`;
+      option.textContent = `${size}px`;
+      option.dataset.size = String(size);
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.handleFontSizeChange(size);
+        dropdown.classList.remove('visible');
+      });
+      dropdown.appendChild(option);
+    });
+
+    // 点击按钮切换下拉框
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+  }
+
+  // 更新字体大小按钮显示文本和下拉选项激活状态
+  private updateFontSizeUI(size: number): void {
+    const textEl = document.getElementById('font-size-text');
+    if (textEl) {
+      textEl.textContent = `${size}px`;
+    }
+
+    const dropdown = document.getElementById('font-size-dropdown');
+    if (dropdown) {
+      dropdown.querySelectorAll('.font-size-option').forEach((el) => {
+        const optionEl = el as HTMLElement;
+        optionEl.classList.toggle('active', optionEl.dataset.size === String(size));
+      });
+    }
+  }
+
+  // 处理字体大小变更（应用到当前选中的单元格）
+  private handleFontSizeChange(size: number): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    // 更新按钮文本和下拉选项
+    this.updateFontSizeUI(size);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的字体大小
+    this.model.setRangeFontSize(startRow, startCol, endRow, endCol, size);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontSize',
+            row: r,
+            col: c,
+            size,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
   // 处理字体颜色变化
   private handleFontColorChange(): void {
     if (!this.currentSelection) {
@@ -1745,6 +1840,9 @@ export class SpreadsheetApp {
 
         // 更新单元格内容输入框
         cellContentInput.value = cellInfo.content || '';
+
+        // 更新字体大小按钮显示为当前单元格的字体大小
+        this.updateFontSizeUI(cellInfo.fontSize || 12);
       }
     }
 

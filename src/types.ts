@@ -7,6 +7,7 @@ export interface Cell {
   mergeParent?: { row: number; col: number };
   fontColor?: string;
   bgColor?: string;
+  fontSize?: number;
 }
 
 // 表格数据结构
@@ -73,6 +74,7 @@ export type {
   ColResizeOp,
   FontColorOp,
   BgColorOp,
+  FontSizeOp,
   RemoteUser,
   MessageType,
   WebSocketMessage,

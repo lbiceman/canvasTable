@@ -14,7 +14,8 @@ export type OperationType =
   | 'rowResize'
   | 'colResize'
   | 'fontColor'
-  | 'bgColor';
+  | 'bgColor'
+  | 'fontSize';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -93,6 +94,14 @@ export interface BgColorOp extends BaseOperation {
   color: string;
 }
 
+// 字体大小操作（单元格级别）
+export interface FontSizeOp extends BaseOperation {
+  type: 'fontSize';
+  row: number;
+  col: number;
+  size: number;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -103,7 +112,8 @@ export type CollabOperation =
   | RowResizeOp
   | ColResizeOp
   | FontColorOp
-  | BgColorOp;
+  | BgColorOp
+  | FontSizeOp;
 
 // ============================================================
 // 远程用户与光标感知
