@@ -500,6 +500,8 @@ export class CollaborationEngine {
           fontColor: cell.fontColor,
           bgColor: cell.bgColor,
           fontSize: cell.fontSize,
+          fontBold: cell.fontBold,
+          fontItalic: cell.fontItalic,
         };
       },
       getRowHeight(row: number) {

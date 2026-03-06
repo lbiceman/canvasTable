@@ -11,6 +11,8 @@ import {
   FontColorOp,
   BgColorOp,
   FontSizeOp,
+  FontBoldOp,
+  FontItalicOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -25,6 +27,8 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'fontColor',
   'bgColor',
   'fontSize',
+  'fontBold',
+  'fontItalic',
 ]);
 
 /**
@@ -105,6 +109,14 @@ export const deserializeOperation = (json: string): CollabOperation => {
       validateFontSizeOp(obj);
       return obj as unknown as FontSizeOp;
 
+    case 'fontBold':
+      validateFontBoldOp(obj);
+      return obj as unknown as FontBoldOp;
+
+    case 'fontItalic':
+      validateFontItalicOp(obj);
+      return obj as unknown as FontItalicOp;
+
     default:
       throw new Error(`未知的操作类型: ${type}`);
   }
@@ -169,4 +181,16 @@ const validateFontSizeOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('fontSize: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('fontSize: 缺少 col');
   if (typeof obj.size !== 'number') throw new Error('fontSize: 缺少 size');
+};
+
+const validateFontBoldOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontBold: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontBold: 缺少 col');
+  if (typeof obj.bold !== 'boolean') throw new Error('fontBold: 缺少 bold');
+};
+
+const validateFontItalicOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontItalic: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontItalic: 缺少 col');
+  if (typeof obj.italic !== 'boolean') throw new Error('fontItalic: 缺少 italic');
 };

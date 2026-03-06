@@ -765,6 +765,65 @@ h1 {
   font-weight: 600;
 }
 
+/* 字体加粗按钮样式 */
+.font-bold-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--theme-button-text);
+  font-size: inherit;
+  font-weight: bold;
+}
+
+.font-bold-btn:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-bold-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+  color: var(--theme-selection-text);
+}
+
+.font-bold-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* 字体斜体按钮样式 */
+.font-italic-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--theme-button-text);
+  font-size: inherit;
+  font-style: italic;
+}
+
+.font-italic-btn:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-italic-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+  color: var(--theme-selection-text);
+}
+
 /* 搜索对话框样式 */
 .search-dialog {
   position: fixed;

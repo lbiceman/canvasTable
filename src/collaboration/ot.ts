@@ -9,6 +9,8 @@ import {
   FontColorOp,
   BgColorOp,
   FontSizeOp,
+  FontBoldOp,
+  FontItalicOp,
 } from './types';
 
 // ============================================================
@@ -124,6 +126,24 @@ const transformFontSizeVsRowInsert = (
   return result;
 };
 
+const transformFontBoldVsRowInsert = (
+  op: FontBoldOp,
+  insertOp: RowInsertOp
+): FontBoldOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
+const transformFontItalicVsRowInsert = (
+  op: FontItalicOp,
+  insertOp: RowInsertOp
+): FontItalicOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -201,6 +221,28 @@ const transformFontSizeVsRowDelete = (
   op: FontSizeOp,
   deleteOp: RowDeleteOp
 ): FontSizeOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontBoldVsRowDelete = (
+  op: FontBoldOp,
+  deleteOp: RowDeleteOp
+): FontBoldOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontItalicVsRowDelete = (
+  op: FontItalicOp,
+  deleteOp: RowDeleteOp
+): FontItalicOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -404,6 +446,10 @@ const transformSingle = (
         return transformBgColorVsRowInsert(opA, opB);
       case 'fontSize':
         return transformFontSizeVsRowInsert(opA, opB);
+      case 'fontBold':
+        return transformFontBoldVsRowInsert(opA, opB);
+      case 'fontItalic':
+        return transformFontItalicVsRowInsert(opA, opB);
     }
   }
 
@@ -428,6 +474,10 @@ const transformSingle = (
         return transformBgColorVsRowDelete(opA, opB);
       case 'fontSize':
         return transformFontSizeVsRowDelete(opA, opB);
+      case 'fontBold':
+        return transformFontBoldVsRowDelete(opA, opB);
+      case 'fontItalic':
+        return transformFontItalicVsRowDelete(opA, opB);
     }
   }
 
@@ -478,6 +528,34 @@ const transformSingle = (
       }
       case 'fontSize': {
         // 如果字体大小操作在合并范围内，调整到父单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontBold': {
+        // 如果字体加粗操作在合并范围内，调整到父单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontItalic': {
+        // 如果字体斜体操作在合并范围内，调整到父单元格
         const result = cloneOp(opA);
         if (
           opA.row >= opB.startRow &&
@@ -564,7 +642,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -704,6 +782,26 @@ export const invertOperation = (
       return {
         ...op,
         size: cell?.fontSize ?? 12,
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'fontBold': {
+      // 反向操作：恢复原始字体加粗状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        bold: cell?.fontBold ?? false,
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'fontItalic': {
+      // 反向操作：恢复原始字体斜体状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        italic: cell?.fontItalic ?? false,
         timestamp: Date.now(),
       };
     }

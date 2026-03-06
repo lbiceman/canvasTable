@@ -8,6 +8,8 @@ export interface Cell {
   fontColor?: string;
   bgColor?: string;
   fontSize?: number;
+  fontBold?: boolean;
+  fontItalic?: boolean;
 }
 
 // 表格数据结构
@@ -75,6 +77,8 @@ export type {
   FontColorOp,
   BgColorOp,
   FontSizeOp,
+  FontBoldOp,
+  FontItalicOp,
   RemoteUser,
   MessageType,
   WebSocketMessage,

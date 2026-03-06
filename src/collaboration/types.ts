@@ -15,7 +15,9 @@ export type OperationType =
   | 'colResize'
   | 'fontColor'
   | 'bgColor'
-  | 'fontSize';
+  | 'fontSize'
+  | 'fontBold'
+  | 'fontItalic';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -102,6 +104,22 @@ export interface FontSizeOp extends BaseOperation {
   size: number;
 }
 
+// 字体加粗操作（单元格级别）
+export interface FontBoldOp extends BaseOperation {
+  type: 'fontBold';
+  row: number;
+  col: number;
+  bold: boolean;
+}
+
+// 字体斜体操作（单元格级别）
+export interface FontItalicOp extends BaseOperation {
+  type: 'fontItalic';
+  row: number;
+  col: number;
+  italic: boolean;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -113,7 +131,9 @@ export type CollabOperation =
   | ColResizeOp
   | FontColorOp
   | BgColorOp
-  | FontSizeOp;
+  | FontSizeOp
+  | FontBoldOp
+  | FontItalicOp;
 
 // ============================================================
 // 远程用户与光标感知

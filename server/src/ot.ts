@@ -13,6 +13,8 @@ import {
   FontColorOp,
   BgColorOp,
   FontSizeOp,
+  FontBoldOp,
+  FontItalicOp,
 } from './types.ts';
 
 // 深拷贝操作对象
@@ -84,6 +86,18 @@ const transformFontSizeVsRowInsert = (op: FontSizeOp, insertOp: RowInsertOp): Fo
   return result;
 };
 
+const transformFontBoldVsRowInsert = (op: FontBoldOp, insertOp: RowInsertOp): FontBoldOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
+const transformFontItalicVsRowInsert = (op: FontItalicOp, insertOp: RowInsertOp): FontItalicOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -139,6 +153,22 @@ const transformBgColorVsRowDelete = (op: BgColorOp, deleteOp: RowDeleteOp): BgCo
 };
 
 const transformFontSizeVsRowDelete = (op: FontSizeOp, deleteOp: RowDeleteOp): FontSizeOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontBoldVsRowDelete = (op: FontBoldOp, deleteOp: RowDeleteOp): FontBoldOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontItalicVsRowDelete = (op: FontItalicOp, deleteOp: RowDeleteOp): FontItalicOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -263,6 +293,8 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontColor': return transformFontColorVsRowInsert(opA, opB);
       case 'bgColor': return transformBgColorVsRowInsert(opA, opB);
       case 'fontSize': return transformFontSizeVsRowInsert(opA, opB);
+      case 'fontBold': return transformFontBoldVsRowInsert(opA, opB);
+      case 'fontItalic': return transformFontItalicVsRowInsert(opA, opB);
     }
   }
 
@@ -277,6 +309,8 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontColor': return transformFontColorVsRowDelete(opA, opB);
       case 'bgColor': return transformBgColorVsRowDelete(opA, opB);
       case 'fontSize': return transformFontSizeVsRowDelete(opA, opB);
+      case 'fontBold': return transformFontBoldVsRowDelete(opA, opB);
+      case 'fontItalic': return transformFontItalicVsRowDelete(opA, opB);
     }
   }
 
@@ -306,6 +340,22 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
         return result;
       }
       case 'fontSize': {
+        const result = cloneOp(opA);
+        if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontBold': {
+        const result = cloneOp(opA);
+        if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'fontItalic': {
         const result = cloneOp(opA);
         if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
           result.row = opB.startRow;

@@ -454,6 +454,18 @@ export class SpreadsheetApp {
     // 初始化字体大小选择器
     this.initFontSizePicker();
 
+    // 字体加粗按钮事件
+    const fontBoldBtn = document.getElementById('font-bold-btn');
+    if (fontBoldBtn) {
+      fontBoldBtn.addEventListener('click', this.handleFontBoldChange.bind(this));
+    }
+
+    // 字体斜体按钮事件
+    const fontItalicBtn = document.getElementById('font-italic-btn');
+    if (fontItalicBtn) {
+      fontItalicBtn.addEventListener('click', this.handleFontItalicChange.bind(this));
+    }
+
     const setContentButton = document.getElementById('set-content');
     if (setContentButton) {
       setContentButton.addEventListener('click', this.handleSetContent.bind(this));
@@ -1761,6 +1773,88 @@ export class SpreadsheetApp {
     this.renderer.render();
   }
 
+  // 处理字体加粗变化
+  private handleFontBoldChange(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    const fontBoldBtn = document.getElementById('font-bold-btn') as HTMLButtonElement;
+    if (!fontBoldBtn) return;
+
+    // 切换加粗状态
+    const isBold = !fontBoldBtn.classList.contains('active');
+    fontBoldBtn.classList.toggle('active', isBold);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的字体加粗
+    this.model.setRangeFontBold(startRow, startCol, endRow, endCol, isBold);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontBold',
+            row: r,
+            col: c,
+            bold: isBold,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
+  // 处理字体斜体变化
+  private handleFontItalicChange(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    const fontItalicBtn = document.getElementById('font-italic-btn') as HTMLButtonElement;
+    if (!fontItalicBtn) return;
+
+    // 切换斜体状态
+    const isItalic = !fontItalicBtn.classList.contains('active');
+    fontItalicBtn.classList.toggle('active', isItalic);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的字体斜体
+    this.model.setRangeFontItalic(startRow, startCol, endRow, endCol, isItalic);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontItalic',
+            row: r,
+            col: c,
+            italic: isItalic,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
   // 处理设置单元格内容
   private handleSetContent(): void {
     if (this.currentSelection) {
@@ -1843,6 +1937,18 @@ export class SpreadsheetApp {
 
         // 更新字体大小按钮显示为当前单元格的字体大小
         this.updateFontSizeUI(cellInfo.fontSize || 12);
+
+        // 更新字体加粗按钮状态
+        const fontBoldBtn = document.getElementById('font-bold-btn');
+        if (fontBoldBtn) {
+          fontBoldBtn.classList.toggle('active', cellInfo.fontBold || false);
+        }
+
+        // 更新字体斜体按钮状态
+        const fontItalicBtn = document.getElementById('font-italic-btn');
+        if (fontItalicBtn) {
+          fontItalicBtn.classList.toggle('active', cellInfo.fontItalic || false);
+        }
       }
     }
 

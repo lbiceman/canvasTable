@@ -507,7 +507,9 @@ export class SpreadsheetRenderer {
           this.ctx.clip();
 
           // save/restore 会重置字体，需要重新设置
-          this.ctx.font = `${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
+          const fontWeight = cellInfo.fontBold ? 'bold ' : '';
+          const fontStyle = cellInfo.fontItalic ? 'italic ' : '';
+          this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
 
           // 绘制背景颜色
           if (cellInfo.bgColor) {

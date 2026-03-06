@@ -146,6 +146,12 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'fontSize':
       model.setCellFontSize(op.row, op.col, op.size);
       break;
+    case 'fontBold':
+      model.setCellFontBold(op.row, op.col, op.bold);
+      break;
+    case 'fontItalic':
+      model.setCellFontItalic(op.row, op.col, op.italic);
+      break;
   }
 };
 

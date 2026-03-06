@@ -12,6 +12,8 @@ export interface Cell {
   fontColor?: string;
   bgColor?: string;
   fontSize?: number;
+  fontBold?: boolean;
+  fontItalic?: boolean;
 }
 
 // 表格数据结构
@@ -43,7 +45,9 @@ export type OperationType =
   | 'colResize'
   | 'fontColor'
   | 'bgColor'
-  | 'fontSize';
+  | 'fontSize'
+  | 'fontBold'
+  | 'fontItalic';
 
 export interface BaseOperation {
   type: OperationType;
@@ -119,6 +123,20 @@ export interface FontSizeOp extends BaseOperation {
   size: number;
 }
 
+export interface FontBoldOp extends BaseOperation {
+  type: 'fontBold';
+  row: number;
+  col: number;
+  bold: boolean;
+}
+
+export interface FontItalicOp extends BaseOperation {
+  type: 'fontItalic';
+  row: number;
+  col: number;
+  italic: boolean;
+}
+
 export type CollabOperation =
   | CellEditOp
   | CellMergeOp
@@ -129,7 +147,9 @@ export type CollabOperation =
   | ColResizeOp
   | FontColorOp
   | BgColorOp
-  | FontSizeOp;
+  | FontSizeOp
+  | FontBoldOp
+  | FontItalicOp;
 
 // ============================================================
 // WebSocket 协议消息类型

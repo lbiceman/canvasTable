@@ -229,6 +229,112 @@ export class SpreadsheetModel {
     this.isDirty = true;
   }
 
+  // 设置单元格字体加粗
+  public setCellFontBold(row: number, col: number, bold: boolean): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的字体加粗
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontBold = bold;
+    } else {
+      cell.fontBold = bold;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格字体加粗
+  public setRangeFontBold(startRow: number, startCol: number, endRow: number, endCol: number, bold: boolean): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是被合并的单元格，设置其父单元格的字体加粗
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontBold = bold;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontBold = bold;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置单元格字体斜体
+  public setCellFontItalic(row: number, col: number, italic: boolean): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的字体斜体
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontItalic = italic;
+    } else {
+      cell.fontItalic = italic;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格字体斜体
+  public setRangeFontItalic(startRow: number, startCol: number, endRow: number, endCol: number, italic: boolean): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是被合并的单元格，设置其父单元格的字体斜体
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontItalic = italic;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontItalic = italic;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 设置单元格背景颜色
   public setCellBgColor(row: number, col: number, color: string): void {
     if (!this.isValidPosition(row, col)) {
@@ -759,6 +865,8 @@ export class SpreadsheetModel {
     fontColor?: string;
     bgColor?: string;
     fontSize?: number;
+    fontBold?: boolean;
+    fontItalic?: boolean;
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -779,6 +887,8 @@ export class SpreadsheetModel {
         fontColor: parentCell.fontColor,
         bgColor: parentCell.bgColor,
         fontSize: parentCell.fontSize,
+        fontBold: parentCell.fontBold,
+        fontItalic: parentCell.fontItalic,
       };
     }
 
@@ -792,6 +902,8 @@ export class SpreadsheetModel {
       fontColor: cell.fontColor,
       bgColor: cell.bgColor,
       fontSize: cell.fontSize,
+      fontBold: cell.fontBold,
+      fontItalic: cell.fontItalic,
     };
   }
 
@@ -980,7 +1092,7 @@ export class SpreadsheetModel {
         const cell = this.data.cells[i][j];
 
         // 只保存有内容、合并信息或颜色的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize) {
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic) {
           exportData.data.cells.push({
             row: i,
             col: j,
@@ -992,6 +1104,8 @@ export class SpreadsheetModel {
             fontColor: cell.fontColor,
             bgColor: cell.bgColor,
             fontSize: cell.fontSize,
+            fontBold: cell.fontBold,
+            fontItalic: cell.fontItalic,
           });
         }
       }
@@ -1091,7 +1205,7 @@ export class SpreadsheetModel {
       // 导入单元格数据
       if (data.cells && Array.isArray(data.cells)) {
         data.cells.forEach((cellData: any) => {
-          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize } = cellData;
+          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic } = cellData;
 
           if (this.isValidPosition(row, col)) {
             this.data.cells[row][col] = {
@@ -1103,6 +1217,8 @@ export class SpreadsheetModel {
               fontColor: fontColor,
               bgColor: bgColor,
               fontSize: fontSize,
+              fontBold: fontBold,
+              fontItalic: fontItalic,
             };
           }
         });

@@ -139,6 +139,20 @@ const applyOperationToDocument = (doc: SpreadsheetData, op: CollabOperation): vo
       }
       break;
     }
+    case 'fontBold': {
+      // 字体加粗是单元格级别设置
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].fontBold = op.bold;
+      }
+      break;
+    }
+    case 'fontItalic': {
+      // 字体斜体是单元格级别设置
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].fontItalic = op.italic;
+      }
+      break;
+    }
   }
 };
 
