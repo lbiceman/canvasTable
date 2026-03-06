@@ -11,6 +11,7 @@ import {
   FontSizeOp,
   FontBoldOp,
   FontItalicOp,
+  FontUnderlineOp,
 } from './types';
 
 // ============================================================
@@ -144,6 +145,15 @@ const transformFontItalicVsRowInsert = (
   return result;
 };
 
+const transformFontUnderlineVsRowInsert = (
+  op: FontUnderlineOp,
+  insertOp: RowInsertOp
+): FontUnderlineOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -243,6 +253,17 @@ const transformFontItalicVsRowDelete = (
   op: FontItalicOp,
   deleteOp: RowDeleteOp
 ): FontItalicOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontUnderlineVsRowDelete = (
+  op: FontUnderlineOp,
+  deleteOp: RowDeleteOp
+): FontUnderlineOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -450,6 +471,8 @@ const transformSingle = (
         return transformFontBoldVsRowInsert(opA, opB);
       case 'fontItalic':
         return transformFontItalicVsRowInsert(opA, opB);
+      case 'fontUnderline':
+        return transformFontUnderlineVsRowInsert(opA, opB);
     }
   }
 
@@ -478,6 +501,8 @@ const transformSingle = (
         return transformFontBoldVsRowDelete(opA, opB);
       case 'fontItalic':
         return transformFontItalicVsRowDelete(opA, opB);
+      case 'fontUnderline':
+        return transformFontUnderlineVsRowDelete(opA, opB);
     }
   }
 
@@ -568,6 +593,20 @@ const transformSingle = (
         }
         return result;
       }
+      case 'fontUnderline': {
+        // 如果字体下划线操作在合并范围内，调整到父单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
       default:
         return cloneOp(opA);
     }
@@ -642,7 +681,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -802,6 +841,16 @@ export const invertOperation = (
       return {
         ...op,
         italic: cell?.fontItalic ?? false,
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'fontUnderline': {
+      // 反向操作：恢复原始字体下划线状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        underline: cell?.fontUnderline ?? false,
         timestamp: Date.now(),
       };
     }

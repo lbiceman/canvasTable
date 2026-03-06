@@ -153,6 +153,13 @@ const applyOperationToDocument = (doc: SpreadsheetData, op: CollabOperation): vo
       }
       break;
     }
+    case 'fontUnderline': {
+      // 字体下划线是单元格级别设置
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].fontUnderline = op.underline;
+      }
+      break;
+    }
   }
 };
 

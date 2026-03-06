@@ -13,6 +13,7 @@ import {
   FontSizeOp,
   FontBoldOp,
   FontItalicOp,
+  FontUnderlineOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -29,6 +30,7 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'fontSize',
   'fontBold',
   'fontItalic',
+  'fontUnderline',
 ]);
 
 /**
@@ -117,6 +119,10 @@ export const deserializeOperation = (json: string): CollabOperation => {
       validateFontItalicOp(obj);
       return obj as unknown as FontItalicOp;
 
+    case 'fontUnderline':
+      validateFontUnderlineOp(obj);
+      return obj as unknown as FontUnderlineOp;
+
     default:
       throw new Error(`未知的操作类型: ${type}`);
   }
@@ -193,4 +199,10 @@ const validateFontItalicOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('fontItalic: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('fontItalic: 缺少 col');
   if (typeof obj.italic !== 'boolean') throw new Error('fontItalic: 缺少 italic');
+};
+
+const validateFontUnderlineOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontUnderline: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontUnderline: 缺少 col');
+  if (typeof obj.underline !== 'boolean') throw new Error('fontUnderline: 缺少 underline');
 };

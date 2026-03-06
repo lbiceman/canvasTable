@@ -335,6 +335,59 @@ export class SpreadsheetModel {
     this.isDirty = true;
   }
 
+  // 设置单元格字体下划线
+  public setCellFontUnderline(row: number, col: number, underline: boolean): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的下划线
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontUnderline = underline;
+    } else {
+      cell.fontUnderline = underline;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格字体下划线
+  public setRangeFontUnderline(startRow: number, startCol: number, endRow: number, endCol: number, underline: boolean): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是被合并的单元格，设置其父单元格的下划线
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontUnderline = underline;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontUnderline = underline;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 设置单元格背景颜色
   public setCellBgColor(row: number, col: number, color: string): void {
     if (!this.isValidPosition(row, col)) {
@@ -867,6 +920,7 @@ export class SpreadsheetModel {
     fontSize?: number;
     fontBold?: boolean;
     fontItalic?: boolean;
+    fontUnderline?: boolean;
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -889,6 +943,7 @@ export class SpreadsheetModel {
         fontSize: parentCell.fontSize,
         fontBold: parentCell.fontBold,
         fontItalic: parentCell.fontItalic,
+        fontUnderline: parentCell.fontUnderline,
       };
     }
 
@@ -904,6 +959,7 @@ export class SpreadsheetModel {
       fontSize: cell.fontSize,
       fontBold: cell.fontBold,
       fontItalic: cell.fontItalic,
+      fontUnderline: cell.fontUnderline,
     };
   }
 
@@ -1092,7 +1148,7 @@ export class SpreadsheetModel {
         const cell = this.data.cells[i][j];
 
         // 只保存有内容、合并信息或颜色的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic) {
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline) {
           exportData.data.cells.push({
             row: i,
             col: j,
@@ -1106,6 +1162,7 @@ export class SpreadsheetModel {
             fontSize: cell.fontSize,
             fontBold: cell.fontBold,
             fontItalic: cell.fontItalic,
+            fontUnderline: cell.fontUnderline,
           });
         }
       }
@@ -1205,7 +1262,7 @@ export class SpreadsheetModel {
       // 导入单元格数据
       if (data.cells && Array.isArray(data.cells)) {
         data.cells.forEach((cellData: any) => {
-          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic } = cellData;
+          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline } = cellData;
 
           if (this.isValidPosition(row, col)) {
             this.data.cells[row][col] = {
@@ -1219,6 +1276,7 @@ export class SpreadsheetModel {
               fontSize: fontSize,
               fontBold: fontBold,
               fontItalic: fontItalic,
+              fontUnderline: fontUnderline,
             };
           }
         });

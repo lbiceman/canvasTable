@@ -152,6 +152,9 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'fontItalic':
       model.setCellFontItalic(op.row, op.col, op.italic);
       break;
+    case 'fontUnderline':
+      model.setCellFontUnderline(op.row, op.col, op.underline);
+      break;
   }
 };
 

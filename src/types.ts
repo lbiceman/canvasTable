@@ -10,6 +10,7 @@ export interface Cell {
   fontSize?: number;
   fontBold?: boolean;
   fontItalic?: boolean;
+  fontUnderline?: boolean;
 }
 
 // 表格数据结构
@@ -79,6 +80,7 @@ export type {
   FontSizeOp,
   FontBoldOp,
   FontItalicOp,
+  FontUnderlineOp,
   RemoteUser,
   MessageType,
   WebSocketMessage,

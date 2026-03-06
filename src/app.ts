@@ -466,6 +466,12 @@ export class SpreadsheetApp {
       fontItalicBtn.addEventListener('click', this.handleFontItalicChange.bind(this));
     }
 
+    // 字体下划线按钮事件
+    const fontUnderlineBtn = document.getElementById('font-underline-btn');
+    if (fontUnderlineBtn) {
+      fontUnderlineBtn.addEventListener('click', this.handleFontUnderlineChange.bind(this));
+    }
+
     const setContentButton = document.getElementById('set-content');
     if (setContentButton) {
       setContentButton.addEventListener('click', this.handleSetContent.bind(this));
@@ -1855,6 +1861,47 @@ export class SpreadsheetApp {
     this.renderer.render();
   }
 
+  // 处理字体下划线变化
+  private handleFontUnderlineChange(): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    const fontUnderlineBtn = document.getElementById('font-underline-btn') as HTMLButtonElement;
+    if (!fontUnderlineBtn) return;
+
+    // 切换下划线状态
+    const isUnderline = !fontUnderlineBtn.classList.contains('active');
+    fontUnderlineBtn.classList.toggle('active', isUnderline);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的字体下划线
+    this.model.setRangeFontUnderline(startRow, startCol, endRow, endCol, isUnderline);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontUnderline',
+            row: r,
+            col: c,
+            underline: isUnderline,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
   // 处理设置单元格内容
   private handleSetContent(): void {
     if (this.currentSelection) {
@@ -1948,6 +1995,12 @@ export class SpreadsheetApp {
         const fontItalicBtn = document.getElementById('font-italic-btn');
         if (fontItalicBtn) {
           fontItalicBtn.classList.toggle('active', cellInfo.fontItalic || false);
+        }
+
+        // 更新字体下划线按钮状态
+        const fontUnderlineBtn = document.getElementById('font-underline-btn');
+        if (fontUnderlineBtn) {
+          fontUnderlineBtn.classList.toggle('active', cellInfo.fontUnderline || false);
         }
       }
     }

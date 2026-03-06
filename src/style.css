@@ -824,6 +824,33 @@ h1 {
   color: var(--theme-selection-text);
 }
 
+/* 字体下划线按钮样式 */
+.font-underline-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--theme-button-text);
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.font-underline-btn:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-underline-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+  color: var(--theme-selection-text);
+}
+
 /* 搜索对话框样式 */
 .search-dialog {
   position: fixed;

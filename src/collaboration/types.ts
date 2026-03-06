@@ -17,7 +17,8 @@ export type OperationType =
   | 'bgColor'
   | 'fontSize'
   | 'fontBold'
-  | 'fontItalic';
+  | 'fontItalic'
+  | 'fontUnderline';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -120,6 +121,14 @@ export interface FontItalicOp extends BaseOperation {
   italic: boolean;
 }
 
+// 字体下划线操作（单元格级别）
+export interface FontUnderlineOp extends BaseOperation {
+  type: 'fontUnderline';
+  row: number;
+  col: number;
+  underline: boolean;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -133,7 +142,8 @@ export type CollabOperation =
   | BgColorOp
   | FontSizeOp
   | FontBoldOp
-  | FontItalicOp;
+  | FontItalicOp
+  | FontUnderlineOp;
 
 // ============================================================
 // 远程用户与光标感知

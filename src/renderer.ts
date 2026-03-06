@@ -511,6 +511,9 @@ export class SpreadsheetRenderer {
           const fontStyle = cellInfo.fontItalic ? 'italic ' : '';
           this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
 
+          // 记录是否需要绘制下划线
+          const needUnderline = cellInfo.fontUnderline;
+
           // 绘制背景颜色
           if (cellInfo.bgColor) {
             this.ctx.fillStyle = cellInfo.bgColor;
@@ -539,6 +542,18 @@ export class SpreadsheetRenderer {
               currentX + cellPadding,
               currentY + totalHeight / 2
             );
+
+            // 绘制下划线
+            if (needUnderline) {
+              const textY = currentY + totalHeight / 2;
+              const underlineY = textY + 2;
+              this.ctx.beginPath();
+              this.ctx.moveTo(currentX + cellPadding, underlineY);
+              this.ctx.lineTo(currentX + cellPadding + textWidth, underlineY);
+              this.ctx.strokeStyle = cellInfo.fontColor || this.themeColors.cellText;
+              this.ctx.lineWidth = 1;
+              this.ctx.stroke();
+            }
           }
 
           this.ctx.restore();

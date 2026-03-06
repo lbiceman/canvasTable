@@ -14,6 +14,7 @@ export interface Cell {
   fontSize?: number;
   fontBold?: boolean;
   fontItalic?: boolean;
+  fontUnderline?: boolean;
 }
 
 // 表格数据结构
@@ -47,7 +48,8 @@ export type OperationType =
   | 'bgColor'
   | 'fontSize'
   | 'fontBold'
-  | 'fontItalic';
+  | 'fontItalic'
+  | 'fontUnderline';
 
 export interface BaseOperation {
   type: OperationType;
@@ -137,6 +139,13 @@ export interface FontItalicOp extends BaseOperation {
   italic: boolean;
 }
 
+export interface FontUnderlineOp extends BaseOperation {
+  type: 'fontUnderline';
+  row: number;
+  col: number;
+  underline: boolean;
+}
+
 export type CollabOperation =
   | CellEditOp
   | CellMergeOp
@@ -149,7 +158,8 @@ export type CollabOperation =
   | BgColorOp
   | FontSizeOp
   | FontBoldOp
-  | FontItalicOp;
+  | FontItalicOp
+  | FontUnderlineOp;
 
 // ============================================================
 // WebSocket 协议消息类型
