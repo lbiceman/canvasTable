@@ -535,11 +535,28 @@ export class SpreadsheetRenderer {
               text += '...';
             }
 
+            // 设置文本对齐方式
+            const align = cellInfo.fontAlign || 'left';
+            this.ctx.textAlign = align;
+            
+            // 计算文本X坐标
+            let textX: number;
+            switch (align) {
+              case 'center':
+                textX = currentX + totalWidth / 2;
+                break;
+              case 'right':
+                textX = currentX + totalWidth - cellPadding;
+                break;
+              default: // left
+                textX = currentX + cellPadding;
+            }
+
             // 使用单元格的字体颜色，如果没有设置则使用主题默认颜色
             this.ctx.fillStyle = cellInfo.fontColor || this.themeColors.cellText;
             this.ctx.fillText(
               text,
-              currentX + cellPadding,
+              textX,
               currentY + totalHeight / 2
             );
 

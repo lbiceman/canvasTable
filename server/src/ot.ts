@@ -16,6 +16,7 @@ import {
   FontBoldOp,
   FontItalicOp,
   FontUnderlineOp,
+  FontAlignOp,
 } from './types.ts';
 
 // 深拷贝操作对象
@@ -105,6 +106,12 @@ const transformFontUnderlineVsRowInsert = (op: FontUnderlineOp, insertOp: RowIns
   return result;
 };
 
+const transformFontAlignVsRowInsert = (op: FontAlignOp, insertOp: RowInsertOp): FontAlignOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -184,6 +191,14 @@ const transformFontItalicVsRowDelete = (op: FontItalicOp, deleteOp: RowDeleteOp)
 };
 
 const transformFontUnderlineVsRowDelete = (op: FontUnderlineOp, deleteOp: RowDeleteOp): FontUnderlineOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontAlignVsRowDelete = (op: FontAlignOp, deleteOp: RowDeleteOp): FontAlignOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -311,6 +326,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontBold': return transformFontBoldVsRowInsert(opA, opB);
       case 'fontItalic': return transformFontItalicVsRowInsert(opA, opB);
       case 'fontUnderline': return transformFontUnderlineVsRowInsert(opA, opB);
+      case 'fontAlign': return transformFontAlignVsRowInsert(opA, opB);
     }
   }
 
@@ -328,6 +344,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontBold': return transformFontBoldVsRowDelete(opA, opB);
       case 'fontItalic': return transformFontItalicVsRowDelete(opA, opB);
       case 'fontUnderline': return transformFontUnderlineVsRowDelete(opA, opB);
+      case 'fontAlign': return transformFontAlignVsRowDelete(opA, opB);
     }
   }
 

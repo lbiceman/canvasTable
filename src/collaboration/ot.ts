@@ -12,6 +12,7 @@ import {
   FontBoldOp,
   FontItalicOp,
   FontUnderlineOp,
+  FontAlignOp,
 } from './types';
 
 // ============================================================
@@ -154,6 +155,15 @@ const transformFontUnderlineVsRowInsert = (
   return result;
 };
 
+const transformFontAlignVsRowInsert = (
+  op: FontAlignOp,
+  insertOp: RowInsertOp
+): FontAlignOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -264,6 +274,17 @@ const transformFontUnderlineVsRowDelete = (
   op: FontUnderlineOp,
   deleteOp: RowDeleteOp
 ): FontUnderlineOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformFontAlignVsRowDelete = (
+  op: FontAlignOp,
+  deleteOp: RowDeleteOp
+): FontAlignOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -473,6 +494,8 @@ const transformSingle = (
         return transformFontItalicVsRowInsert(opA, opB);
       case 'fontUnderline':
         return transformFontUnderlineVsRowInsert(opA, opB);
+      case 'fontAlign':
+        return transformFontAlignVsRowInsert(opA, opB);
     }
   }
 
@@ -503,6 +526,8 @@ const transformSingle = (
         return transformFontItalicVsRowDelete(opA, opB);
       case 'fontUnderline':
         return transformFontUnderlineVsRowDelete(opA, opB);
+      case 'fontAlign':
+        return transformFontAlignVsRowDelete(opA, opB);
     }
   }
 
@@ -681,7 +706,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean; fontAlign?: string } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -851,6 +876,16 @@ export const invertOperation = (
       return {
         ...op,
         underline: cell?.fontUnderline ?? false,
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'fontAlign': {
+      // 反向操作：恢复原始字体对齐状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        align: (cell?.fontAlign as 'left' | 'center' | 'right') ?? 'left',
         timestamp: Date.now(),
       };
     }

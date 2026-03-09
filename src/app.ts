@@ -472,6 +472,22 @@ export class SpreadsheetApp {
       fontUnderlineBtn.addEventListener('click', this.handleFontUnderlineChange.bind(this));
     }
 
+    // 字体对齐按钮事件
+    const fontAlignLeftBtn = document.getElementById('font-align-left-btn');
+    if (fontAlignLeftBtn) {
+      fontAlignLeftBtn.addEventListener('click', () => this.handleFontAlignChange('left'));
+    }
+
+    const fontAlignCenterBtn = document.getElementById('font-align-center-btn');
+    if (fontAlignCenterBtn) {
+      fontAlignCenterBtn.addEventListener('click', () => this.handleFontAlignChange('center'));
+    }
+
+    const fontAlignRightBtn = document.getElementById('font-align-right-btn');
+    if (fontAlignRightBtn) {
+      fontAlignRightBtn.addEventListener('click', () => this.handleFontAlignChange('right'));
+    }
+
     const setContentButton = document.getElementById('set-content');
     if (setContentButton) {
       setContentButton.addEventListener('click', this.handleSetContent.bind(this));
@@ -1902,6 +1918,49 @@ export class SpreadsheetApp {
     this.renderer.render();
   }
 
+  // 处理字体对齐变化
+  private handleFontAlignChange(align: 'left' | 'center' | 'right'): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    // 更新所有对齐按钮状态
+    const leftBtn = document.getElementById('font-align-left-btn');
+    const centerBtn = document.getElementById('font-align-center-btn');
+    const rightBtn = document.getElementById('font-align-right-btn');
+
+    if (leftBtn) leftBtn.classList.toggle('active', align === 'left');
+    if (centerBtn) centerBtn.classList.toggle('active', align === 'center');
+    if (rightBtn) rightBtn.classList.toggle('active', align === 'right');
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的字体对齐
+    this.model.setRangeFontAlign(startRow, startCol, endRow, endCol, align);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'fontAlign',
+            row: r,
+            col: c,
+            align,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
   // 处理设置单元格内容
   private handleSetContent(): void {
     if (this.currentSelection) {
@@ -2002,6 +2061,15 @@ export class SpreadsheetApp {
         if (fontUnderlineBtn) {
           fontUnderlineBtn.classList.toggle('active', cellInfo.fontUnderline || false);
         }
+
+        // 更新字体对齐按钮状态
+        const fontAlignLeftBtn = document.getElementById('font-align-left-btn');
+        const fontAlignCenterBtn = document.getElementById('font-align-center-btn');
+        const fontAlignRightBtn = document.getElementById('font-align-right-btn');
+        const align = cellInfo.fontAlign || 'left';
+        if (fontAlignLeftBtn) fontAlignLeftBtn.classList.toggle('active', align === 'left');
+        if (fontAlignCenterBtn) fontAlignCenterBtn.classList.toggle('active', align === 'center');
+        if (fontAlignRightBtn) fontAlignRightBtn.classList.toggle('active', align === 'right');
       }
     }
 

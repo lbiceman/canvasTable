@@ -152,7 +152,7 @@ button {
   color: var(--theme-button-text);
   border: 1px solid var(--theme-button-border);
   border-radius: var(--radius);
-  padding: 0 12px;
+  padding: 0 6px;
   height: 30px;
   font-size: 13px;
   font-weight: 500;
@@ -849,6 +849,36 @@ h1 {
   background-color: var(--theme-selection-bg);
   border-color: var(--theme-selection-border);
   color: var(--theme-selection-text);
+}
+
+/* 字体对齐按钮样式 */
+.font-align-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 30px;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--theme-button-text);
+}
+
+.font-align-btn:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-align-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+  color: var(--theme-selection-text);
+}
+
+.font-align-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* 搜索对话框样式 */

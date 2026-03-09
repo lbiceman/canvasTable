@@ -14,6 +14,7 @@ import {
   FontBoldOp,
   FontItalicOp,
   FontUnderlineOp,
+  FontAlignOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -31,6 +32,7 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'fontBold',
   'fontItalic',
   'fontUnderline',
+  'fontAlign',
 ]);
 
 /**
@@ -123,6 +125,10 @@ export const deserializeOperation = (json: string): CollabOperation => {
       validateFontUnderlineOp(obj);
       return obj as unknown as FontUnderlineOp;
 
+    case 'fontAlign':
+      validateFontAlignOp(obj);
+      return obj as unknown as FontAlignOp;
+
     default:
       throw new Error(`未知的操作类型: ${type}`);
   }
@@ -205,4 +211,11 @@ const validateFontUnderlineOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('fontUnderline: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('fontUnderline: 缺少 col');
   if (typeof obj.underline !== 'boolean') throw new Error('fontUnderline: 缺少 underline');
+};
+
+const validateFontAlignOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('fontAlign: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('fontAlign: 缺少 col');
+  if (typeof obj.align !== 'string') throw new Error('fontAlign: 缺少 align');
+  if (!['left', 'center', 'right'].includes(obj.align)) throw new Error('fontAlign: align 必须是 left、center 或 right');
 };

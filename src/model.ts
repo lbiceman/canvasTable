@@ -388,6 +388,59 @@ export class SpreadsheetModel {
     this.isDirty = true;
   }
 
+  // 设置单元格字体对齐方式
+  public setCellFontAlign(row: number, col: number, align: 'left' | 'center' | 'right'): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的字体对齐方式
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontAlign = align;
+    } else {
+      cell.fontAlign = align;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格字体对齐方式
+  public setRangeFontAlign(startRow: number, startCol: number, endRow: number, endCol: number, align: 'left' | 'center' | 'right'): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是被合并的单元格，设置其父单元格的字体对齐方式
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontAlign = align;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontAlign = align;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 设置单元格背景颜色
   public setCellBgColor(row: number, col: number, color: string): void {
     if (!this.isValidPosition(row, col)) {
@@ -921,6 +974,7 @@ export class SpreadsheetModel {
     fontBold?: boolean;
     fontItalic?: boolean;
     fontUnderline?: boolean;
+    fontAlign?: 'left' | 'center' | 'right';
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -944,6 +998,7 @@ export class SpreadsheetModel {
         fontBold: parentCell.fontBold,
         fontItalic: parentCell.fontItalic,
         fontUnderline: parentCell.fontUnderline,
+        fontAlign: parentCell.fontAlign,
       };
     }
 
@@ -960,6 +1015,7 @@ export class SpreadsheetModel {
       fontBold: cell.fontBold,
       fontItalic: cell.fontItalic,
       fontUnderline: cell.fontUnderline,
+      fontAlign: cell.fontAlign,
     };
   }
 

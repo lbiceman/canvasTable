@@ -15,6 +15,7 @@ export interface Cell {
   fontBold?: boolean;
   fontItalic?: boolean;
   fontUnderline?: boolean;
+  fontAlign?: 'left' | 'center' | 'right';
 }
 
 // 表格数据结构
@@ -49,7 +50,8 @@ export type OperationType =
   | 'fontSize'
   | 'fontBold'
   | 'fontItalic'
-  | 'fontUnderline';
+  | 'fontUnderline'
+  | 'fontAlign';
 
 export interface BaseOperation {
   type: OperationType;
@@ -146,6 +148,13 @@ export interface FontUnderlineOp extends BaseOperation {
   underline: boolean;
 }
 
+export interface FontAlignOp extends BaseOperation {
+  type: 'fontAlign';
+  row: number;
+  col: number;
+  align: 'left' | 'center' | 'right';
+}
+
 export type CollabOperation =
   | CellEditOp
   | CellMergeOp
@@ -159,7 +168,8 @@ export type CollabOperation =
   | FontSizeOp
   | FontBoldOp
   | FontItalicOp
-  | FontUnderlineOp;
+  | FontUnderlineOp
+  | FontAlignOp;
 
 // ============================================================
 // WebSocket 协议消息类型
