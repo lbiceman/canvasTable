@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "任务完成后自动化测试",
+  "description": "每次任务完成后自动执行 Playwright 测试，生成 HTML 报告并告知地址。如果测试失败则修复问题并重新测试，直到全部通过后自动提交代码。只测试当前任务相关的内容。",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "任务已完成，请按以下步骤执行：\n\n1. 运行 Playwright 自动化测试（只测试当前任务相关的测试文件，不要测试其他内容）：\n   node node_modules\\playwright\\cli.js test e2e/font-style.spec.ts --reporter=html\n\n2. 测试完成后告诉用户 HTML 报告地址（playwright-report 目录），提示用户可以用 `node node_modules\\playwright\\cli.js show-report` 查看。\n\n3. 如果有测试失败：\n   - 分析失败原因\n   - 修复对应的代码问题（不是修改测试，而是修复源代码）\n   - 修复后重新运行测试\n   - 重复此过程直到所有测试通过\n\n4. 所有测试通过后，使用 git 提交代码。commit message 用中文，按照用户提出的需求进行总结概括。"
+  }
+}
