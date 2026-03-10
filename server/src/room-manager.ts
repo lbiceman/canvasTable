@@ -167,6 +167,13 @@ const applyOperationToDocument = (doc: SpreadsheetData, op: CollabOperation): vo
       }
       break;
     }
+    case 'verticalAlign': {
+      // 垂直对齐是单元格级别设置
+      if (op.row < cells.length && op.col < cells[0].length) {
+        cells[op.row][op.col].verticalAlign = op.align;
+      }
+      break;
+    }
   }
 };
 

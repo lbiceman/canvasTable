@@ -16,6 +16,7 @@ export interface Cell {
   fontItalic?: boolean;
   fontUnderline?: boolean;
   fontAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
 }
 
 // 表格数据结构
@@ -51,7 +52,8 @@ export type OperationType =
   | 'fontBold'
   | 'fontItalic'
   | 'fontUnderline'
-  | 'fontAlign';
+  | 'fontAlign'
+  | 'verticalAlign';
 
 export interface BaseOperation {
   type: OperationType;
@@ -155,6 +157,14 @@ export interface FontAlignOp extends BaseOperation {
   align: 'left' | 'center' | 'right';
 }
 
+// 垂直对齐操作（单元格级别）
+export interface VerticalAlignOp extends BaseOperation {
+  type: 'verticalAlign';
+  row: number;
+  col: number;
+  align: 'top' | 'middle' | 'bottom';
+}
+
 export type CollabOperation =
   | CellEditOp
   | CellMergeOp
@@ -169,7 +179,8 @@ export type CollabOperation =
   | FontBoldOp
   | FontItalicOp
   | FontUnderlineOp
-  | FontAlignOp;
+  | FontAlignOp
+  | VerticalAlignOp;
 
 // ============================================================
 // WebSocket 协议消息类型

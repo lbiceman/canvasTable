@@ -13,6 +13,7 @@ import {
   FontItalicOp,
   FontUnderlineOp,
   FontAlignOp,
+  VerticalAlignOp,
 } from './types';
 
 // ============================================================
@@ -164,6 +165,15 @@ const transformFontAlignVsRowInsert = (
   return result;
 };
 
+const transformVerticalAlignVsRowInsert = (
+  op: VerticalAlignOp,
+  insertOp: RowInsertOp
+): VerticalAlignOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -285,6 +295,17 @@ const transformFontAlignVsRowDelete = (
   op: FontAlignOp,
   deleteOp: RowDeleteOp
 ): FontAlignOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformVerticalAlignVsRowDelete = (
+  op: VerticalAlignOp,
+  deleteOp: RowDeleteOp
+): VerticalAlignOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -496,6 +517,8 @@ const transformSingle = (
         return transformFontUnderlineVsRowInsert(opA, opB);
       case 'fontAlign':
         return transformFontAlignVsRowInsert(opA, opB);
+      case 'verticalAlign':
+        return transformVerticalAlignVsRowInsert(opA, opB);
     }
   }
 
@@ -528,6 +551,8 @@ const transformSingle = (
         return transformFontUnderlineVsRowDelete(opA, opB);
       case 'fontAlign':
         return transformFontAlignVsRowDelete(opA, opB);
+      case 'verticalAlign':
+        return transformVerticalAlignVsRowDelete(opA, opB);
     }
   }
 
@@ -632,6 +657,20 @@ const transformSingle = (
         }
         return result;
       }
+      case 'verticalAlign': {
+        // 如果垂直对齐操作在合并范围内，调整到父单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
       default:
         return cloneOp(opA);
     }
@@ -706,7 +745,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean; fontAlign?: string } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean; fontAlign?: string; verticalAlign?: string } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -886,6 +925,16 @@ export const invertOperation = (
       return {
         ...op,
         align: (cell?.fontAlign as 'left' | 'center' | 'right') ?? 'left',
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'verticalAlign': {
+      // 反向操作：恢复原始垂直对齐状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        align: (cell?.verticalAlign as 'top' | 'middle' | 'bottom') ?? 'middle',
         timestamp: Date.now(),
       };
     }

@@ -52,6 +52,8 @@ public class DocumentApplier {
             applyFontUnderline(cells, (FontUnderlineOp) op);
         } else if (op instanceof FontAlignOp) {
             applyFontAlign(cells, (FontAlignOp) op);
+        } else if (op instanceof VerticalAlignOp) {
+            applyVerticalAlign(cells, (VerticalAlignOp) op);
         }
     }
 
@@ -186,6 +188,12 @@ public class DocumentApplier {
     private static void applyFontAlign(List<List<Cell>> cells, FontAlignOp op) {
         if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
             cells.get(op.getRow()).get(op.getCol()).setFontAlign(op.getAlign());
+        }
+    }
+
+    private static void applyVerticalAlign(List<List<Cell>> cells, VerticalAlignOp op) {
+        if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
+            cells.get(op.getRow()).get(op.getCol()).setVerticalAlign(op.getAlign());
         }
     }
 }

@@ -503,6 +503,7 @@ export class CollaborationEngine {
           fontBold: cell.fontBold,
           fontItalic: cell.fontItalic,
           fontUnderline: cell.fontUnderline,
+          verticalAlign: cell.verticalAlign,
         };
       },
       getRowHeight(row: number) {

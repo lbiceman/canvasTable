@@ -21,6 +21,7 @@ public class Cell {
     private Boolean fontItalic;
     private Boolean fontUnderline;
     private String fontAlign;
+    private String verticalAlign;
 
     public Cell() {
         this.content = "";
@@ -135,6 +136,14 @@ public class Cell {
         this.fontAlign = fontAlign;
     }
 
+    public String getVerticalAlign() {
+        return verticalAlign;
+    }
+
+    public void setVerticalAlign(String verticalAlign) {
+        this.verticalAlign = verticalAlign;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -151,12 +160,13 @@ public class Cell {
                 && java.util.Objects.equals(fontBold, cell.fontBold)
                 && java.util.Objects.equals(fontItalic, cell.fontItalic)
                 && java.util.Objects.equals(fontUnderline, cell.fontUnderline)
-                && java.util.Objects.equals(fontAlign, cell.fontAlign);
+                && java.util.Objects.equals(fontAlign, cell.fontAlign)
+                && java.util.Objects.equals(verticalAlign, cell.verticalAlign);
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(content, rowSpan, colSpan, isMerged, mergeParent,
-                fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign);
+                fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign);
     }
 }

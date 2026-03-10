@@ -15,6 +15,7 @@ import {
   FontItalicOp,
   FontUnderlineOp,
   FontAlignOp,
+  VerticalAlignOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -33,6 +34,7 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'fontItalic',
   'fontUnderline',
   'fontAlign',
+  'verticalAlign',
 ]);
 
 /**
@@ -129,6 +131,10 @@ export const deserializeOperation = (json: string): CollabOperation => {
       validateFontAlignOp(obj);
       return obj as unknown as FontAlignOp;
 
+    case 'verticalAlign':
+      validateVerticalAlignOp(obj);
+      return obj as unknown as VerticalAlignOp;
+
     default:
       throw new Error(`未知的操作类型: ${type}`);
   }
@@ -218,4 +224,11 @@ const validateFontAlignOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.col !== 'number') throw new Error('fontAlign: 缺少 col');
   if (typeof obj.align !== 'string') throw new Error('fontAlign: 缺少 align');
   if (!['left', 'center', 'right'].includes(obj.align)) throw new Error('fontAlign: align 必须是 left、center 或 right');
+};
+
+const validateVerticalAlignOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('verticalAlign: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('verticalAlign: 缺少 col');
+  if (typeof obj.align !== 'string') throw new Error('verticalAlign: 缺少 align');
+  if (!['top', 'middle', 'bottom'].includes(obj.align)) throw new Error('verticalAlign: align 必须是 top、middle 或 bottom');
 };

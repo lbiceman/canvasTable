@@ -22,7 +22,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = FontBoldOp.class, name = "fontBold"),
         @JsonSubTypes.Type(value = FontItalicOp.class, name = "fontItalic"),
         @JsonSubTypes.Type(value = FontUnderlineOp.class, name = "fontUnderline"),
-        @JsonSubTypes.Type(value = FontAlignOp.class, name = "fontAlign")
+        @JsonSubTypes.Type(value = FontAlignOp.class, name = "fontAlign"),
+        @JsonSubTypes.Type(value = VerticalAlignOp.class, name = "verticalAlign")
 })
 public abstract class CollabOperation {
 

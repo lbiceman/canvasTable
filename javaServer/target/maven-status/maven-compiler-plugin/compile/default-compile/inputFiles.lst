@@ -24,6 +24,7 @@ D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\RowIns
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\RowResizeOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\Selection.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SpreadsheetData.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\VerticalAlignOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\WebSocketMessage.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\repository\OperationRepository.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\repository\RoomRepository.java

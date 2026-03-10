@@ -881,6 +881,66 @@ h1 {
   height: 20px;
 }
 
+/* 垂直对齐选择器样式 */
+.vertical-align-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.vertical-align-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.vertical-align-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+#vertical-align-text {
+  font-size: 12px;
+}
+
+.vertical-align-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 70px;
+}
+
+.vertical-align-dropdown.visible {
+  display: block;
+}
+
+.vertical-align-option {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.vertical-align-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.vertical-align-option.active {
+  background-color: var(--theme-selection-bg);
+  font-weight: 600;
+}
+
 /* 搜索对话框样式 */
 .search-dialog {
   position: fixed;

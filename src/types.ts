@@ -12,6 +12,7 @@ export interface Cell {
   fontItalic?: boolean;
   fontUnderline?: boolean;
   fontAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
 }
 
 // 表格数据结构
@@ -83,6 +84,7 @@ export type {
   FontItalicOp,
   FontUnderlineOp,
   FontAlignOp,
+  VerticalAlignOp,
   RemoteUser,
   MessageType,
   WebSocketMessage,

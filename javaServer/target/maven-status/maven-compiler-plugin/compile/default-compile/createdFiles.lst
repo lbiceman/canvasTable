@@ -24,6 +24,7 @@ com\iceexcel\server\model\FontColorOp.class
 com\iceexcel\server\model\FontUnderlineOp.class
 com\iceexcel\server\model\Cell.class
 com\iceexcel\server\model\FontSizeOp.class
+com\iceexcel\server\model\VerticalAlignOp.class
 com\iceexcel\server\service\OTServer$ReceiveResult.class
 com\iceexcel\server\model\Selection.class
 com\iceexcel\server\service\DocumentApplier.class

@@ -124,6 +124,12 @@ public class OTTransformer {
         return result;
     }
 
+    private static VerticalAlignOp transformVerticalAlignVsRowInsert(VerticalAlignOp op, RowInsertOp insertOp) {
+        VerticalAlignOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
     // ============================================================
     // 具体操作类型 vs RowDelete 的转换
     // ============================================================
@@ -214,6 +220,14 @@ public class OTTransformer {
         Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
         if (newRow == null) return null;
         FontAlignOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static VerticalAlignOp transformVerticalAlignVsRowDelete(VerticalAlignOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        VerticalAlignOp result = cloneOp(op);
         result.setRow(newRow);
         return result;
     }
@@ -360,6 +374,7 @@ public class OTTransformer {
             if (opA instanceof FontItalicOp) return transformFontItalicVsRowInsert((FontItalicOp) opA, insertOp);
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsRowInsert((FontUnderlineOp) opA, insertOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsRowInsert((FontAlignOp) opA, insertOp);
+            if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsRowInsert((VerticalAlignOp) opA, insertOp);
         }
 
         // opB 是 rowDelete
@@ -378,6 +393,7 @@ public class OTTransformer {
             if (opA instanceof FontItalicOp) return transformFontItalicVsRowDelete((FontItalicOp) opA, deleteOp);
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsRowDelete((FontUnderlineOp) opA, deleteOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsRowDelete((FontAlignOp) opA, deleteOp);
+            if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsRowDelete((VerticalAlignOp) opA, deleteOp);
         }
 
         // opB 是 cellEdit
@@ -434,6 +450,14 @@ public class OTTransformer {
             }
             if (opA instanceof FontUnderlineOp) {
                 FontUnderlineOp result = cloneOp((FontUnderlineOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof VerticalAlignOp) {
+                VerticalAlignOp result = cloneOp((VerticalAlignOp) opA);
                 if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
                     result.setRow(mergeOp.getStartRow());
                     result.setCol(mergeOp.getStartCol());

@@ -454,6 +454,9 @@ export class SpreadsheetApp {
     // 初始化字体大小选择器
     this.initFontSizePicker();
 
+    // 初始化垂直对齐选择器
+    this.initVerticalAlignPicker();
+
     // 字体加粗按钮事件
     const fontBoldBtn = document.getElementById('font-bold-btn');
     if (fontBoldBtn) {
@@ -1682,6 +1685,57 @@ export class SpreadsheetApp {
     }
   }
 
+  // 垂直对齐显示文本映射
+  private static readonly VERTICAL_ALIGN_LABELS: Record<string, string> = {
+    top: '上对齐',
+    middle: '居中',
+    bottom: '下对齐',
+  };
+
+  // 初始化垂直对齐选择器
+  private initVerticalAlignPicker(): void {
+    const btn = document.getElementById('vertical-align-btn');
+    const dropdown = document.getElementById('vertical-align-dropdown');
+    if (!btn || !dropdown) return;
+
+    // 点击选项
+    dropdown.querySelectorAll('.vertical-align-option').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const align = (el as HTMLElement).dataset.align as 'top' | 'middle' | 'bottom';
+        this.handleVerticalAlignChange(align);
+        dropdown.classList.remove('visible');
+      });
+    });
+
+    // 点击按钮切换下拉框
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+  }
+
+  // 更新垂直对齐按钮显示文本和下拉选项激活状态
+  private updateVerticalAlignUI(align: string): void {
+    const textEl = document.getElementById('vertical-align-text');
+    if (textEl) {
+      textEl.textContent = SpreadsheetApp.VERTICAL_ALIGN_LABELS[align] || '居中';
+    }
+
+    const dropdown = document.getElementById('vertical-align-dropdown');
+    if (dropdown) {
+      dropdown.querySelectorAll('.vertical-align-option').forEach((el) => {
+        const optionEl = el as HTMLElement;
+        optionEl.classList.toggle('active', optionEl.dataset.align === align);
+      });
+    }
+  }
+
   // 处理字体大小变更（应用到当前选中的单元格）
   private handleFontSizeChange(size: number): void {
     if (!this.currentSelection) {
@@ -1961,6 +2015,43 @@ export class SpreadsheetApp {
     this.renderer.render();
   }
 
+  // 处理垂直对齐变化
+  private handleVerticalAlignChange(align: 'top' | 'middle' | 'bottom'): void {
+    if (!this.currentSelection) {
+      return;
+    }
+
+    // 更新按钮文本和下拉选项
+    this.updateVerticalAlignUI(align);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的垂直对齐
+    this.model.setRangeVerticalAlign(startRow, startCol, endRow, endCol, align);
+
+    // 协同模式下为每个单元格提交操作
+    if (this.isCollaborationMode()) {
+      const minRow = Math.min(startRow, endRow);
+      const maxRow = Math.max(startRow, endRow);
+      const minCol = Math.min(startCol, endCol);
+      const maxCol = Math.max(startCol, endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'verticalAlign',
+            row: r,
+            col: c,
+            align,
+          });
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+  }
+
   // 处理设置单元格内容
   private handleSetContent(): void {
     if (this.currentSelection) {
@@ -2070,6 +2161,9 @@ export class SpreadsheetApp {
         if (fontAlignLeftBtn) fontAlignLeftBtn.classList.toggle('active', align === 'left');
         if (fontAlignCenterBtn) fontAlignCenterBtn.classList.toggle('active', align === 'center');
         if (fontAlignRightBtn) fontAlignRightBtn.classList.toggle('active', align === 'right');
+
+        // 更新垂直对齐按钮状态
+        this.updateVerticalAlignUI(cellInfo.verticalAlign || 'middle');
       }
     }
 

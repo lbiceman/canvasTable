@@ -17,6 +17,7 @@ import {
   FontItalicOp,
   FontUnderlineOp,
   FontAlignOp,
+  VerticalAlignOp,
 } from './types.ts';
 
 // 深拷贝操作对象
@@ -112,6 +113,12 @@ const transformFontAlignVsRowInsert = (op: FontAlignOp, insertOp: RowInsertOp): 
   return result;
 };
 
+const transformVerticalAlignVsRowInsert = (op: VerticalAlignOp, insertOp: RowInsertOp): VerticalAlignOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -199,6 +206,14 @@ const transformFontUnderlineVsRowDelete = (op: FontUnderlineOp, deleteOp: RowDel
 };
 
 const transformFontAlignVsRowDelete = (op: FontAlignOp, deleteOp: RowDeleteOp): FontAlignOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformVerticalAlignVsRowDelete = (op: VerticalAlignOp, deleteOp: RowDeleteOp): VerticalAlignOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -327,6 +342,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontItalic': return transformFontItalicVsRowInsert(opA, opB);
       case 'fontUnderline': return transformFontUnderlineVsRowInsert(opA, opB);
       case 'fontAlign': return transformFontAlignVsRowInsert(opA, opB);
+      case 'verticalAlign': return transformVerticalAlignVsRowInsert(opA, opB);
     }
   }
 
@@ -345,6 +361,7 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
       case 'fontItalic': return transformFontItalicVsRowDelete(opA, opB);
       case 'fontUnderline': return transformFontUnderlineVsRowDelete(opA, opB);
       case 'fontAlign': return transformFontAlignVsRowDelete(opA, opB);
+      case 'verticalAlign': return transformVerticalAlignVsRowDelete(opA, opB);
     }
   }
 
@@ -398,6 +415,14 @@ const transformSingle = (opA: CollabOperation, opB: CollabOperation): CollabOper
         return result;
       }
       case 'fontUnderline': {
+        const result = cloneOp(opA);
+        if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'verticalAlign': {
         const result = cloneOp(opA);
         if (opA.row >= opB.startRow && opA.row <= opB.endRow && opA.col >= opB.startCol && opA.col <= opB.endCol) {
           result.row = opB.startRow;

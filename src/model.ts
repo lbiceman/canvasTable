@@ -441,6 +441,59 @@ export class SpreadsheetModel {
     this.isDirty = true;
   }
 
+  // 设置单元格垂直对齐方式
+  public setCellVerticalAlign(row: number, col: number, align: 'top' | 'middle' | 'bottom'): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的垂直对齐方式
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].verticalAlign = align;
+    } else {
+      cell.verticalAlign = align;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置选区范围内所有单元格的垂直对齐方式
+  public setRangeVerticalAlign(startRow: number, startCol: number, endRow: number, endCol: number, align: 'top' | 'middle' | 'bottom'): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是被合并的单元格，设置其父单元格的垂直对齐方式
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].verticalAlign = align;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.verticalAlign = align;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 设置单元格背景颜色
   public setCellBgColor(row: number, col: number, color: string): void {
     if (!this.isValidPosition(row, col)) {
@@ -975,6 +1028,7 @@ export class SpreadsheetModel {
     fontItalic?: boolean;
     fontUnderline?: boolean;
     fontAlign?: 'left' | 'center' | 'right';
+    verticalAlign?: 'top' | 'middle' | 'bottom';
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -999,6 +1053,7 @@ export class SpreadsheetModel {
         fontItalic: parentCell.fontItalic,
         fontUnderline: parentCell.fontUnderline,
         fontAlign: parentCell.fontAlign,
+        verticalAlign: parentCell.verticalAlign,
       };
     }
 
@@ -1016,6 +1071,7 @@ export class SpreadsheetModel {
       fontItalic: cell.fontItalic,
       fontUnderline: cell.fontUnderline,
       fontAlign: cell.fontAlign,
+      verticalAlign: cell.verticalAlign,
     };
   }
 
@@ -1204,7 +1260,7 @@ export class SpreadsheetModel {
         const cell = this.data.cells[i][j];
 
         // 只保存有内容、合并信息或颜色的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline) {
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign) {
           exportData.data.cells.push({
             row: i,
             col: j,
@@ -1219,6 +1275,7 @@ export class SpreadsheetModel {
             fontBold: cell.fontBold,
             fontItalic: cell.fontItalic,
             fontUnderline: cell.fontUnderline,
+            verticalAlign: cell.verticalAlign,
           });
         }
       }
@@ -1318,7 +1375,7 @@ export class SpreadsheetModel {
       // 导入单元格数据
       if (data.cells && Array.isArray(data.cells)) {
         data.cells.forEach((cellData: any) => {
-          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline } = cellData;
+          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign } = cellData;
 
           if (this.isValidPosition(row, col)) {
             this.data.cells[row][col] = {
@@ -1333,6 +1390,7 @@ export class SpreadsheetModel {
               fontBold: fontBold,
               fontItalic: fontItalic,
               fontUnderline: fontUnderline,
+              verticalAlign: verticalAlign,
             };
           }
         });

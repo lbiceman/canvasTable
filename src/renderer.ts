@@ -552,17 +552,31 @@ export class SpreadsheetRenderer {
                 textX = currentX + cellPadding;
             }
 
+            // 根据垂直对齐方式计算文本Y坐标
+            const verticalAlign = cellInfo.verticalAlign || 'middle';
+            const fontSize = cellInfo.fontSize || this.cellFontSize;
+            let textY: number;
+            switch (verticalAlign) {
+              case 'top':
+                textY = currentY + fontSize / 2 + cellPadding;
+                break;
+              case 'bottom':
+                textY = currentY + totalHeight - fontSize / 2 - cellPadding;
+                break;
+              default: // middle
+                textY = currentY + totalHeight / 2;
+            }
+
             // 使用单元格的字体颜色，如果没有设置则使用主题默认颜色
             this.ctx.fillStyle = cellInfo.fontColor || this.themeColors.cellText;
             this.ctx.fillText(
               text,
               textX,
-              currentY + totalHeight / 2
+              textY
             );
 
             // 绘制下划线
             if (needUnderline) {
-              const textY = currentY + totalHeight / 2;
               const underlineY = textY + 2;
               this.ctx.beginPath();
               this.ctx.moveTo(currentX + cellPadding, underlineY);

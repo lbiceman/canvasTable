@@ -158,6 +158,9 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'fontAlign':
       model.setCellFontAlign(op.row, op.col, op.align);
       break;
+    case 'verticalAlign':
+      model.setCellVerticalAlign(op.row, op.col, op.align);
+      break;
   }
 };
 
