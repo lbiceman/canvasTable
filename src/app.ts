@@ -457,6 +457,9 @@ export class SpreadsheetApp {
     // 初始化垂直对齐选择器
     this.initVerticalAlignPicker();
 
+    // 初始化水平对齐选择器
+    this.initHorizontalAlignPicker();
+
     // 字体加粗按钮事件
     const fontBoldBtn = document.getElementById('font-bold-btn');
     if (fontBoldBtn) {
@@ -1692,6 +1695,57 @@ export class SpreadsheetApp {
     bottom: '下对齐',
   };
 
+  // 水平对齐显示文本映射
+  private static readonly HORIZONTAL_ALIGN_LABELS: Record<string, string> = {
+    left: '左对齐',
+    center: '居中',
+    right: '右对齐',
+  };
+
+  // 初始化水平对齐选择器
+  private initHorizontalAlignPicker(): void {
+    const btn = document.getElementById('horizontal-align-btn');
+    const dropdown = document.getElementById('horizontal-align-dropdown');
+    if (!btn || !dropdown) return;
+
+    // 点击选项
+    dropdown.querySelectorAll('.horizontal-align-option').forEach((el) => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const align = (el as HTMLElement).dataset.align as 'left' | 'center' | 'right';
+        this.handleFontAlignChange(align);
+        dropdown.classList.remove('visible');
+      });
+    });
+
+    // 点击按钮切换下拉框
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+  }
+
+  // 更新水平对齐按钮显示文本和下拉选项激活状态
+  private updateHorizontalAlignUI(align: string): void {
+    const textEl = document.getElementById('horizontal-align-text');
+    if (textEl) {
+      textEl.textContent = SpreadsheetApp.HORIZONTAL_ALIGN_LABELS[align] || '左对齐';
+    }
+
+    const dropdown = document.getElementById('horizontal-align-dropdown');
+    if (dropdown) {
+      dropdown.querySelectorAll('.horizontal-align-option').forEach((el) => {
+        const optionEl = el as HTMLElement;
+        optionEl.classList.toggle('active', optionEl.dataset.align === align);
+      });
+    }
+  }
+
   // 初始化垂直对齐选择器
   private initVerticalAlignPicker(): void {
     const btn = document.getElementById('vertical-align-btn');
@@ -1987,6 +2041,9 @@ export class SpreadsheetApp {
     if (centerBtn) centerBtn.classList.toggle('active', align === 'center');
     if (rightBtn) rightBtn.classList.toggle('active', align === 'right');
 
+    // 更新水平对齐按钮显示文本
+    this.updateHorizontalAlignUI(align);
+
     const { startRow, startCol, endRow, endCol } = this.currentSelection;
 
     // 设置选中区域的字体对齐
@@ -2161,6 +2218,9 @@ export class SpreadsheetApp {
         if (fontAlignLeftBtn) fontAlignLeftBtn.classList.toggle('active', align === 'left');
         if (fontAlignCenterBtn) fontAlignCenterBtn.classList.toggle('active', align === 'center');
         if (fontAlignRightBtn) fontAlignRightBtn.classList.toggle('active', align === 'right');
+
+        // 更新水平对齐按钮显示文本
+        this.updateHorizontalAlignUI(align);
 
         // 更新垂直对齐按钮状态
         this.updateVerticalAlignUI(cellInfo.verticalAlign || 'middle');
