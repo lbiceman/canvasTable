@@ -1,13 +1,13 @@
 {
   "enabled": true,
   "name": "任务完成后自动化测试",
-  "description": "每次任务完成后自动执行 Playwright 测试，生成 HTML 报告并告知地址。如果测试失败则修复问题并重新测试，直到全部通过后自动提交代码。只测试当前任务相关的内容。",
+  "description": "当 spec 所有任务都完成后自动执行 Playwright 测试，生成 HTML 报告并告知地址。如果测试失败则修复问题并重新测试，直到全部通过后自动提交代码。单个任务完成时会跳过。",
   "version": "1",
   "when": {
     "type": "postTaskExecution"
   },
   "then": {
     "type": "askAgent",
-    "prompt": "任务已完成，请按以下步骤执行：\n\n1. 运行 Playwright 自动化测试（只测试当前任务相关的测试文件，不要测试其他内容）：\n   node node_modules\\playwright\\cli.js test e2e/font-style.spec.ts --reporter=html\n\n2. 测试完成后告诉用户 HTML 报告地址（playwright-report 目录），提示用户可以用 `node node_modules\\playwright\\cli.js show-report` 查看。\n\n3. 如果有测试失败：\n   - 分析失败原因\n   - 修复对应的代码问题（不是修改测试，而是修复源代码）\n   - 修复后重新运行测试\n   - 重复此过程直到所有测试通过\n\n4. 所有测试通过后，使用 git 提交代码。commit message 用中文，按照用户提出的需求进行总结概括。"
+    "prompt": "一个任务刚刚完成。请先检查当前 spec 中是否还有未完成的任务（状态不是 completed 的任务）。注意：带 * 标记的任务不计入判断，忽略它们。\n\n如果还有未完成的非 * 任务，直接跳过，不执行任何操作，回复"还有未完成的任务，跳过测试。"\n\n只有当所有任务都已完成时，才执行以下步骤：\n\n1. 运行 Playwright 自动化测试（只测试当前任务相关的测试文件，不要测试其他内容）：\n   node node_modules\\playwright\\cli.js test e2e/font-style.spec.ts --reporter=html\n\n2. 测试完成后告诉用户 HTML 报告地址（playwright-report 目录），提示用户可以用 `node node_modules\\playwright\\cli.js show-report` 查看。\n\n3. 如果有测试失败：\n   - 分析失败原因\n   - 修复对应的代码问题（不是修改测试，而是修复源代码）\n   - 修复后重新运行测试\n   - 重复此过程直到所有测试通过\n\n4. 所有测试通过后，使用 git 提交代码。commit message 用中文，按照用户提出的需求进行总结概括。"
   }
 }
