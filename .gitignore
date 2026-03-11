@@ -22,3 +22,7 @@ npm-debug.log*
 
 # 房间持久化数据
 server/data/
+
+# Playwright
+playwright-report/
+test-results/
