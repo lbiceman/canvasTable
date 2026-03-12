@@ -1517,6 +1517,9 @@ export class SpreadsheetApp {
 
       // 更新单元格信息显示
       this.updateSelectedCellInfo();
+
+      // 更新撤销/重做按钮状态
+      this.updateUndoRedoButtons();
     } else {
       alert('无法合并选定的单元格');
     }
@@ -1572,6 +1575,9 @@ export class SpreadsheetApp {
 
             // 更新单元格信息显示
             this.updateSelectedCellInfo();
+
+            // 更新撤销/重做按钮状态
+            this.updateUndoRedoButtons();
             return;
           }
         }
@@ -1628,6 +1634,9 @@ export class SpreadsheetApp {
 
       // 更新单元格信息显示
       this.updateSelectedCellInfo();
+
+      // 更新撤销/重做按钮状态
+      this.updateUndoRedoButtons();
     } else {
       alert('选择区域中没有可拆分的合并单元格');
     }
@@ -1825,6 +1834,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理字体颜色变化
@@ -1863,6 +1875,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理背景颜色变化
@@ -1901,6 +1916,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理字体加粗变化
@@ -1942,6 +1960,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理字体斜体变化
@@ -1983,6 +2004,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理字体下划线变化
@@ -2024,6 +2048,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理字体对齐变化
@@ -2070,6 +2097,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理垂直对齐变化
@@ -2107,6 +2137,9 @@ export class SpreadsheetApp {
 
     // 重新渲染
     this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
   }
 
   // 处理设置单元格内容

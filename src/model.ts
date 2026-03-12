@@ -150,12 +150,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; color: string }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的颜色
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldColor = this.data.cells[parentRow][parentCol].fontColor || '';
+            cellsData.push({ row: parentRow, col: parentCol, color: oldColor });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldColor = cell.fontColor || '';
+            cellsData.push({ row: i, col: j, color: oldColor });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.color !== color);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontColor',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, color },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -203,12 +236,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; size: number }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的字体大小
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldSize = this.data.cells[parentRow][parentCol].fontSize || 14;
+            cellsData.push({ row: parentRow, col: parentCol, size: oldSize });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldSize = cell.fontSize || 14;
+            cellsData.push({ row: i, col: j, size: oldSize });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.size !== size);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontSize',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, size },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -256,12 +322,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; bold: boolean }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的字体加粗
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldBold = this.data.cells[parentRow][parentCol].fontBold || false;
+            cellsData.push({ row: parentRow, col: parentCol, bold: oldBold });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldBold = cell.fontBold || false;
+            cellsData.push({ row: i, col: j, bold: oldBold });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.bold !== bold);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontBold',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, bold },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -309,12 +408,51 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const originalItalics: Array<{ row: number; col: number; italic: boolean }> = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的字体斜体
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            originalItalics.push({
+              row: parentRow,
+              col: parentCol,
+              italic: this.data.cells[parentRow][parentCol].fontItalic || false
+            });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            originalItalics.push({
+              row: i,
+              col: j,
+              italic: cell.fontItalic || false
+            });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = originalItalics.some(c => c.italic !== italic);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontItalic',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, italic },
+        undoData: { cells: originalItalics }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -362,12 +500,51 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const originalUnderlines: Array<{ row: number; col: number; underline: boolean }> = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的下划线
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            originalUnderlines.push({
+              row: parentRow,
+              col: parentCol,
+              underline: this.data.cells[parentRow][parentCol].fontUnderline || false
+            });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            originalUnderlines.push({
+              row: i,
+              col: j,
+              underline: cell.fontUnderline || false
+            });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = originalUnderlines.some(c => c.underline !== underline);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontUnderline',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, underline },
+        undoData: { cells: originalUnderlines }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -415,12 +592,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; align: string }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的字体对齐方式
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldAlign = this.data.cells[parentRow][parentCol].fontAlign || 'left';
+            cellsData.push({ row: parentRow, col: parentCol, align: oldAlign });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldAlign = cell.fontAlign || 'left';
+            cellsData.push({ row: i, col: j, align: oldAlign });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.align !== align);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setFontAlign',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, align },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -468,12 +678,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; align: string }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的垂直对齐方式
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldAlign = this.data.cells[parentRow][parentCol].verticalAlign || 'middle';
+            cellsData.push({ row: parentRow, col: parentCol, align: oldAlign });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldAlign = cell.verticalAlign || 'middle';
+            cellsData.push({ row: i, col: j, align: oldAlign });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.align !== align);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setVerticalAlign',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, align },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -521,12 +764,45 @@ export class SpreadsheetModel {
     const maxCol = Math.max(startCol, endCol);
 
     const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; color: string }[] = [];
 
     for (let i = minRow; i <= maxRow; i++) {
       for (let j = minCol; j <= maxCol; j++) {
         const cell = this.data.cells[i][j];
 
-        // 如果是被合并的单元格，设置其父单元格的颜色
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldColor = this.data.cells[parentRow][parentCol].bgColor || '';
+            cellsData.push({ row: parentRow, col: parentCol, color: oldColor });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldColor = cell.bgColor || '';
+            cellsData.push({ row: i, col: j, color: oldColor });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.color !== color);
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'setBgColor',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, color },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
         if (cell.isMerged && cell.mergeParent) {
           const { row: parentRow, col: parentCol } = cell.mergeParent;
           const key = `${parentRow}-${parentCol}`;
@@ -557,6 +833,23 @@ export class SpreadsheetModel {
     // 如果只选择了一个单元格，不执行合并操作
     if (startRow === endRow && startCol === endCol) {
       return false;
+    }
+
+    // 保存原始状态用于撤销
+    const originalCells: {row: number; col: number; content: string; rowSpan: number; colSpan: number; isMerged: boolean; mergeParent?: CellPosition}[] = [];
+    for (let i = startRow; i <= endRow; i++) {
+      for (let j = startCol; j <= endCol; j++) {
+        const cell = this.data.cells[i][j];
+        originalCells.push({
+          row: i,
+          col: j,
+          content: cell.content,
+          rowSpan: cell.rowSpan,
+          colSpan: cell.colSpan,
+          isMerged: cell.isMerged,
+          mergeParent: cell.mergeParent
+        });
+      }
     }
 
     console.log(`尝试合并区域: (${startRow},${startCol}) 到 (${endRow},${endCol})`);
@@ -614,6 +907,13 @@ export class SpreadsheetModel {
       }
     }
 
+    // 记录历史
+    this.historyManager.record({
+      type: 'mergeCells',
+      data: { startRow, startCol, endRow, endCol, content },
+      undoData: { cells: originalCells }
+    });
+
     // 清理缓存并标记数据变更
     this.clearAllCache();
     this.isDirty = true;
@@ -666,23 +966,17 @@ export class SpreadsheetModel {
     const endRow = parentRow + rowSpan - 1;
     const endCol = parentCol + colSpan - 1;
 
-    // 记录操作前的状态，用于撤销功能（如果需要）
-    const originalState = {
-      parentRow,
-      parentCol,
-      rowSpan,
-      colSpan,
-      content,
-      cells: [] as {row: number; col: number; isMerged: boolean; mergeParent?: CellPosition}[]
-    };
-
-    // 保存所有受影响单元格的原始状态
+    // 保存所有受影响单元格的原始状态，用于撤销
+    const originalCells: {row: number; col: number; content: string; rowSpan: number; colSpan: number; isMerged: boolean; mergeParent?: CellPosition}[] = [];
     for (let i = parentRow; i <= endRow; i++) {
       for (let j = parentCol; j <= endCol; j++) {
         const affectedCell = this.data.cells[i][j];
-        originalState.cells.push({
+        originalCells.push({
           row: i,
           col: j,
+          content: affectedCell.content,
+          rowSpan: affectedCell.rowSpan,
+          colSpan: affectedCell.colSpan,
           isMerged: affectedCell.isMerged,
           mergeParent: affectedCell.mergeParent
         });
@@ -702,6 +996,13 @@ export class SpreadsheetModel {
         };
       }
     }
+
+    // 记录历史
+    this.historyManager.record({
+      type: 'splitCell',
+      data: { row: parentRow, col: parentCol, rowSpan, colSpan, content },
+      undoData: { cells: originalCells }
+    });
 
     // 返回拆分成功
     return true;
@@ -1639,13 +1940,279 @@ export class SpreadsheetModel {
         this.setCellContentNoHistory(data.row, data.col, data.content);
         break;
       case 'setFontColor':
-        if (this.isValidPosition(data.row, data.col)) {
-          this.data.cells[data.row][data.col].fontColor = data.color;
+        // 撤销时使用 cells 数组恢复原始值，重做时使用范围应用新值
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontColor = cellData.color;
+            }
+          }
+        } else if (data.startRow !== undefined && data.color !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontColor = data.color;
+              }
+            }
+          }
         }
         break;
       case 'setBgColor':
-        if (this.isValidPosition(data.row, data.col)) {
-          this.data.cells[data.row][data.col].bgColor = data.color;
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].bgColor = cellData.color;
+            }
+          }
+        } else if (data.startRow !== undefined && data.color !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].bgColor = data.color;
+              }
+            }
+          }
+        }
+        break;
+      case 'setFontSize':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontSize = cellData.size;
+            }
+          }
+        } else if (data.startRow !== undefined && data.size !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontSize = data.size;
+              }
+            }
+          }
+        }
+        break;
+      case 'setFontBold':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontBold = cellData.bold;
+            }
+          }
+        } else if (data.startRow !== undefined && data.bold !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontBold = data.bold;
+              }
+            }
+          }
+        }
+        break;
+      case 'setFontItalic':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontItalic = cellData.italic;
+            }
+          }
+        } else if (data.startRow !== undefined && data.italic !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontItalic = data.italic;
+              }
+            }
+          }
+        }
+        break;
+      case 'setFontUnderline':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontUnderline = cellData.underline;
+            }
+          }
+        } else if (data.startRow !== undefined && data.underline !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontUnderline = data.underline;
+              }
+            }
+          }
+        }
+        break;
+      case 'setFontAlign':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontAlign = cellData.align;
+            }
+          }
+        } else if (data.startRow !== undefined && data.align !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontAlign = data.align;
+              }
+            }
+          }
+        }
+        break;
+      case 'setVerticalAlign':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].verticalAlign = cellData.align;
+            }
+          }
+        } else if (data.startRow !== undefined && data.align !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].verticalAlign = data.align;
+              }
+            }
+          }
+        }
+        break;
+      case 'mergeCells':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              const cell = this.data.cells[cellData.row][cellData.col];
+              cell.content = cellData.content;
+              cell.rowSpan = cellData.rowSpan;
+              cell.colSpan = cellData.colSpan;
+              cell.isMerged = cellData.isMerged;
+              if (cellData.mergeParent) {
+                cell.mergeParent = cellData.mergeParent;
+              } else {
+                delete cell.mergeParent;
+              }
+            }
+          }
+        } else if (data.startRow !== undefined) {
+          const { startRow, startCol, endRow, endCol, content } = data;
+          const rowSpan = endRow - startRow + 1;
+          const colSpan = endCol - startCol + 1;
+
+          const parentCell = this.data.cells[startRow][startCol];
+          parentCell.rowSpan = rowSpan;
+          parentCell.colSpan = colSpan;
+          parentCell.content = content;
+          parentCell.isMerged = false;
+          delete parentCell.mergeParent;
+
+          for (let i = startRow; i <= endRow; i++) {
+            for (let j = startCol; j <= endCol; j++) {
+              if (i !== startRow || j !== startCol) {
+                const cell = this.data.cells[i][j];
+                cell.isMerged = true;
+                cell.mergeParent = { row: startRow, col: startCol };
+                cell.content = '';
+              }
+            }
+          }
+        }
+        break;
+      case 'splitCell':
+        if (data.originalState) {
+          const { parentRow, parentCol, rowSpan, colSpan, content } = data.originalState;
+          const endRow = parentRow + rowSpan - 1;
+          const endCol = parentCol + colSpan - 1;
+
+          const parentCell = this.data.cells[parentRow][parentCol];
+          parentCell.rowSpan = rowSpan;
+          parentCell.colSpan = colSpan;
+          parentCell.content = content;
+          parentCell.isMerged = false;
+          delete parentCell.mergeParent;
+
+          for (let i = parentRow; i <= endRow; i++) {
+            for (let j = parentCol; j <= endCol; j++) {
+              if (i !== parentRow || j !== parentCol) {
+                const cell = this.data.cells[i][j];
+                cell.isMerged = true;
+                cell.mergeParent = { row: parentRow, col: parentCol };
+                cell.content = '';
+              }
+            }
+          }
+        } else if (data.row !== undefined) {
+          const { row, col, rowSpan, colSpan, content } = data;
+          const endRow = row + rowSpan - 1;
+          const endCol = col + colSpan - 1;
+
+          for (let i = row; i <= endRow; i++) {
+            for (let j = col; j <= endCol; j++) {
+              this.data.cells[i][j] = {
+                content: i === row && j === col ? content : '',
+                rowSpan: 1,
+                colSpan: 1,
+                isMerged: false,
+                mergeParent: undefined
+              };
+            }
+          }
+        }
+        break;
+      case 'insertRows':
+        if (data.rowIndex !== undefined && data.count !== undefined) {
+          if (data.rowsToInsert && data.heightsToInsert) {
+            this.data.cells.splice(data.rowIndex, 0, ...data.rowsToInsert);
+            this.data.rowHeights.splice(data.rowIndex, 0, ...data.heightsToInsert);
+          } else {
+            const actualCount = Math.min(data.count, this.getRowCount() - data.rowIndex);
+            if (actualCount > 0) {
+              this.data.cells.splice(data.rowIndex, actualCount);
+              this.data.rowHeights.splice(data.rowIndex, actualCount);
+            }
+          }
+        }
+        break;
+      case 'deleteRows':
+        if (data.deletedRows && data.deletedHeights) {
+          this.data.cells.splice(data.rowIndex, 0, ...data.deletedRows);
+          this.data.rowHeights.splice(data.rowIndex, 0, ...data.deletedHeights);
+        } else if (data.rowIndex !== undefined && data.count !== undefined) {
+          const actualCount = Math.min(data.count, this.getRowCount() - data.rowIndex);
+          if (actualCount > 0) {
+            this.data.cells.splice(data.rowIndex, actualCount);
+            this.data.rowHeights.splice(data.rowIndex, actualCount);
+          }
         }
         break;
     }

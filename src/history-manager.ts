@@ -5,6 +5,12 @@ export type ActionType =
   | 'splitCell'
   | 'setFontColor'
   | 'setBgColor'
+  | 'setFontSize'
+  | 'setFontBold'
+  | 'setFontItalic'
+  | 'setFontUnderline'
+  | 'setFontAlign'
+  | 'setVerticalAlign'
   | 'insertRows'
   | 'deleteRows'
   | 'clearContent';
