@@ -40,8 +40,18 @@ export class DataManager {
     URL.revokeObjectURL(url);
   }
 
-  // 从文件导入数据
-  public importFromFile(): Promise<boolean> {
+  // 验证导入数据
+  public validateImportData(jsonData: string): { valid: boolean; errors: string[]; warnings: string[] } {
+    return SpreadsheetModel.validateImportData(jsonData);
+  }
+
+  // 验证简化格式导入数据
+  public validateSimpleImportData(jsonData: string): { valid: boolean; errors: string[]; warnings: string[] } {
+    return SpreadsheetModel.validateSimpleImportData(jsonData);
+  }
+
+  // 从文件导入数据（带验证）
+  public importFromFile(showValidation: boolean = true): Promise<{ success: boolean; errors?: string[]; warnings?: string[] }> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -50,7 +60,7 @@ export class DataManager {
       input.onchange = (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (!file) {
-          resolve(false);
+          resolve({ success: false, errors: ['未选择文件'] });
           return;
         }
 
@@ -58,17 +68,32 @@ export class DataManager {
         reader.onload = (e) => {
           try {
             const jsonData = e.target?.result as string;
+
+            const validation = this.validateImportData(jsonData);
+
+            if (!validation.valid) {
+              if (showValidation) {
+                this.showValidationErrors(validation.errors, validation.warnings);
+              }
+              resolve({ success: false, errors: validation.errors, warnings: validation.warnings });
+              return;
+            }
+
+            if (showValidation && validation.warnings.length > 0) {
+              this.showValidationErrors(validation.errors, validation.warnings);
+            }
+
             const success = this.model.importFromJSON(jsonData);
-            resolve(success);
+            resolve({ success, errors: validation.errors, warnings: validation.warnings });
           } catch (error) {
             console.error('读取文件失败:', error);
-            resolve(false);
+            resolve({ success: false, errors: [`读取文件失败: ${error instanceof Error ? error.message : '未知错误'}`] });
           }
         };
 
         reader.onerror = () => {
           console.error('文件读取错误');
-          resolve(false);
+          resolve({ success: false, errors: ['文件读取错误'] });
         };
 
         reader.readAsText(file);
@@ -78,8 +103,8 @@ export class DataManager {
     });
   }
 
-  // 从简化格式文件导入数据
-  public importFromSimpleFile(): Promise<boolean> {
+  // 从简化格式文件导入数据（带验证）
+  public importFromSimpleFile(showValidation: boolean = true): Promise<{ success: boolean; errors?: string[]; warnings?: string[] }> {
     return new Promise((resolve) => {
       const input = document.createElement('input');
       input.type = 'file';
@@ -88,7 +113,7 @@ export class DataManager {
       input.onchange = (event) => {
         const file = (event.target as HTMLInputElement).files?.[0];
         if (!file) {
-          resolve(false);
+          resolve({ success: false, errors: ['未选择文件'] });
           return;
         }
 
@@ -96,17 +121,32 @@ export class DataManager {
         reader.onload = (e) => {
           try {
             const jsonData = e.target?.result as string;
+
+            const validation = this.validateSimpleImportData(jsonData);
+
+            if (!validation.valid) {
+              if (showValidation) {
+                this.showValidationErrors(validation.errors, validation.warnings);
+              }
+              resolve({ success: false, errors: validation.errors, warnings: validation.warnings });
+              return;
+            }
+
+            if (showValidation && validation.warnings.length > 0) {
+              this.showValidationErrors(validation.errors, validation.warnings);
+            }
+
             const success = this.model.importFromSimpleJSON(jsonData);
-            resolve(success);
+            resolve({ success, errors: validation.errors, warnings: validation.warnings });
           } catch (error) {
             console.error('读取文件失败:', error);
-            resolve(false);
+            resolve({ success: false, errors: [`读取文件失败: ${error instanceof Error ? error.message : '未知错误'}`] });
           }
         };
 
         reader.onerror = () => {
           console.error('文件读取错误');
-          resolve(false);
+          resolve({ success: false, errors: ['文件读取错误'] });
         };
 
         reader.readAsText(file);
@@ -116,8 +156,28 @@ export class DataManager {
     });
   }
 
-  // 从URL导入数据
-  public async importFromURL(url: string): Promise<boolean> {
+  // 显示验证错误
+  private showValidationErrors(errors: string[], warnings: string[]): void {
+    let message = '';
+
+    if (errors.length > 0) {
+      message += '导入验证失败：\n' + errors.map(e => '• ' + e).join('\n');
+    }
+
+    if (warnings.length > 0) {
+      if (message) message += '\n\n';
+      message += '警告：\n' + warnings.map(w => '• ' + w).join('\n');
+    }
+
+    if (errors.length > 0) {
+      alert(message);
+    } else {
+      console.warn('导入警告：', warnings);
+    }
+  }
+
+  // 从URL导入数据（带验证）
+  public async importFromURL(url: string, showValidation: boolean = true): Promise<{ success: boolean; errors?: string[]; warnings?: string[] }> {
     try {
       const response = await fetch(url);
       if (!response.ok) {
@@ -125,10 +185,25 @@ export class DataManager {
       }
 
       const jsonData = await response.text();
-      return this.model.importFromJSON(jsonData);
+
+      const validation = this.validateImportData(jsonData);
+
+      if (!validation.valid) {
+        if (showValidation) {
+          this.showValidationErrors(validation.errors, validation.warnings);
+        }
+        return { success: false, errors: validation.errors, warnings: validation.warnings };
+      }
+
+      if (showValidation && validation.warnings.length > 0) {
+        this.showValidationErrors(validation.errors, validation.warnings);
+      }
+
+      const success = this.model.importFromJSON(jsonData);
+      return { success, errors: validation.errors, warnings: validation.warnings };
     } catch (error) {
       console.error('从URL导入数据失败:', error);
-      return false;
+      return { success: false, errors: [`从URL导入失败: ${error instanceof Error ? error.message : '未知错误'}`] };
     }
   }
 

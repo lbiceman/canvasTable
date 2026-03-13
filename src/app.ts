@@ -52,6 +52,11 @@ export class SpreadsheetApp {
     // 创建模型
     this.model = new SpreadsheetModel();
 
+    // 注册公式错误回调
+    this.model.registerFormulaErrorCallback((error: string) => {
+      this.showFormulaError(error);
+    });
+
     // 获取Canvas元素
     this.canvas = document.getElementById('excel-canvas') as HTMLCanvasElement;
 
@@ -2174,6 +2179,15 @@ export class SpreadsheetApp {
       const contentInput = document.getElementById('cell-content') as HTMLInputElement;
       const content = contentInput.value;
 
+      // 验证公式
+      if (this.model.validateFormula) {
+        const validation = this.model.validateFormula(content);
+        if (!validation.valid) {
+          this.showFormulaError(validation.error || '公式错误');
+          return;
+        }
+      }
+
       // 获取旧内容
       const previousContent = this.model.getCell(startRow, startCol)?.content ?? '';
 
@@ -2196,6 +2210,21 @@ export class SpreadsheetApp {
       this.renderer.render();
     } else {
       alert('请先选择要设置内容的单元格');
+    }
+  }
+
+  // 显示公式错误提示
+  private showFormulaError(message: string): void {
+    const errorElement = document.getElementById('formula-error');
+    if (errorElement) {
+      errorElement.textContent = message;
+      errorElement.style.display = 'block';
+
+      setTimeout(() => {
+        errorElement.style.display = 'none';
+      }, 3000);
+    } else {
+      alert(message);
     }
   }
 
@@ -2242,8 +2271,8 @@ export class SpreadsheetApp {
         const colLetter = this.columnIndexToLetter(cellInfo.col);
         selectedCellElement.textContent = `${colLetter}${cellInfo.row + 1}`;
 
-        // 更新单元格内容输入框
-        cellContentInput.value = cellInfo.content || '';
+        // 更新单元格内容输入框 - 如果是公式则显示原始公式
+        cellContentInput.value = cellInfo.formulaContent || cellInfo.content || '';
 
         // 更新字体大小按钮显示为当前单元格的字体大小
         this.updateFontSizeUI(cellInfo.fontSize || 12);
@@ -2315,29 +2344,29 @@ export class SpreadsheetApp {
 
   // 从文件导入数据
   public async importFromFile(): Promise<boolean> {
-    const success = await this.dataManager.importFromFile();
-    if (success) {
+    const result = await this.dataManager.importFromFile();
+    if (result.success) {
       this.renderer.render();
     }
-    return success;
+    return result.success;
   }
 
   // 从简化格式文件导入数据
   public async importFromSimpleFile(): Promise<boolean> {
-    const success = await this.dataManager.importFromSimpleFile();
-    if (success) {
+    const result = await this.dataManager.importFromSimpleFile();
+    if (result.success) {
       this.renderer.render();
     }
-    return success;
+    return result.success;
   }
 
   // 从URL导入数据
   public async importFromURL(url: string): Promise<boolean> {
-    const success = await this.dataManager.importFromURL(url);
-    if (success) {
+    const result = await this.dataManager.importFromURL(url);
+    if (result.success) {
       this.renderer.render();
     }
-    return success;
+    return result.success;
   }
 
   // 保存到本地存储

@@ -508,7 +508,10 @@ export class SpreadsheetRenderer {
 
           // save/restore 会重置字体，需要重新设置
           const fontWeight = cellInfo.fontBold ? 'bold ' : '';
-          const fontStyle = cellInfo.fontItalic ? 'italic ' : '';
+          let fontStyle = cellInfo.fontItalic ? 'italic ' : '';
+          if (cellInfo.formulaContent) {
+            fontStyle = 'italic ';
+          }
           this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
 
           // 记录是否需要绘制下划线

@@ -1,5 +1,6 @@
 import { Cell, SpreadsheetData, CellPosition } from './types';
 import { HistoryManager } from './history-manager';
+import { FormulaEngine } from './formula-engine';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -22,10 +23,18 @@ export class SpreadsheetModel {
   private isDirty: boolean = false; // 数据变更标记
   private historyManager: HistoryManager;
   private fontSize: number = 12; // 全局字体大小（默认12px）
+  private formulaEngine: FormulaEngine;
+  private formulaChangeCallbacks: Array<(row: number, col: number, newValue: string) => void> = [];
 
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
     this.historyManager = new HistoryManager();
+
+    // 初始化公式引擎
+    this.formulaEngine = FormulaEngine.getInstance();
+    this.formulaEngine.setCellGetter((row: number, col: number) => {
+      return this.getCell(row, col);
+    });
 
     // 初始化表格数据
     this.data = {
@@ -61,6 +70,89 @@ export class SpreadsheetModel {
       return this.data.cells[row][col];
     }
     return null;
+  }
+
+  // 获取单元格的计算值（公式计算后的值）
+  public getComputedValue(row: number, col: number): string {
+    const cell = this.getCell(row, col);
+    if (!cell) return '';
+
+    const content = cell.content;
+    if (!this.formulaEngine.isFormula(content)) {
+      return content;
+    }
+
+    const result = this.formulaEngine.evaluate(content, row, col);
+    return result.value.toString();
+  }
+
+  // 重新计算指定单元格及其依赖单元格
+  public recalculateCell(row: number, col: number): void {
+    const cell = this.getCell(row, col);
+    if (!cell) return;
+
+    if (this.formulaEngine.isFormula(cell.content)) {
+      this.formulaEngine.clearCellCache(row, col);
+      const result = this.formulaEngine.evaluate(cell.content, row, col);
+      cell.content = result.value.toString();
+
+      this.notifyFormulaChange(row, col, result.value.toString());
+    }
+
+    const dependents = this.formulaEngine.getDependents(row, col);
+    for (const dep of dependents) {
+      this.recalculateCell(dep.row, dep.col);
+    }
+  }
+
+  // 重新计算所有公式单元格
+  public recalculateFormulas(): void {
+    const rows = this.data.cells.length;
+    const cols = this.data.cells[0]?.length ?? 0;
+
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const cell = this.data.cells[i][j];
+        if (cell && this.formulaEngine.isFormula(cell.content)) {
+          this.formulaEngine.clearCellCache(i, j);
+          const result = this.formulaEngine.evaluate(cell.content, i, j);
+          cell.content = result.value.toString();
+          this.notifyFormulaChange(i, j, result.value.toString());
+        }
+      }
+    }
+  }
+
+  // 注册公式变化回调
+  public registerFormulaChangeCallback(callback: (row: number, col: number, newValue: string) => void): void {
+    this.formulaChangeCallbacks.push(callback);
+  }
+
+  // 通知公式变化
+  private notifyFormulaChange(row: number, col: number, newValue: string): void {
+    for (const callback of this.formulaChangeCallbacks) {
+      callback(row, col, newValue);
+    }
+  }
+
+  // 公式错误回调
+  private formulaErrorCallbacks: Array<(error: string) => void> = [];
+
+  // 注册公式错误回调
+  public registerFormulaErrorCallback(callback: (error: string) => void): void {
+    this.formulaErrorCallbacks.push(callback);
+  }
+
+  // 通知公式错误
+  private notifyFormulaError(error: string): void {
+    for (const callback of this.formulaErrorCallbacks) {
+      callback(error);
+    }
+  }
+
+  // 验证公式
+  public validateFormula(formula: string): { valid: boolean; error?: string } {
+    return this.formulaEngine.validateFormula(formula);
   }
 
   // 批量清除范围内单元格内容
@@ -167,13 +259,54 @@ export class SpreadsheetModel {
       undoData: { row: targetRow, col: targetCol, content: oldContent }
     });
 
-    // 设置内容
-    if (cell.isMerged && cell.mergeParent) {
-      this.data.cells[targetRow][targetCol].content = content;
-      this.contentCache[`${targetRow}-${targetCol}`] = content;
+    // 处理公式内容
+    if (this.formulaEngine.isFormula(content)) {
+      const validation = this.formulaEngine.validateFormula(content);
+      if (!validation.valid) {
+        console.error('公式验证失败:', validation.error);
+        this.notifyFormulaError(validation.error || '公式错误');
+        return;
+      }
+
+      const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
+
+      if (result.isError) {
+        console.error('公式计算错误:', result.errorMessage);
+        this.notifyFormulaError(result.errorMessage || '公式计算错误');
+        return;
+      }
+
+      if (cell.isMerged && cell.mergeParent) {
+        this.data.cells[targetRow][targetCol].formulaContent = content;
+        this.data.cells[targetRow][targetCol].content = result.value.toString();
+        this.contentCache[`${targetRow}-${targetCol}`] = result.value.toString();
+      } else {
+        cell.formulaContent = content;
+        cell.content = result.value.toString();
+        this.contentCache[cacheKey] = result.value.toString();
+      }
+
+      this.notifyFormulaChange(targetRow, targetCol, result.value.toString());
+
+      const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
+      for (const affected of affectedCells) {
+        this.recalculateCell(affected.row, affected.col);
+      }
     } else {
-      cell.content = content;
-      this.contentCache[cacheKey] = content;
+      if (cell.isMerged && cell.mergeParent) {
+        this.data.cells[targetRow][targetCol].formulaContent = undefined;
+        this.data.cells[targetRow][targetCol].content = content;
+        this.contentCache[`${targetRow}-${targetCol}`] = content;
+      } else {
+        cell.formulaContent = undefined;
+        cell.content = content;
+        this.contentCache[cacheKey] = content;
+      }
+
+      const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
+      for (const affected of affectedCells) {
+        this.recalculateCell(affected.row, affected.col);
+      }
     }
 
     this.isDirty = true;
@@ -187,8 +320,18 @@ export class SpreadsheetModel {
     }
 
     const cell = this.data.cells[row][col];
-    cell.content = content;
-    this.contentCache[`${row}-${col}`] = content;
+
+    if (this.formulaEngine.isFormula(content)) {
+      const result = this.formulaEngine.evaluate(content, row, col);
+      cell.formulaContent = content;
+      cell.content = result.value.toString();
+      this.contentCache[`${row}-${col}`] = result.value.toString();
+    } else {
+      cell.formulaContent = undefined;
+      cell.content = content;
+      this.contentCache[`${row}-${col}`] = content;
+    }
+
     this.isDirty = true;
   }
 
@@ -1409,6 +1552,7 @@ export class SpreadsheetModel {
     rowSpan: number;
     colSpan: number;
     content: string;
+    formulaContent?: string;
     fontColor?: string;
     bgColor?: string;
     fontSize?: number;
@@ -1434,6 +1578,7 @@ export class SpreadsheetModel {
         rowSpan: parentCell.rowSpan,
         colSpan: parentCell.colSpan,
         content: parentCell.content,
+        formulaContent: parentCell.formulaContent,
         fontColor: parentCell.fontColor,
         bgColor: parentCell.bgColor,
         fontSize: parentCell.fontSize,
@@ -1452,6 +1597,7 @@ export class SpreadsheetModel {
       rowSpan: cell.rowSpan,
       colSpan: cell.colSpan,
       content: cell.content,
+      formulaContent: cell.formulaContent,
       fontColor: cell.fontColor,
       bgColor: cell.bgColor,
       fontSize: cell.fontSize,
@@ -1648,8 +1794,8 @@ export class SpreadsheetModel {
         const cell = this.data.cells[i][j];
 
         // 只保存有内容、合并信息或颜色的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign) {
-          exportData.data.cells.push({
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign || cell.formulaContent) {
+          const cellData: any = {
             row: i,
             col: j,
             content: cell.content,
@@ -1664,12 +1810,169 @@ export class SpreadsheetModel {
             fontItalic: cell.fontItalic,
             fontUnderline: cell.fontUnderline,
             verticalAlign: cell.verticalAlign,
-          });
+          };
+
+          if (cell.formulaContent) {
+            cellData.formulaContent = cell.formulaContent;
+          }
+
+          exportData.data.cells.push(cellData);
         }
       }
     }
 
     return JSON.stringify(exportData, null, 2);
+  }
+
+  // 验证导入数据格式和公式
+  public static validateImportData(jsonData: string): { valid: boolean; errors: string[]; warnings: string[] } {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    try {
+      const importData = JSON.parse(jsonData);
+
+      if (!importData.version) {
+        errors.push('缺少版本信息 (version 字段)');
+      }
+
+      if (!importData.data) {
+        errors.push('缺少数据部分 (data 字段)');
+        return { valid: false, errors, warnings };
+      }
+
+      const { data, metadata } = importData;
+
+      if (metadata) {
+        if (metadata.rowCount && typeof metadata.rowCount !== 'number') {
+          errors.push('行数 (rowCount) 必须是数字');
+        }
+        if (metadata.colCount && typeof metadata.colCount !== 'number') {
+          errors.push('列数 (colCount) 必须是数字');
+        }
+      }
+
+      if (data.cells && Array.isArray(data.cells)) {
+        const formulaEngine = FormulaEngine.getInstance();
+
+        data.cells.forEach((cellData: any, index: number) => {
+          if (!cellData.row && cellData.row !== 0) {
+            errors.push(`单元格 #${index + 1}: 缺少行号 (row 字段)`);
+          }
+          if (!cellData.col && cellData.col !== 0) {
+            errors.push(`单元格 #${index + 1}: 缺少列号 (col 字段)`);
+          }
+
+          if (cellData.formulaContent) {
+            if (typeof cellData.formulaContent !== 'string') {
+              errors.push(`单元格 (${cellData.row}, ${cellData.col}): formulaContent 必须是字符串`);
+            } else if (!cellData.formulaContent.startsWith('=')) {
+              warnings.push(`单元格 (${cellData.row}, ${cellData.col}): formulaContent 应该以 '=' 开头`);
+            } else {
+              const validation = formulaEngine.validateFormula(cellData.formulaContent);
+              if (!validation.valid) {
+                errors.push(`单元格 (${cellData.row}, ${cellData.col}): 公式错误 - ${validation.error}`);
+              }
+            }
+          }
+
+          if (cellData.content && typeof cellData.content !== 'string') {
+            warnings.push(`单元格 (${cellData.row}, ${cellData.col}): content 应该是字符串`);
+          }
+
+          if (cellData.isMerged && cellData.mergeParent) {
+            const parentRow = cellData.mergeParent.row;
+            const parentCol = cellData.mergeParent.col;
+            if (parentRow === cellData.row && parentCol === cellData.col) {
+              errors.push(`单元格 (${cellData.row}, ${cellData.col}): 合并父单元格不能是自己`);
+            }
+          }
+        });
+      }
+
+      if (!data.cells || !Array.isArray(data.cells)) {
+        warnings.push('数据中没有单元格数组 (cells)');
+      }
+
+    } catch (error) {
+      errors.push(`JSON 解析失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+
+    return { valid: errors.length === 0, errors, warnings };
+  }
+
+  // 验证简化格式导入数据
+  public static validateSimpleImportData(jsonData: string): { valid: boolean; errors: string[]; warnings: string[] } {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    try {
+      const simpleData = JSON.parse(jsonData);
+
+      if (typeof simpleData !== 'object' || simpleData === null || Array.isArray(simpleData)) {
+        errors.push('简化格式数据必须是对象');
+        return { valid: false, errors, warnings };
+      }
+
+      const formulaEngine = FormulaEngine.getInstance();
+
+      Object.entries(simpleData).forEach(([cellAddress, data]) => {
+        const position = SpreadsheetModel.parseCellAddressStatic(cellAddress);
+        if (!position) {
+          errors.push(`无效的单元格地址: ${cellAddress}`);
+          return;
+        }
+
+        if (typeof data === 'string') {
+          return;
+        }
+
+        if (typeof data === 'object' && data !== null) {
+          const cellData = data as { value?: string; formula?: string };
+
+          if (cellData.formula) {
+            if (typeof cellData.formula !== 'string') {
+              errors.push(`单元格 ${cellAddress}: formula 必须是字符串`);
+            } else if (!cellData.formula.startsWith('=')) {
+              warnings.push(`单元格 ${cellAddress}: formula 应该以 '=' 开头`);
+            } else {
+              const validation = formulaEngine.validateFormula(cellData.formula);
+              if (!validation.valid) {
+                errors.push(`单元格 ${cellAddress}: 公式错误 - ${validation.error}`);
+              }
+            }
+          }
+
+          if (cellData.value !== undefined && typeof cellData.value !== 'string') {
+            warnings.push(`单元格 ${cellAddress}: value 应该是字符串`);
+          }
+        } else {
+          errors.push(`单元格 ${cellAddress}: 数据格式无效，应为字符串或对象`);
+        }
+      });
+
+    } catch (error) {
+      errors.push(`JSON 解析失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+
+    return { valid: errors.length === 0, errors, warnings };
+  }
+
+  // 静态方法：解析单元格地址
+  private static parseCellAddressStatic(cellAddress: string): { row: number; col: number } | null {
+    const match = cellAddress.match(/^([A-Z]+)(\d+)$/i);
+    if (!match) return null;
+
+    const colStr = match[1].toUpperCase();
+    const row = parseInt(match[2], 10) - 1;
+
+    let col = 0;
+    for (let i = 0; i < colStr.length; i++) {
+      col = col * 26 + (colStr.charCodeAt(i) - 64);
+    }
+    col = col - 1;
+
+    return { row, col };
   }
 
   // 从JSON数据导入
@@ -1763,11 +2066,12 @@ export class SpreadsheetModel {
       // 导入单元格数据
       if (data.cells && Array.isArray(data.cells)) {
         data.cells.forEach((cellData: any) => {
-          const { row, col, content, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign } = cellData;
+          const { row, col, content, formulaContent, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign } = cellData;
 
           if (this.isValidPosition(row, col)) {
             this.data.cells[row][col] = {
               content: content || '',
+              formulaContent: formulaContent,
               rowSpan: rowSpan || 1,
               colSpan: colSpan || 1,
               isMerged: isMerged || false,
@@ -1784,6 +2088,9 @@ export class SpreadsheetModel {
         });
       }
 
+      // 重新计算所有公式
+      this.recalculateFormulas();
+
       // 清空缓存
       this.clearAllCache();
       this.isDirty = false;
@@ -1797,15 +2104,24 @@ export class SpreadsheetModel {
 
   // 导出为简化的数据格式（仅包含内容）
   public exportSimpleJSON(): string {
-    const simpleData: { [key: string]: string } = {};
+    const simpleData: { [key: string]: { value: string; formula?: string } } = {};
 
     for (let i = 0; i < this.getRowCount(); i++) {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
-        if (cell.content) {
+        if (cell.content || cell.formulaContent) {
           // 使用 A1 格式的坐标
           const cellAddress = this.getCellAddress(i, j);
-          simpleData[cellAddress] = cell.content;
+          if (cell.formulaContent) {
+            simpleData[cellAddress] = {
+              value: cell.content,
+              formula: cell.formulaContent
+            };
+          } else {
+            simpleData[cellAddress] = {
+              value: cell.content
+            };
+          }
         }
       }
     }
@@ -1822,12 +2138,25 @@ export class SpreadsheetModel {
       this.clearAllContent();
 
       // 导入数据
-      Object.entries(simpleData).forEach(([cellAddress, content]) => {
+      Object.entries(simpleData).forEach(([cellAddress, data]) => {
         const position = this.parseCellAddress(cellAddress);
-        if (position && typeof content === 'string') {
-          this.setCellContent(position.row, position.col, content);
+        if (position) {
+          // 支持旧格式（字符串）和新格式（对象）
+          if (typeof data === 'string') {
+            this.setCellContentNoHistory(position.row, position.col, data);
+          } else if (typeof data === 'object' && data !== null) {
+            const cellData = data as { value: string; formula?: string };
+            if (cellData.formula) {
+              this.setCellContentNoHistory(position.row, position.col, cellData.formula);
+            } else if (cellData.value) {
+              this.setCellContentNoHistory(position.row, position.col, cellData.value);
+            }
+          }
         }
       });
+
+      // 重新计算所有公式
+      this.recalculateFormulas();
 
       this.isDirty = false;
       return true;

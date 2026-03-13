@@ -1,6 +1,7 @@
 // 单元格数据结构
 export interface Cell {
   content: string;
+  formulaContent?: string;
   rowSpan: number;
   colSpan: number;
   isMerged: boolean;
