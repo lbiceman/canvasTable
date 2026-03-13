@@ -848,21 +848,24 @@ export class SpreadsheetApp {
     const minCol = Math.min(startCol, endCol);
     const maxCol = Math.max(startCol, endCol);
 
-    // 清除选中区域的内容
-    for (let row = minRow; row <= maxRow; row++) {
-      for (let col = minCol; col <= maxCol; col++) {
-        const previousContent = this.model.getCell(row, col)?.content ?? '';
-        this.model.setCellContent(row, col, '');
-        // 协同模式下提交操作
-        if (this.isCollaborationMode() && previousContent !== '') {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'cellEdit',
-            row,
-            col,
-            content: '',
-            previousContent,
-          });
+    // 批量清除选中区域的内容
+    this.model.clearRangeContent(minRow, minCol, maxRow, maxCol);
+
+    // 协同模式下提交操作
+    if (this.isCollaborationMode()) {
+      for (let row = minRow; row <= maxRow; row++) {
+        for (let col = minCol; col <= maxCol; col++) {
+          const previousContent = this.model.getCell(row, col)?.content ?? '';
+          if (previousContent !== '') {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'cellEdit',
+              row,
+              col,
+              content: '',
+              previousContent,
+            });
+          }
         }
       }
     }
@@ -999,6 +1002,7 @@ export class SpreadsheetApp {
         this.renderer.render();
         this.updateSelectedCellInfo();
         this.updateUndoRedoButtons();
+        this.updateScrollbars();
       }
       return;
     }
@@ -1006,6 +1010,7 @@ export class SpreadsheetApp {
       this.renderer.render();
       this.updateSelectedCellInfo();
       this.updateUndoRedoButtons();
+      this.updateScrollbars();
     }
   }
 
@@ -1018,6 +1023,7 @@ export class SpreadsheetApp {
         this.renderer.render();
         this.updateSelectedCellInfo();
         this.updateUndoRedoButtons();
+        this.updateScrollbars();
       }
       return;
     }
@@ -1025,6 +1031,7 @@ export class SpreadsheetApp {
       this.renderer.render();
       this.updateSelectedCellInfo();
       this.updateUndoRedoButtons();
+      this.updateScrollbars();
     }
   }
 
@@ -1356,7 +1363,7 @@ export class SpreadsheetApp {
     if (this.isResizingRow) {
       const deltaY = event.clientY - this.resizeStartY;
       const newHeight = Math.max(20, this.resizeStartHeight + deltaY);
-      this.model.setRowHeight(this.resizeRowIndex, newHeight);
+      this.model.setRowHeight(this.resizeRowIndex, newHeight, false);
       this.renderer.render();
       this.updateScrollbars();
       return;
@@ -1366,7 +1373,7 @@ export class SpreadsheetApp {
     if (this.isResizingCol) {
       const deltaX = event.clientX - this.resizeStartX;
       const newWidth = Math.max(30, this.resizeStartWidth + deltaX);
-      this.model.setColWidth(this.resizeColIndex, newWidth);
+      this.model.setColWidth(this.resizeColIndex, newWidth, false);
       this.renderer.render();
       this.updateScrollbars();
       return;
@@ -1434,13 +1441,21 @@ export class SpreadsheetApp {
 
     // 重置行高/列宽调整状态，并在协同模式下提交操作
     if (this.isResizingRow) {
+      const finalHeight = this.model.getRowHeight(this.resizeRowIndex);
+      // 记录撤销历史（非协同模式）
+      if (!this.isCollaborationMode() && finalHeight !== this.resizeStartHeight) {
+        this.model.getHistoryManager().record({
+          type: 'resizeRow',
+          data: { row: this.resizeRowIndex, height: finalHeight },
+          undoData: { row: this.resizeRowIndex, height: this.resizeStartHeight }
+        });
+      }
       if (this.isCollaborationMode()) {
-        const newHeight = this.model.getRowHeight(this.resizeRowIndex);
         this.submitCollabOperation({
           ...this.createBaseOp(),
           type: 'rowResize',
           rowIndex: this.resizeRowIndex,
-          height: newHeight,
+          height: finalHeight,
         });
       }
       this.isResizingRow = false;
@@ -1449,13 +1464,21 @@ export class SpreadsheetApp {
     }
 
     if (this.isResizingCol) {
+      const finalWidth = this.model.getColWidth(this.resizeColIndex);
+      // 记录撤销历史（非协同模式）
+      if (!this.isCollaborationMode() && finalWidth !== this.resizeStartWidth) {
+        this.model.getHistoryManager().record({
+          type: 'resizeCol',
+          data: { col: this.resizeColIndex, width: finalWidth },
+          undoData: { col: this.resizeColIndex, width: this.resizeStartWidth }
+        });
+      }
       if (this.isCollaborationMode()) {
-        const newWidth = this.model.getColWidth(this.resizeColIndex);
         this.submitCollabOperation({
           ...this.createBaseOp(),
           type: 'colResize',
           colIndex: this.resizeColIndex,
-          width: newWidth,
+          width: finalWidth,
         });
       }
       this.isResizingCol = false;

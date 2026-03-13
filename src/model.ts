@@ -63,6 +63,75 @@ export class SpreadsheetModel {
     return null;
   }
 
+  // 批量清除范围内单元格内容
+  public clearRangeContent(startRow: number, startCol: number, endRow: number, endCol: number): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; content: string }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const oldContent = this.data.cells[parentRow][parentCol].content || '';
+            cellsData.push({ row: parentRow, col: parentCol, content: oldContent });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldContent = cell.content || '';
+            cellsData.push({ row: i, col: j, content: oldContent });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    const hasChanges = cellsData.some(c => c.content !== '');
+    if (hasChanges) {
+      this.historyManager.record({
+        type: 'clearContent',
+        data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol },
+        undoData: { cells: cellsData }
+      });
+    }
+
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].content = '';
+            this.contentCache[`${parentRow}-${parentCol}`] = '';
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.content = '';
+            this.contentCache[key] = '';
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 设置单元格内容
   public setCellContent(row: number, col: number, content: string): void {
     if (!this.isValidPosition(row, col)) {
@@ -1025,15 +1094,33 @@ export class SpreadsheetModel {
   }
 
   // 设置行高
-  public setRowHeight(row: number, height: number): void {
+  public setRowHeight(row: number, height: number, recordHistory: boolean = true): void {
     if (row >= 0 && row < this.data.rowHeights.length) {
+      const oldHeight = this.data.rowHeights[row];
+      // 只在值发生变化时记录历史
+      if (recordHistory && oldHeight !== height) {
+        this.historyManager.record({
+          type: 'resizeRow',
+          data: { row, height },
+          undoData: { row, height: oldHeight }
+        });
+      }
       this.data.rowHeights[row] = height;
     }
   }
 
   // 设置列宽
-  public setColWidth(col: number, width: number): void {
+  public setColWidth(col: number, width: number, recordHistory: boolean = true): void {
     if (col >= 0 && col < this.data.colWidths.length) {
+      const oldWidth = this.data.colWidths[col];
+      // 只在值发生变化时记录历史
+      if (recordHistory && oldWidth !== width) {
+        this.historyManager.record({
+          type: 'resizeCol',
+          data: { col, width },
+          undoData: { col, width: oldWidth }
+        });
+      }
       this.data.colWidths[col] = width;
     }
   }
@@ -2149,25 +2236,18 @@ export class SpreadsheetModel {
         }
         break;
       case 'splitCell':
-        if (data.originalState) {
-          const { parentRow, parentCol, rowSpan, colSpan, content } = data.originalState;
-          const endRow = parentRow + rowSpan - 1;
-          const endCol = parentCol + colSpan - 1;
-
-          const parentCell = this.data.cells[parentRow][parentCol];
-          parentCell.rowSpan = rowSpan;
-          parentCell.colSpan = colSpan;
-          parentCell.content = content;
-          parentCell.isMerged = false;
-          delete parentCell.mergeParent;
-
-          for (let i = parentRow; i <= endRow; i++) {
-            for (let j = parentCol; j <= endCol; j++) {
-              if (i !== parentRow || j !== parentCol) {
-                const cell = this.data.cells[i][j];
-                cell.isMerged = true;
-                cell.mergeParent = { row: parentRow, col: parentCol };
-                cell.content = '';
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              const cell = this.data.cells[cellData.row][cellData.col];
+              cell.content = cellData.content;
+              cell.rowSpan = cellData.rowSpan;
+              cell.colSpan = cellData.colSpan;
+              cell.isMerged = cellData.isMerged;
+              if (cellData.mergeParent) {
+                cell.mergeParent = cellData.mergeParent;
+              } else {
+                delete cell.mergeParent;
               }
             }
           }
@@ -2212,6 +2292,43 @@ export class SpreadsheetModel {
           if (actualCount > 0) {
             this.data.cells.splice(data.rowIndex, actualCount);
             this.data.rowHeights.splice(data.rowIndex, actualCount);
+          }
+        }
+        break;
+      case 'clearContent':
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].content = cellData.content;
+              this.contentCache[`${cellData.row}-${cellData.col}`] = cellData.content;
+            }
+          }
+        } else if (data.startRow !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].content = '';
+                this.contentCache[`${r}-${c}`] = '';
+              }
+            }
+          }
+        }
+        break;
+      case 'resizeRow':
+        if (data.row !== undefined && data.height !== undefined) {
+          if (data.row >= 0 && data.row < this.data.rowHeights.length) {
+            this.data.rowHeights[data.row] = data.height;
+          }
+        }
+        break;
+      case 'resizeCol':
+        if (data.col !== undefined && data.width !== undefined) {
+          if (data.col >= 0 && data.col < this.data.colWidths.length) {
+            this.data.colWidths[data.col] = data.width;
           }
         }
         break;
