@@ -193,6 +193,152 @@ class CoreAlgorithmSmokeTest {
     }
 
     // ============================================================
+    // CellSplitOp 序列化测试
+    // ============================================================
+
+    @Test
+    void cellSplitOp_jsonRoundTrip_withSpan() throws Exception {
+        CellSplitOp op = new CellSplitOp("user1", 1000L, 1, 0, 0, 3, 3);
+        String json = mapper.writeValueAsString(op);
+        CollabOperation deserialized = mapper.readValue(json, CollabOperation.class);
+        assertInstanceOf(CellSplitOp.class, deserialized);
+        assertEquals(op, deserialized);
+        assertEquals(3, ((CellSplitOp) deserialized).getRowSpan());
+        assertEquals(3, ((CellSplitOp) deserialized).getColSpan());
+    }
+
+    @Test
+    void cellSplitOp_jsonRoundTrip_defaultSpan() throws Exception {
+        CellSplitOp op = new CellSplitOp("user1", 1000L, 1, 0, 0);
+        String json = mapper.writeValueAsString(op);
+        CollabOperation deserialized = mapper.readValue(json, CollabOperation.class);
+        assertInstanceOf(CellSplitOp.class, deserialized);
+        assertEquals(1, ((CellSplitOp) deserialized).getRowSpan());
+        assertEquals(1, ((CellSplitOp) deserialized).getColSpan());
+    }
+
+    // ============================================================
+    // CellSplit OT 转换测试
+    // ============================================================
+
+    @Test
+    void transform_cellEditVsCellSplit_redirectsToTopLeft() {
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 1, 1, "hello", "");
+        CellSplitOp split = new CellSplitOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(edit, split);
+        assertNotNull(result[0]);
+        assertInstanceOf(CellEditOp.class, result[0]);
+        assertEquals(0, ((CellEditOp) result[0]).getRow());
+        assertEquals(0, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellEditVsCellSplit_outsideRange_noChange() {
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 5, 5, "hello", "");
+        CellSplitOp split = new CellSplitOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(edit, split);
+        assertNotNull(result[0]);
+        assertEquals(5, ((CellEditOp) result[0]).getRow());
+        assertEquals(5, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellMergeVsCellSplit_overlapping_returnsNull() {
+        CellMergeOp merge = new CellMergeOp("user1", 1000L, 1, 0, 0, 3, 3);
+        CellSplitOp split = new CellSplitOp("user2", 1000L, 1, 1, 1, 2, 2);
+
+        CollabOperation[] result = OTTransformer.transform(merge, split);
+        assertNull(result[0]);
+    }
+
+    @Test
+    void transform_cellMergeVsCellSplit_noOverlap_unchanged() {
+        CellMergeOp merge = new CellMergeOp("user1", 1000L, 1, 5, 5, 7, 7);
+        CellSplitOp split = new CellSplitOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(merge, split);
+        assertNotNull(result[0]);
+        assertEquals(5, ((CellMergeOp) result[0]).getStartRow());
+        assertEquals(5, ((CellMergeOp) result[0]).getStartCol());
+    }
+
+    @Test
+    void transform_cellSplitVsCellSplit_samePosition_returnsNull() {
+        CellSplitOp splitA = new CellSplitOp("user1", 1000L, 1, 0, 0, 3, 3);
+        CellSplitOp splitB = new CellSplitOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(splitA, splitB);
+        assertNull(result[0]);
+        assertNull(result[1]);
+    }
+
+    @Test
+    void transform_cellSplitVsCellMerge_insideMerge_returnsNull() {
+        CellSplitOp split = new CellSplitOp("user1", 1000L, 1, 1, 1, 2, 2);
+        CellMergeOp merge = new CellMergeOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(split, merge);
+        assertNull(result[0]);
+    }
+
+    @Test
+    void transform_fontColorVsCellSplit_redirectsToTopLeft() {
+        FontColorOp fontColor = new FontColorOp("user1", 1000L, 1, 1, 1, "#FF0000");
+        CellSplitOp split = new CellSplitOp("user2", 1000L, 1, 0, 0, 3, 3);
+
+        CollabOperation[] result = OTTransformer.transform(fontColor, split);
+        assertNotNull(result[0]);
+        assertEquals(0, ((FontColorOp) result[0]).getRow());
+        assertEquals(0, ((FontColorOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_fontAlignVsCellMerge_redirectsToTopLeft() {
+        FontAlignOp fontAlign = new FontAlignOp("user1", 1000L, 1, 1, 1, "center");
+        CellMergeOp merge = new CellMergeOp("user2", 1000L, 1, 0, 0, 2, 2);
+
+        CollabOperation[] result = OTTransformer.transform(fontAlign, merge);
+        assertNotNull(result[0]);
+        assertEquals(0, ((FontAlignOp) result[0]).getRow());
+        assertEquals(0, ((FontAlignOp) result[0]).getCol());
+        assertEquals("center", ((FontAlignOp) result[0]).getAlign());
+    }
+
+    @Test
+    void transform_fontAlignVsCellMerge_outside_noChange() {
+        FontAlignOp fontAlign = new FontAlignOp("user1", 1000L, 1, 5, 5, "right");
+        CellMergeOp merge = new CellMergeOp("user2", 1000L, 1, 0, 0, 2, 2);
+
+        CollabOperation[] result = OTTransformer.transform(fontAlign, merge);
+        assertNotNull(result[0]);
+        assertEquals(5, ((FontAlignOp) result[0]).getRow());
+        assertEquals(5, ((FontAlignOp) result[0]).getCol());
+    }
+
+    // ============================================================
+    // DocumentApplier CellSplit 兼容性测试
+    // ============================================================
+
+    @Test
+    void apply_cellSplit_withSpanFields_worksCorrectly() {
+        SpreadsheetData doc = createSmallDoc(5, 5);
+        CellMergeOp merge = new CellMergeOp("user1", 1000L, 1, 0, 0, 2, 2);
+        DocumentApplier.apply(doc, merge);
+
+        CellSplitOp split = new CellSplitOp("user1", 2000L, 2, 0, 0, 3, 3);
+        DocumentApplier.apply(doc, split);
+
+        Cell cell = doc.getCells().get(0).get(0);
+        assertEquals(1, cell.getRowSpan());
+        assertEquals(1, cell.getColSpan());
+
+        Cell merged = doc.getCells().get(1).get(1);
+        assertFalse(merged.isMerged());
+    }
+
+    // ============================================================
     // OTServer 基本功能
     // ============================================================
 

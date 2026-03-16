@@ -53,6 +53,8 @@ export interface CellSplitOp extends BaseOperation {
   type: 'cellSplit';
   row: number;
   col: number;
+  rowSpan: number;
+  colSpan: number;
 }
 
 // 插入行操作

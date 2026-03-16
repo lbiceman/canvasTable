@@ -1596,6 +1596,8 @@ export class SpreadsheetApp {
                 type: 'cellSplit',
                 row,
                 col,
+                rowSpan,
+                colSpan,
               });
             }
             // 重新渲染
@@ -1645,6 +1647,8 @@ export class SpreadsheetApp {
                     type: 'cellSplit',
                     row,
                     col,
+                    rowSpan,
+                    colSpan,
                   });
                 }
                 splitCount++;

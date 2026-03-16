@@ -161,6 +161,12 @@ const validateCellMergeOp = (obj: Record<string, unknown>): void => {
 const validateCellSplitOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('cellSplit: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('cellSplit: 缺少 col');
+  if (obj.rowSpan !== undefined && typeof obj.rowSpan !== 'number') {
+    throw new Error('cellSplit: rowSpan 必须是数字');
+  }
+  if (obj.colSpan !== undefined && typeof obj.colSpan !== 'number') {
+    throw new Error('cellSplit: colSpan 必须是数字');
+  }
 };
 
 const validateRowInsertOp = (obj: Record<string, unknown>): void => {

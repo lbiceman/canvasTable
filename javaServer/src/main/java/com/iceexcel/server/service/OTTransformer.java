@@ -38,6 +38,18 @@ public class OTTransformer {
     }
 
     /**
+     * 判断位置是否在拆分区域内
+     */
+    private static boolean isInSplitRange(int row, int col, CellSplitOp splitOp) {
+        int rowSpan = splitOp.getRowSpan();
+        int colSpan = splitOp.getColSpan();
+        int endRow = splitOp.getRow() + rowSpan - 1;
+        int endCol = splitOp.getCol() + colSpan - 1;
+        return row >= splitOp.getRow() && row <= endRow
+            && col >= splitOp.getCol() && col <= endCol;
+    }
+
+    /**
      * 根据行插入操作调整行索引
      */
     private static int adjustRowForInsert(int row, RowInsertOp insertOp) {
@@ -346,6 +358,46 @@ public class OTTransformer {
     }
 
     // ============================================================
+    // CellSplit 相关转换函数
+    // ============================================================
+
+    private static CellEditOp transformCellEditVsCellSplit(CellEditOp editOp, CellSplitOp splitOp) {
+        CellEditOp result = cloneOp(editOp);
+        if (isInSplitRange(editOp.getRow(), editOp.getCol(), splitOp)) {
+            result.setRow(splitOp.getRow());
+            result.setCol(splitOp.getCol());
+        }
+        return result;
+    }
+
+    private static CellMergeOp transformCellMergeVsCellSplit(CellMergeOp mergeOp, CellSplitOp splitOp) {
+        int splitEndRow = splitOp.getRow() + splitOp.getRowSpan() - 1;
+        int splitEndCol = splitOp.getCol() + splitOp.getColSpan() - 1;
+        boolean overlaps =
+                mergeOp.getStartRow() <= splitEndRow && mergeOp.getEndRow() >= splitOp.getRow()
+                        && mergeOp.getStartCol() <= splitEndCol && mergeOp.getEndCol() >= splitOp.getCol();
+        return overlaps ? null : cloneOp(mergeOp);
+    }
+
+    private static CellSplitOp transformCellSplitVsCellSplit(CellSplitOp opA, CellSplitOp opB) {
+        if (opA.getRow() == opB.getRow() && opA.getCol() == opB.getCol()) {
+            return null;
+        }
+        return cloneOp(opA);
+    }
+
+    private static CellSplitOp transformCellSplitVsCellEdit(CellSplitOp splitOp, CellEditOp editOp) {
+        return cloneOp(splitOp);
+    }
+
+    private static CellSplitOp transformCellSplitVsCellMerge(CellSplitOp splitOp, CellMergeOp mergeOp) {
+        if (isInMergeRange(splitOp.getRow(), splitOp.getCol(), mergeOp)) {
+            return null;
+        }
+        return cloneOp(splitOp);
+    }
+
+    // ============================================================
     // 核心 transformSingle 函数
     // ============================================================
 
@@ -399,6 +451,7 @@ public class OTTransformer {
         // opB 是 cellEdit
         if (opB instanceof CellEditOp) {
             if (opA instanceof CellEditOp) return transformCellEditVsCellEdit((CellEditOp) opA, (CellEditOp) opB);
+            if (opA instanceof CellSplitOp) return transformCellSplitVsCellEdit((CellSplitOp) opA, (CellEditOp) opB);
             return cloneOp(opA);
         }
 
@@ -456,6 +509,14 @@ public class OTTransformer {
                 }
                 return result;
             }
+            if (opA instanceof FontAlignOp) {
+                FontAlignOp result = cloneOp((FontAlignOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
             if (opA instanceof VerticalAlignOp) {
                 VerticalAlignOp result = cloneOp((VerticalAlignOp) opA);
                 if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
@@ -464,7 +525,84 @@ public class OTTransformer {
                 }
                 return result;
             }
+            if (opA instanceof CellSplitOp) {
+                return transformCellSplitVsCellMerge((CellSplitOp) opA, mergeOp);
+            }
             // 其他类型不受 cellMerge 影响
+            return cloneOp(opA);
+        }
+
+        // opB 是 cellSplit
+        if (opB instanceof CellSplitOp) {
+            CellSplitOp splitOp = (CellSplitOp) opB;
+            if (opA instanceof CellEditOp) return transformCellEditVsCellSplit((CellEditOp) opA, splitOp);
+            if (opA instanceof CellMergeOp) return transformCellMergeVsCellSplit((CellMergeOp) opA, splitOp);
+            if (opA instanceof CellSplitOp) return transformCellSplitVsCellSplit((CellSplitOp) opA, splitOp);
+            if (opA instanceof FontColorOp) {
+                FontColorOp result = cloneOp((FontColorOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof BgColorOp) {
+                BgColorOp result = cloneOp((BgColorOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof FontSizeOp) {
+                FontSizeOp result = cloneOp((FontSizeOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof FontBoldOp) {
+                FontBoldOp result = cloneOp((FontBoldOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof FontItalicOp) {
+                FontItalicOp result = cloneOp((FontItalicOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof FontUnderlineOp) {
+                FontUnderlineOp result = cloneOp((FontUnderlineOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof FontAlignOp) {
+                FontAlignOp result = cloneOp((FontAlignOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof VerticalAlignOp) {
+                VerticalAlignOp result = cloneOp((VerticalAlignOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            // rowInsert/rowDelete/rowResize/colResize 不受 cellSplit 影响
             return cloneOp(opA);
         }
 

@@ -136,6 +136,12 @@ import {
   FontColorOp,
   BgColorOp,
   ColResizeOp,
+  FontBoldOp,
+  FontAlignOp,
+  FontSizeOp,
+  FontItalicOp,
+  FontUnderlineOp,
+  VerticalAlignOp,
 } from '../types';
 
 // 模拟 ModelReader
@@ -213,5 +219,181 @@ describe('invertOperation', () => {
     const inv = invertOperation(op, model);
     expect(inv.type).toBe('bgColor');
     expect((inv as BgColorOp).color).toBe('#00FF00');
+  });
+});
+
+describe('transform - CellEdit vs CellSplit', () => {
+  it('编辑在拆分区域内 → 重定向到左上角', () => {
+    const opA: CellEditOp = { ...base, type: 'cellEdit', row: 1, col: 1, content: 'hello', previousContent: '' };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellEditOp).row).toBe(0);
+    expect((aPrime as CellEditOp).col).toBe(0);
+    expect((aPrime as CellEditOp).content).toBe('hello');
+  });
+
+  it('编辑在拆分区域外 → 不受影响', () => {
+    const opA: CellEditOp = { ...base, type: 'cellEdit', row: 5, col: 5, content: 'hello', previousContent: '' };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellEditOp).row).toBe(5);
+    expect((aPrime as CellEditOp).col).toBe(5);
+  });
+
+  it('编辑恰好在拆分区域边界上 → 重定向', () => {
+    const opA: CellEditOp = { ...base, type: 'cellEdit', row: 2, col: 2, content: 'edge', previousContent: '' };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellEditOp).row).toBe(0);
+    expect((aPrime as CellEditOp).col).toBe(0);
+  });
+
+  it('拆分 rowSpan/colSpan 为 1 → 仅主单元格匹配', () => {
+    const opA: CellEditOp = { ...base, type: 'cellEdit', row: 0, col: 0, content: 'x', previousContent: '' };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 1, colSpan: 1 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellEditOp).row).toBe(0);
+    expect((aPrime as CellEditOp).col).toBe(0);
+  });
+});
+
+describe('transform - CellMerge vs CellSplit', () => {
+  it('合并区域与拆分区域重叠 → 合并失效', () => {
+    const opA: CellMergeOp = { ...base, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 3, endCol: 3 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 1, col: 1, rowSpan: 2, colSpan: 2 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).toBeNull();
+  });
+
+  it('合并区域与拆分区域不重叠 → 合并正常', () => {
+    const opA: CellMergeOp = { ...base, type: 'cellMerge', startRow: 5, startCol: 5, endRow: 7, endCol: 7 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellMergeOp).startRow).toBe(5);
+    expect((aPrime as CellMergeOp).startCol).toBe(5);
+  });
+
+  it('合并区域完全包含拆分区域 → 合并失效', () => {
+    const opA: CellMergeOp = { ...base, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 5, endCol: 5 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 1, col: 1, rowSpan: 2, colSpan: 2 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).toBeNull();
+  });
+
+  it('拆分区域完全包含合并区域 → 合并失效', () => {
+    const opA: CellMergeOp = { ...base, type: 'cellMerge', startRow: 1, startCol: 1, endRow: 2, endCol: 2 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 5, colSpan: 5 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).toBeNull();
+  });
+});
+
+describe('transform - CellSplit vs CellSplit', () => {
+  it('同一位置 → 后者失效', () => {
+    const opA: CellSplitOp = { ...base, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime, bPrime] = transform(opA, opB);
+    expect(aPrime).toBeNull();
+    expect(bPrime).toBeNull();
+  });
+
+  it('不同位置 → 互不影响', () => {
+    const opA: CellSplitOp = { ...base, type: 'cellSplit', row: 0, col: 0, rowSpan: 2, colSpan: 2 };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 5, col: 5, rowSpan: 3, colSpan: 3 };
+    const [aPrime, bPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect(bPrime).not.toBeNull();
+    expect((aPrime as CellSplitOp).row).toBe(0);
+    expect((bPrime as CellSplitOp).row).toBe(5);
+  });
+});
+
+describe('transform - CellSplit vs CellEdit', () => {
+  it('拆分不受编辑影响', () => {
+    const opA: CellSplitOp = { ...base, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const opB: CellEditOp = { ...baseB, type: 'cellEdit', row: 1, col: 1, content: 'hello', previousContent: '' };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellSplitOp).row).toBe(0);
+    expect((aPrime as CellSplitOp).col).toBe(0);
+    expect((aPrime as CellSplitOp).rowSpan).toBe(3);
+  });
+});
+
+describe('transform - CellSplit vs CellMerge', () => {
+  it('拆分位置在合并区域内 → 拆分失效', () => {
+    const opA: CellSplitOp = { ...base, type: 'cellSplit', row: 1, col: 1, rowSpan: 2, colSpan: 2 };
+    const opB: CellMergeOp = { ...baseB, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 3, endCol: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).toBeNull();
+  });
+
+  it('拆分位置在合并区域外 → 拆分正常', () => {
+    const opA: CellSplitOp = { ...base, type: 'cellSplit', row: 5, col: 5, rowSpan: 2, colSpan: 2 };
+    const opB: CellMergeOp = { ...baseB, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 3, endCol: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as CellSplitOp).row).toBe(5);
+  });
+});
+
+describe('transform - StyleOp vs CellSplit', () => {
+  it('FontBold 在拆分区域内 → 重定向到左上角', () => {
+    const opA: FontBoldOp = { ...base, type: 'fontBold', row: 1, col: 1, bold: true };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as FontBoldOp).row).toBe(0);
+    expect((aPrime as FontBoldOp).col).toBe(0);
+    expect((aPrime as FontBoldOp).bold).toBe(true);
+  });
+
+  it('FontColor 在拆分区域外 → 不受影响', () => {
+    const opA: FontColorOp = { ...base, type: 'fontColor', row: 5, col: 5, color: '#FF0000' };
+    const opB: CellSplitOp = { ...baseB, type: 'cellSplit', row: 0, col: 0, rowSpan: 3, colSpan: 3 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as FontColorOp).row).toBe(5);
+    expect((aPrime as FontColorOp).col).toBe(5);
+  });
+});
+
+describe('transform - FontAlign vs CellMerge', () => {
+  it('FontAlign 在合并区域内 → 重定向到左上角', () => {
+    const opA: FontAlignOp = { ...base, type: 'fontAlign', row: 1, col: 1, align: 'center' };
+    const opB: CellMergeOp = { ...baseB, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 2, endCol: 2 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as FontAlignOp).row).toBe(0);
+    expect((aPrime as FontAlignOp).col).toBe(0);
+    expect((aPrime as FontAlignOp).align).toBe('center');
+  });
+
+  it('FontAlign 在合并区域外 → 不受影响', () => {
+    const opA: FontAlignOp = { ...base, type: 'fontAlign', row: 5, col: 5, align: 'right' };
+    const opB: CellMergeOp = { ...baseB, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 2, endCol: 2 };
+    const [aPrime] = transform(opA, opB);
+    expect(aPrime).not.toBeNull();
+    expect((aPrime as FontAlignOp).row).toBe(5);
+    expect((aPrime as FontAlignOp).col).toBe(5);
+  });
+});
+
+describe('invertOperation - CellMerge 反向操作携带范围', () => {
+  const model = createMockModel();
+
+  it('CellMerge 的反向操作是带 rowSpan/colSpan 的 CellSplit', () => {
+    const op: CellMergeOp = { ...base, type: 'cellMerge', startRow: 0, startCol: 0, endRow: 2, endCol: 3 };
+    const inv = invertOperation(op, model);
+    expect(inv.type).toBe('cellSplit');
+    expect((inv as CellSplitOp).row).toBe(0);
+    expect((inv as CellSplitOp).col).toBe(0);
+    expect((inv as CellSplitOp).rowSpan).toBe(3);
+    expect((inv as CellSplitOp).colSpan).toBe(4);
   });
 });

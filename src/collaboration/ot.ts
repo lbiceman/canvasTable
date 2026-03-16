@@ -28,6 +28,22 @@ const cloneOp = <T extends CollabOperation>(op: T): T => {
 };
 
 /**
+ * 判断位置是否在拆分区域内
+ */
+const isInSplitRange = (
+  row: number,
+  col: number,
+  splitOp: CellSplitOp
+): boolean => {
+  const rowSpan = splitOp.rowSpan ?? 1;
+  const colSpan = splitOp.colSpan ?? 1;
+  const endRow = splitOp.row + rowSpan - 1;
+  const endCol = splitOp.col + colSpan - 1;
+  return row >= splitOp.row && row <= endRow &&
+         col >= splitOp.col && col <= endCol;
+};
+
+/**
  * 判断行是否在删除范围内
  */
 const isRowInDeleteRange = (row: number, deleteOp: RowDeleteOp): boolean => {
@@ -468,6 +484,86 @@ const transformCellMergeVsCellMerge = (
 };
 
 // ============================================================
+// CellSplit 相关转换函数
+// ============================================================
+
+const transformCellEditVsCellSplit = (
+  editOp: CellEditOp,
+  splitOp: CellSplitOp
+): CellEditOp => {
+  const result = cloneOp(editOp);
+  if (isInSplitRange(editOp.row, editOp.col, splitOp)) {
+    result.row = splitOp.row;
+    result.col = splitOp.col;
+  }
+  return result;
+};
+
+const transformCellMergeVsCellSplit = (
+  mergeOp: CellMergeOp,
+  splitOp: CellSplitOp
+): CellMergeOp | null => {
+  const rowSpan = splitOp.rowSpan ?? 1;
+  const colSpan = splitOp.colSpan ?? 1;
+  const splitEndRow = splitOp.row + rowSpan - 1;
+  const splitEndCol = splitOp.col + colSpan - 1;
+
+  const overlaps =
+    mergeOp.startRow <= splitEndRow &&
+    mergeOp.endRow >= splitOp.row &&
+    mergeOp.startCol <= splitEndCol &&
+    mergeOp.endCol >= splitOp.col;
+
+  return overlaps ? null : cloneOp(mergeOp);
+};
+
+const transformCellSplitVsCellSplit = (
+  opA: CellSplitOp,
+  opB: CellSplitOp
+): CellSplitOp | null => {
+  if (opA.row === opB.row && opA.col === opB.col) {
+    return null;
+  }
+  return cloneOp(opA);
+};
+
+const transformCellSplitVsCellEdit = (
+  splitOp: CellSplitOp,
+  _editOp: CellEditOp
+): CellSplitOp => {
+  return cloneOp(splitOp);
+};
+
+const transformCellSplitVsCellMerge = (
+  splitOp: CellSplitOp,
+  mergeOp: CellMergeOp
+): CellSplitOp | null => {
+  if (
+    splitOp.row >= mergeOp.startRow &&
+    splitOp.row <= mergeOp.endRow &&
+    splitOp.col >= mergeOp.startCol &&
+    splitOp.col <= mergeOp.endCol
+  ) {
+    return null;
+  }
+  return cloneOp(splitOp);
+};
+
+const transformStyleOpVsCellSplit = (
+  styleOp: CollabOperation,
+  splitOp: CellSplitOp
+): CollabOperation => {
+  const result = cloneOp(styleOp);
+  if ('row' in result && 'col' in result && typeof result.row === 'number' && typeof result.col === 'number') {
+    if (isInSplitRange(result.row, result.col, splitOp)) {
+      result.row = splitOp.row;
+      result.col = splitOp.col;
+    }
+  }
+  return result;
+};
+
+// ============================================================
 // 核心 transform 函数
 // ============================================================
 
@@ -561,8 +657,9 @@ const transformSingle = (
     switch (opA.type) {
       case 'cellEdit':
         return transformCellEditVsCellEdit(opA, opB);
+      case 'cellSplit':
+        return transformCellSplitVsCellEdit(opA, opB);
       default:
-        // 其他操作类型不受单元格编辑影响
         return cloneOp(opA);
     }
   }
@@ -574,6 +671,8 @@ const transformSingle = (
         return transformCellEditVsCellMerge(opA, opB);
       case 'cellMerge':
         return transformCellMergeVsCellMerge(opA, opB);
+      case 'cellSplit':
+        return transformCellSplitVsCellMerge(opA, opB);
       case 'fontColor': {
         // 如果颜色操作在合并范围内，调整到父单元格
         const result = cloneOp(opA);
@@ -657,6 +756,20 @@ const transformSingle = (
         }
         return result;
       }
+      case 'fontAlign': {
+        // 如果字体对齐操作在合并范围内，调整到父单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
       case 'verticalAlign': {
         // 如果垂直对齐操作在合并范围内，调整到父单元格
         const result = cloneOp(opA);
@@ -678,8 +791,25 @@ const transformSingle = (
 
   // ---- opB 是 CellSplit ----
   if (opB.type === 'cellSplit') {
-    // 拆分操作不影响其他操作的行列索引
-    return cloneOp(opA);
+    switch (opA.type) {
+      case 'cellEdit':
+        return transformCellEditVsCellSplit(opA, opB);
+      case 'cellMerge':
+        return transformCellMergeVsCellSplit(opA, opB);
+      case 'cellSplit':
+        return transformCellSplitVsCellSplit(opA, opB);
+      case 'fontColor':
+      case 'bgColor':
+      case 'fontSize':
+      case 'fontBold':
+      case 'fontItalic':
+      case 'fontUnderline':
+      case 'fontAlign':
+      case 'verticalAlign':
+        return transformStyleOpVsCellSplit(opA, opB);
+      default:
+        return cloneOp(opA);
+    }
   }
 
   // ---- opB 是 RowResize ----
@@ -781,6 +911,8 @@ export const invertOperation = (
         revision: op.revision,
         row: op.startRow,
         col: op.startCol,
+        rowSpan: op.endRow - op.startRow + 1,
+        colSpan: op.endCol - op.startCol + 1,
       };
     }
 

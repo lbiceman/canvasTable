@@ -43,6 +43,8 @@ const arbitraryCellSplitOp = (): fc.Arbitrary<CollabOperation> =>
     revision: fc.nat(),
     row: fc.nat({ max: 999 }),
     col: fc.nat({ max: 99 }),
+    rowSpan: fc.integer({ min: 1, max: 10 }),
+    colSpan: fc.integer({ min: 1, max: 10 }),
   });
 
 const arbitraryRowInsertOp = (): fc.Arbitrary<CollabOperation> =>
