@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.iceexcel.server.service.CoreAlgorithmSmokeTest
+-------------------------------------------------------------------------------
+Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.445 s -- in com.iceexcel.server.service.CoreAlgorithmSmokeTest
