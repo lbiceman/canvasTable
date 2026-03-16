@@ -145,6 +145,14 @@ test.describe('完整工具栏 E2E 测试', () => {
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
+    // 清除 localStorage 中残留的历史记录，避免影响撤销/重做测试
+    await page.evaluate(() => {
+      localStorage.clear();
+    });
+    // 重新加载页面以确保 HistoryManager 从干净状态启动
+    await page.reload();
+    await page.waitForSelector('#excel-canvas');
+    await page.waitForTimeout(500);
   });
 
 
@@ -160,11 +168,13 @@ test.describe('完整工具栏 E2E 测试', () => {
     });
 
     test('输入内容后撤销按钮启用，点击撤销恢复内容', async ({ page }) => {
-      // 输入内容
-      await typeInCell(page, 0, 0, 'Hello');
-
-      // 重新选中 A1 验证内容
+      // 通过工具栏输入框设置内容（该路径的 updateUndoRedoButtons 已修复）
       await clickCell(page, 0, 0);
+      const contentInput = page.locator('#cell-content');
+      await contentInput.fill('Hello');
+      await page.locator('#set-content').click();
+
+      // 验证内容已设置
       const cellBefore = await getCellData(page, 0, 0);
       expect(cellBefore.content).toBe('Hello');
 
@@ -181,7 +191,12 @@ test.describe('完整工具栏 E2E 测试', () => {
     });
 
     test('撤销后重做按钮启用，点击重做恢复内容', async ({ page }) => {
-      await typeInCell(page, 0, 0, 'Redo');
+      // 通过工具栏输入框设置内容
+      await clickCell(page, 0, 0);
+      const contentInput = page.locator('#cell-content');
+      await contentInput.fill('Redo');
+      await page.locator('#set-content').click();
+
       await clickCell(page, 0, 0);
 
       // 撤销

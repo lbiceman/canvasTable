@@ -2208,6 +2208,7 @@ export class SpreadsheetApp {
 
       // 重新渲染
       this.renderer.render();
+      this.updateUndoRedoButtons();
     } else {
       alert('请先选择要设置内容的单元格');
     }
