@@ -1357,6 +1357,143 @@ export class SpreadsheetModel {
     return true;
   }
 
+  // 插入指定列
+  public insertColumns(colIndex: number, count: number): boolean {
+    if (colIndex < 0 || colIndex > this.getColCount() || count <= 0) {
+      return false;
+    }
+
+    // 检查是否超过最大列数
+    if (this.getColCount() + count > MAX_COLS) {
+      return false;
+    }
+
+    const rowCount = this.getRowCount();
+
+    // 每行在 colIndex 处插入 count 个空单元格
+    for (let i = 0; i < rowCount; i++) {
+      const newCells: Cell[] = [];
+      for (let k = 0; k < count; k++) {
+        newCells.push({
+          content: '',
+          rowSpan: 1,
+          colSpan: 1,
+          isMerged: false
+        });
+      }
+      this.data.cells[i].splice(colIndex, 0, ...newCells);
+    }
+
+    // 在 colWidths 中插入 count 个默认列宽
+    const newWidths = Array(count).fill(DEFAULT_COL_WIDTH);
+    this.data.colWidths.splice(colIndex, 0, ...newWidths);
+
+    // 更新合并/拆分单元格引用
+    this.updateMergeReferencesAfterInsertCols(colIndex, count);
+
+    this.clearAllCache();
+    this.isDirty = true;
+    return true;
+  }
+
+  // 插入列后更新合并/拆分单元格引用
+  private updateMergeReferencesAfterInsertCols(colIndex: number, count: number): void {
+    for (let i = 0; i < this.getRowCount(); i++) {
+      for (let j = 0; j < this.getColCount(); j++) {
+        const cell = this.data.cells[i][j];
+        // 更新被合并单元格的父单元格引用
+        if (cell.isMerged && cell.mergeParent) {
+          if (cell.mergeParent.col >= colIndex) {
+            cell.mergeParent.col += count;
+          }
+        }
+        // 更新合并父单元格的 colSpan（如果插入点在合并区域内部）
+        if ((cell.rowSpan > 1 || cell.colSpan > 1) && !cell.isMerged) {
+          const endCol = j + cell.colSpan - 1;
+          if (j < colIndex && endCol >= colIndex) {
+            // 插入点在合并区域内部，扩展 colSpan
+            cell.colSpan += count;
+          } else if (j >= colIndex) {
+            // 合并父单元格在插入点右侧，不需要调整（已随行数据移动）
+          }
+        }
+      }
+    }
+  }
+
+  // 删除指定列
+  public deleteColumns(colIndex: number, count: number): boolean {
+    if (colIndex < 0 || colIndex >= this.getColCount() || count <= 0) {
+      return false;
+    }
+
+    // 确保不会删除所有列
+    const actualCount = Math.min(count, this.getColCount() - colIndex);
+    if (this.getColCount() - actualCount < 1) {
+      return false;
+    }
+
+    // 先拆分受影响的合并单元格
+    this.splitMergedCellsInCols(colIndex, actualCount);
+
+    // 每行删除 colIndex 起的 actualCount 个单元格
+    const rowCount = this.getRowCount();
+    for (let i = 0; i < rowCount; i++) {
+      this.data.cells[i].splice(colIndex, actualCount);
+    }
+
+    // 从 colWidths 中删除对应条目
+    this.data.colWidths.splice(colIndex, actualCount);
+
+    // 更新合并/拆分单元格引用
+    this.updateMergeReferencesAfterDeleteCols(colIndex, actualCount);
+
+    this.clearAllCache();
+    this.isDirty = true;
+    return true;
+  }
+
+  // 删除列后更新合并/拆分单元格引用
+  private updateMergeReferencesAfterDeleteCols(colIndex: number, count: number): void {
+    for (let i = 0; i < this.getRowCount(); i++) {
+      for (let j = 0; j < this.getColCount(); j++) {
+        const cell = this.data.cells[i][j];
+        // 更新被合并单元格的父单元格引用
+        if (cell.isMerged && cell.mergeParent) {
+          if (cell.mergeParent.col >= colIndex + count) {
+            cell.mergeParent.col -= count;
+          }
+        }
+      }
+    }
+  }
+
+  // 拆分指定列范围内的合并单元格
+  private splitMergedCellsInCols(startCol: number, count: number): void {
+    const endCol = startCol + count - 1;
+    const processedCells = new Set<string>();
+
+    for (let i = 0; i < this.getRowCount(); i++) {
+      for (let j = startCol; j <= endCol && j < this.getColCount(); j++) {
+        const cell = this.data.cells[i][j];
+
+        // 如果是合并单元格的父单元格
+        if ((cell.rowSpan > 1 || cell.colSpan > 1) && !processedCells.has(`${i},${j}`)) {
+          this.splitCell(i, j);
+          processedCells.add(`${i},${j}`);
+        }
+        // 如果是被合并的单元格
+        else if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          if (!processedCells.has(`${parentRow},${parentCol}`)) {
+            this.splitCell(parentRow, parentCol);
+            processedCells.add(`${parentRow},${parentCol}`);
+          }
+        }
+      }
+    }
+  }
+
   // 插入行后更新合并单元格引用
   private updateMergeReferencesAfterInsertRows(insertIndex: number, count: number): void {
     for (let i = 0; i < this.getRowCount(); i++) {

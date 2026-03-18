@@ -8,6 +8,8 @@ D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellEd
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellMergeOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellSplitOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\ClientConnection.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\ColDeleteOp.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\ColInsertOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CollabOperation.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\ColResizeOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\FontAlignOp.java

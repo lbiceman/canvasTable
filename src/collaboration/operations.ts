@@ -7,6 +7,8 @@ import {
   RowInsertOp,
   RowDeleteOp,
   RowResizeOp,
+  ColInsertOp,
+  ColDeleteOp,
   ColResizeOp,
   FontColorOp,
   BgColorOp,
@@ -26,6 +28,8 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'rowInsert',
   'rowDelete',
   'rowResize',
+  'colInsert',
+  'colDelete',
   'colResize',
   'fontColor',
   'bgColor',
@@ -98,6 +102,14 @@ export const deserializeOperation = (json: string): CollabOperation => {
     case 'rowResize':
       validateRowResizeOp(obj);
       return obj as unknown as RowResizeOp;
+
+    case 'colInsert':
+      validateColInsertOp(obj);
+      return obj as unknown as ColInsertOp;
+
+    case 'colDelete':
+      validateColDeleteOp(obj);
+      return obj as unknown as ColDeleteOp;
 
     case 'colResize':
       validateColResizeOp(obj);
@@ -182,6 +194,24 @@ const validateRowDeleteOp = (obj: Record<string, unknown>): void => {
 const validateRowResizeOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.rowIndex !== 'number') throw new Error('rowResize: 缺少 rowIndex');
   if (typeof obj.height !== 'number') throw new Error('rowResize: 缺少 height');
+};
+
+const validateColInsertOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.colIndex !== 'number' || obj.colIndex < 0 || !Number.isInteger(obj.colIndex)) {
+    throw new Error('colInsert: colIndex 必须是非负整数');
+  }
+  if (typeof obj.count !== 'number' || obj.count <= 0 || !Number.isInteger(obj.count)) {
+    throw new Error('colInsert: count 必须是正整数');
+  }
+};
+
+const validateColDeleteOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.colIndex !== 'number' || obj.colIndex < 0 || !Number.isInteger(obj.colIndex)) {
+    throw new Error('colDelete: colIndex 必须是非负整数');
+  }
+  if (typeof obj.count !== 'number' || obj.count <= 0 || !Number.isInteger(obj.count)) {
+    throw new Error('colDelete: count 必须是正整数');
+  }
 };
 
 const validateColResizeOp = (obj: Record<string, unknown>): void => {

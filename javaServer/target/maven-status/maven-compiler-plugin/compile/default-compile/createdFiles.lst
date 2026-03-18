@@ -1,4 +1,5 @@
 com\iceexcel\server\model\CollabOperation.class
+com\iceexcel\server\model\ColInsertOp.class
 com\iceexcel\server\service\RoomManager$JoinResult.class
 com\iceexcel\server\IceExcelServerApplication.class
 com\iceexcel\server\model\FontAlignOp.class
@@ -30,6 +31,7 @@ com\iceexcel\server\model\Selection.class
 com\iceexcel\server\service\DocumentApplier.class
 com\iceexcel\server\model\RowDeleteOp.class
 com\iceexcel\server\model\CellMergeOp.class
+com\iceexcel\server\model\ColDeleteOp.class
 com\iceexcel\server\model\MergeParent.class
 com\iceexcel\server\model\CellEditOp.class
 com\iceexcel\server\service\OTTransformer.class

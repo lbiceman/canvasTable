@@ -6,6 +6,9 @@ import {
   RowInsertOp,
   RowDeleteOp,
   RowResizeOp,
+  ColInsertOp,
+  ColDeleteOp,
+  ColResizeOp,
   FontColorOp,
   BgColorOp,
   FontSizeOp,
@@ -75,6 +78,40 @@ const adjustRowForDelete = (row: number, deleteOp: RowDeleteOp): number | null =
     return row - deleteOp.count;
   }
   return row;
+};
+
+// ============================================================
+// 列索引调整函数（针对 ColInsert / ColDelete）
+// ============================================================
+
+/**
+ * 判断列是否在删除范围内
+ */
+const isColInDeleteRange = (col: number, deleteOp: ColDeleteOp): boolean => {
+  return col >= deleteOp.colIndex && col < deleteOp.colIndex + deleteOp.count;
+};
+
+/**
+ * 根据列插入操作调整列索引
+ */
+const adjustColForInsert = (col: number, insertOp: ColInsertOp): number => {
+  if (col >= insertOp.colIndex) {
+    return col + insertOp.count;
+  }
+  return col;
+};
+
+/**
+ * 根据列删除操作调整列索引，返回 null 表示该列被删除
+ */
+const adjustColForDelete = (col: number, deleteOp: ColDeleteOp): number | null => {
+  if (isColInDeleteRange(col, deleteOp)) {
+    return null; // 列被删除
+  }
+  if (col >= deleteOp.colIndex + deleteOp.count) {
+    return col - deleteOp.count;
+  }
+  return col;
 };
 
 // ============================================================
@@ -427,6 +464,374 @@ const transformRowDeleteVsRowDelete = (
 };
 
 // ============================================================
+// 具体操作类型 vs ColInsert 的转换
+// ============================================================
+
+const transformCellEditVsColInsert = (
+  op: CellEditOp,
+  insertOp: ColInsertOp
+): CellEditOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformCellMergeVsColInsert = (
+  op: CellMergeOp,
+  insertOp: ColInsertOp
+): CellMergeOp => {
+  const result = cloneOp(op);
+  if (op.startCol >= insertOp.colIndex) {
+    // 合并区域完全在插入点右侧，整体右移
+    result.startCol = op.startCol + insertOp.count;
+    result.endCol = op.endCol + insertOp.count;
+  } else if (op.endCol < insertOp.colIndex) {
+    // 合并区域完全在插入点左侧，不变
+  } else {
+    // 插入点穿过合并区域（startCol < colIndex <= endCol），仅 endCol 增加
+    result.endCol = op.endCol + insertOp.count;
+  }
+  return result;
+};
+
+const transformCellSplitVsColInsert = (
+  op: CellSplitOp,
+  insertOp: ColInsertOp
+): CellSplitOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  // rowSpan/colSpan 是历史快照，不受列插入影响
+  return result;
+};
+
+const transformColResizeVsColInsert = (
+  op: ColResizeOp,
+  insertOp: ColInsertOp
+): ColResizeOp => {
+  const result = cloneOp(op);
+  result.colIndex = adjustColForInsert(op.colIndex, insertOp);
+  return result;
+};
+
+const transformColInsertVsColInsert = (
+  opA: ColInsertOp,
+  opB: ColInsertOp
+): ColInsertOp => {
+  const result = cloneOp(opA);
+  if (opA.colIndex > opB.colIndex) {
+    result.colIndex = opA.colIndex + opB.count;
+  }
+  // opA.colIndex <= opB.colIndex 时不变
+  return result;
+};
+
+const transformColDeleteVsColInsert = (
+  opA: ColDeleteOp,
+  opB: ColInsertOp
+): ColDeleteOp => {
+  const result = cloneOp(opA);
+  if (opA.colIndex > opB.colIndex) {
+    result.colIndex = opA.colIndex + opB.count;
+  }
+  // opA.colIndex <= opB.colIndex 时不变
+  return result;
+};
+
+const transformFontColorVsColInsert = (
+  op: FontColorOp,
+  insertOp: ColInsertOp
+): FontColorOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformBgColorVsColInsert = (
+  op: BgColorOp,
+  insertOp: ColInsertOp
+): BgColorOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformFontSizeVsColInsert = (
+  op: FontSizeOp,
+  insertOp: ColInsertOp
+): FontSizeOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformFontBoldVsColInsert = (
+  op: FontBoldOp,
+  insertOp: ColInsertOp
+): FontBoldOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformFontItalicVsColInsert = (
+  op: FontItalicOp,
+  insertOp: ColInsertOp
+): FontItalicOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformFontUnderlineVsColInsert = (
+  op: FontUnderlineOp,
+  insertOp: ColInsertOp
+): FontUnderlineOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformFontAlignVsColInsert = (
+  op: FontAlignOp,
+  insertOp: ColInsertOp
+): FontAlignOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformVerticalAlignVsColInsert = (
+  op: VerticalAlignOp,
+  insertOp: ColInsertOp
+): VerticalAlignOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+// ============================================================
+// 具体操作类型 vs ColDelete 的转换
+// ============================================================
+
+const transformCellEditVsColDelete = (
+  op: CellEditOp,
+  deleteOp: ColDeleteOp
+): CellEditOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformCellMergeVsColDelete = (
+  op: CellMergeOp,
+  deleteOp: ColDeleteOp
+): CellMergeOp | null => {
+  const delEnd = deleteOp.colIndex + deleteOp.count;
+
+  // 完全在删除范围内
+  if (op.startCol >= deleteOp.colIndex && op.endCol < delEnd) {
+    return null;
+  }
+  // 左侧部分重叠（合并区域被截断）
+  if (op.startCol < deleteOp.colIndex && op.endCol >= deleteOp.colIndex && op.endCol < delEnd) {
+    return null;
+  }
+  // 右侧部分重叠（合并区域被截断）
+  if (op.startCol >= deleteOp.colIndex && op.startCol < delEnd && op.endCol >= delEnd) {
+    return null;
+  }
+  // 删除范围完全在合并区域内部（合并区域收缩）
+  if (op.startCol < deleteOp.colIndex && delEnd <= op.endCol) {
+    const result = cloneOp(op);
+    result.endCol = op.endCol - deleteOp.count;
+    return result;
+  }
+  // 合并区域完全在删除范围右侧
+  if (op.startCol >= delEnd) {
+    const result = cloneOp(op);
+    result.startCol = op.startCol - deleteOp.count;
+    result.endCol = op.endCol - deleteOp.count;
+    return result;
+  }
+  // 合并区域完全在删除范围左侧，不变
+  return cloneOp(op);
+};
+
+const transformCellSplitVsColDelete = (
+  op: CellSplitOp,
+  deleteOp: ColDeleteOp
+): CellSplitOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  // rowSpan/colSpan 是历史快照，不受列删除影响
+  return result;
+};
+
+const transformColResizeVsColDelete = (
+  op: ColResizeOp,
+  deleteOp: ColDeleteOp
+): ColResizeOp | null => {
+  const newCol = adjustColForDelete(op.colIndex, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.colIndex = newCol;
+  return result;
+};
+
+const transformColInsertVsColDelete = (
+  opA: ColInsertOp,
+  opB: ColDeleteOp
+): ColInsertOp => {
+  const result = cloneOp(opA);
+  const delEnd = opB.colIndex + opB.count;
+  if (opA.colIndex > delEnd) {
+    // 插入位置在删除范围之后
+    result.colIndex = opA.colIndex - opB.count;
+  } else if (opA.colIndex <= opB.colIndex) {
+    // 插入位置在删除范围之前，不变
+  } else {
+    // 插入位置在删除范围内，调整到删除起始位置
+    result.colIndex = opB.colIndex;
+  }
+  return result;
+};
+
+const transformColDeleteVsColDelete = (
+  opA: ColDeleteOp,
+  opB: ColDeleteOp
+): ColDeleteOp | null => {
+  const origColIndex = opA.colIndex;
+  const origCount = opA.count;
+  const aEnd = origColIndex + origCount;
+  const bEnd = opB.colIndex + opB.count;
+
+  // opA 完全在 opB 之后
+  if (origColIndex >= bEnd) {
+    const result = cloneOp(opA);
+    result.colIndex = origColIndex - opB.count;
+    return result;
+  }
+  // opA 完全在 opB 之前
+  if (aEnd <= opB.colIndex) {
+    return cloneOp(opA);
+  }
+  // opA 完全在 opB 内部，被完全删除
+  if (origColIndex >= opB.colIndex && aEnd <= bEnd) {
+    return null;
+  }
+  // opA 完全包含 opB
+  if (origColIndex < opB.colIndex && aEnd > bEnd) {
+    const result = cloneOp(opA);
+    result.count = origCount - opB.count;
+    return result;
+  }
+  // opA 与 opB 前部分重叠（opA 起点在 opB 之前，opA 终点在 opB 内部）
+  if (origColIndex < opB.colIndex && aEnd > opB.colIndex && aEnd <= bEnd) {
+    const result = cloneOp(opA);
+    result.count = opB.colIndex - origColIndex;
+    return result;
+  }
+  // opA 与 opB 后部分重叠（opA 起点在 opB 内部，opA 终点在 opB 之后）
+  const newCount = aEnd - bEnd;
+  const result = cloneOp(opA);
+  result.colIndex = opB.colIndex;
+  result.count = newCount;
+  return result;
+};
+
+const transformFontColorVsColDelete = (
+  op: FontColorOp,
+  deleteOp: ColDeleteOp
+): FontColorOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformBgColorVsColDelete = (
+  op: BgColorOp,
+  deleteOp: ColDeleteOp
+): BgColorOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformFontSizeVsColDelete = (
+  op: FontSizeOp,
+  deleteOp: ColDeleteOp
+): FontSizeOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformFontBoldVsColDelete = (
+  op: FontBoldOp,
+  deleteOp: ColDeleteOp
+): FontBoldOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformFontItalicVsColDelete = (
+  op: FontItalicOp,
+  deleteOp: ColDeleteOp
+): FontItalicOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformFontUnderlineVsColDelete = (
+  op: FontUnderlineOp,
+  deleteOp: ColDeleteOp
+): FontUnderlineOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformFontAlignVsColDelete = (
+  op: FontAlignOp,
+  deleteOp: ColDeleteOp
+): FontAlignOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformVerticalAlignVsColDelete = (
+  op: VerticalAlignOp,
+  deleteOp: ColDeleteOp
+): VerticalAlignOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+// ============================================================
 // CellEdit vs CellEdit 的转换
 // ============================================================
 
@@ -578,10 +983,89 @@ const transformSingle = (
   opA: CollabOperation,
   opB: CollabOperation
 ): CollabOperation | null => {
-  // 如果两个操作完全独立（不涉及行变化且不涉及相同单元格），直接返回
-  // 列宽调整不影响任何其他操作
-  if (opA.type === 'colResize' || opB.type === 'colResize') {
+  // opB 是 ColResize 时，列宽调整不影响其他操作
+  if (opB.type === 'colResize') {
     return cloneOp(opA);
+  }
+
+  // ---- opB 是 ColInsert ----
+  if (opB.type === 'colInsert') {
+    switch (opA.type) {
+      case 'cellEdit':
+        return transformCellEditVsColInsert(opA, opB);
+      case 'cellMerge':
+        return transformCellMergeVsColInsert(opA, opB);
+      case 'cellSplit':
+        return transformCellSplitVsColInsert(opA, opB);
+      case 'colResize':
+        return transformColResizeVsColInsert(opA, opB);
+      case 'rowInsert':
+        return cloneOp(opA); // 行列独立
+      case 'rowDelete':
+        return cloneOp(opA); // 行列独立
+      case 'rowResize':
+        return cloneOp(opA); // 行列独立
+      case 'colInsert':
+        return transformColInsertVsColInsert(opA, opB);
+      case 'colDelete':
+        return transformColDeleteVsColInsert(opA, opB);
+      case 'fontColor':
+        return transformFontColorVsColInsert(opA, opB);
+      case 'bgColor':
+        return transformBgColorVsColInsert(opA, opB);
+      case 'fontSize':
+        return transformFontSizeVsColInsert(opA, opB);
+      case 'fontBold':
+        return transformFontBoldVsColInsert(opA, opB);
+      case 'fontItalic':
+        return transformFontItalicVsColInsert(opA, opB);
+      case 'fontUnderline':
+        return transformFontUnderlineVsColInsert(opA, opB);
+      case 'fontAlign':
+        return transformFontAlignVsColInsert(opA, opB);
+      case 'verticalAlign':
+        return transformVerticalAlignVsColInsert(opA, opB);
+    }
+  }
+
+  // ---- opB 是 ColDelete ----
+  if (opB.type === 'colDelete') {
+    switch (opA.type) {
+      case 'cellEdit':
+        return transformCellEditVsColDelete(opA, opB);
+      case 'cellMerge':
+        return transformCellMergeVsColDelete(opA, opB);
+      case 'cellSplit':
+        return transformCellSplitVsColDelete(opA, opB);
+      case 'colResize':
+        return transformColResizeVsColDelete(opA, opB);
+      case 'rowInsert':
+        return cloneOp(opA); // 行列独立
+      case 'rowDelete':
+        return cloneOp(opA); // 行列独立
+      case 'rowResize':
+        return cloneOp(opA); // 行列独立
+      case 'colInsert':
+        return transformColInsertVsColDelete(opA, opB);
+      case 'colDelete':
+        return transformColDeleteVsColDelete(opA, opB);
+      case 'fontColor':
+        return transformFontColorVsColDelete(opA, opB);
+      case 'bgColor':
+        return transformBgColorVsColDelete(opA, opB);
+      case 'fontSize':
+        return transformFontSizeVsColDelete(opA, opB);
+      case 'fontBold':
+        return transformFontBoldVsColDelete(opA, opB);
+      case 'fontItalic':
+        return transformFontItalicVsColDelete(opA, opB);
+      case 'fontUnderline':
+        return transformFontUnderlineVsColDelete(opA, opB);
+      case 'fontAlign':
+        return transformFontAlignVsColDelete(opA, opB);
+      case 'verticalAlign':
+        return transformVerticalAlignVsColDelete(opA, opB);
+    }
   }
 
   // ---- opB 是 RowInsert ----
@@ -979,6 +1463,16 @@ export const invertOperation = (
         height: currentHeight,
         timestamp: Date.now(),
       };
+    }
+
+    case 'colInsert': {
+      // 反向操作：删除插入的列
+      return { ...op, type: 'colDelete' } as ColDeleteOp;
+    }
+
+    case 'colDelete': {
+      // 反向操作：在相同位置插入列
+      return { ...op, type: 'colInsert' } as ColInsertOp;
     }
 
     case 'colResize': {

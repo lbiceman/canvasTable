@@ -12,6 +12,8 @@ export type OperationType =
   | 'rowInsert'
   | 'rowDelete'
   | 'rowResize'
+  | 'colInsert'
+  | 'colDelete'
   | 'colResize'
   | 'fontColor'
   | 'bgColor'
@@ -76,6 +78,20 @@ export interface RowResizeOp extends BaseOperation {
   type: 'rowResize';
   rowIndex: number;
   height: number;
+}
+
+// 插入列操作
+export interface ColInsertOp extends BaseOperation {
+  type: 'colInsert';
+  colIndex: number; // 插入位置（非负整数，从 0 开始）
+  count: number;    // 插入列数（正整数 > 0）
+}
+
+// 删除列操作
+export interface ColDeleteOp extends BaseOperation {
+  type: 'colDelete';
+  colIndex: number; // 删除起始列（非负整数，从 0 开始）
+  count: number;    // 删除列数（正整数 > 0）
 }
 
 // 调整列宽操作
@@ -157,6 +173,8 @@ export type CollabOperation =
   | RowInsertOp
   | RowDeleteOp
   | RowResizeOp
+  | ColInsertOp
+  | ColDeleteOp
   | ColResizeOp
   | FontColorOp
   | BgColorOp

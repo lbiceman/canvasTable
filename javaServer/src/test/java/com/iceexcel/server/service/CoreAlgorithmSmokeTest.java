@@ -376,4 +376,376 @@ class CoreAlgorithmSmokeTest {
         List<CollabOperation> ops = server.getOperationsSince(1);
         assertEquals(2, ops.size());
     }
+
+    // ============================================================
+    // 任务 9.1：列操作烟雾测试（基本应用）
+    // ============================================================
+
+    @Test
+    void colInsertOp_jsonRoundTrip() throws Exception {
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 1, 3, 2);
+        String json = mapper.writeValueAsString(op);
+        CollabOperation deserialized = mapper.readValue(json, CollabOperation.class);
+        assertInstanceOf(ColInsertOp.class, deserialized);
+        assertEquals(op, deserialized);
+        assertEquals(3, ((ColInsertOp) deserialized).getColIndex());
+        assertEquals(2, ((ColInsertOp) deserialized).getCount());
+    }
+
+    @Test
+    void colDeleteOp_jsonRoundTrip() throws Exception {
+        ColDeleteOp op = new ColDeleteOp("user1", 1000L, 1, 2, 1);
+        String json = mapper.writeValueAsString(op);
+        CollabOperation deserialized = mapper.readValue(json, CollabOperation.class);
+        assertInstanceOf(ColDeleteOp.class, deserialized);
+        assertEquals(op, deserialized);
+        assertEquals(2, ((ColDeleteOp) deserialized).getColIndex());
+        assertEquals(1, ((ColDeleteOp) deserialized).getCount());
+    }
+
+    @Test
+    void colInsertOp_jsonContainsTypeField() throws Exception {
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 1, 0, 1);
+        String json = mapper.writeValueAsString(op);
+        assertTrue(json.contains("\"type\""));
+        assertTrue(json.contains("\"colInsert\""));
+    }
+
+    @Test
+    void colDeleteOp_jsonContainsTypeField() throws Exception {
+        ColDeleteOp op = new ColDeleteOp("user1", 1000L, 1, 0, 1);
+        String json = mapper.writeValueAsString(op);
+        assertTrue(json.contains("\"type\""));
+        assertTrue(json.contains("\"colDelete\""));
+    }
+
+    @Test
+    void apply_colInsert_increasesColCount() {
+        SpreadsheetData doc = createSmallDoc(3, 5);
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 1, 2, 3);
+        DocumentApplier.apply(doc, op);
+        // 每行列数应增加 3
+        assertEquals(8, doc.getCells().get(0).size());
+        assertEquals(8, doc.getColWidths().size());
+    }
+
+    @Test
+    void apply_colInsert_shiftsExistingData() {
+        SpreadsheetData doc = createSmallDoc(3, 5);
+        // 在 col=1 处设置内容
+        doc.getCells().get(0).get(1).setContent("hello");
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 1, 0, 1);
+        DocumentApplier.apply(doc, op);
+        // 原 col=1 的内容应移到 col=2
+        assertEquals("hello", doc.getCells().get(0).get(2).getContent());
+        // 新插入的 col=0 应为空字符串（Cell 默认 content 为 ""）
+        assertEquals("", doc.getCells().get(0).get(0).getContent());
+    }
+
+    @Test
+    void apply_colDelete_decreasesColCount() {
+        SpreadsheetData doc = createSmallDoc(3, 5);
+        ColDeleteOp op = new ColDeleteOp("user1", 1000L, 1, 1, 2);
+        DocumentApplier.apply(doc, op);
+        // 每行列数应减少 2
+        assertEquals(3, doc.getCells().get(0).size());
+        assertEquals(3, doc.getColWidths().size());
+    }
+
+    @Test
+    void apply_colDelete_shiftsRemainingData() {
+        SpreadsheetData doc = createSmallDoc(3, 5);
+        // 在 col=3 处设置内容
+        doc.getCells().get(0).get(3).setContent("world");
+        ColDeleteOp op = new ColDeleteOp("user1", 1000L, 1, 1, 2);
+        DocumentApplier.apply(doc, op);
+        // 原 col=3 的内容应移到 col=1
+        assertEquals("world", doc.getCells().get(0).get(1).getContent());
+    }
+
+    @Test
+    void apply_colInsert_usesDefaultColWidth() {
+        SpreadsheetData doc = createSmallDoc(2, 3);
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 1, 1, 2);
+        DocumentApplier.apply(doc, op);
+        // 新插入的列宽应为默认值 100
+        assertEquals(100, (int) doc.getColWidths().get(1));
+        assertEquals(100, (int) doc.getColWidths().get(2));
+    }
+
+    // ============================================================
+    // 任务 9.2：列操作 OT 转换验证
+    // ============================================================
+
+    @Test
+    void transform_cellEditVsColInsert_leftOfInsert_noChange() {
+        // col=1 在 colInsert(3, 2) 左侧，不受影响
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 1, "hello", "");
+        ColInsertOp insert = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, insert);
+        assertNotNull(result[0]);
+        assertInstanceOf(CellEditOp.class, result[0]);
+        assertEquals(1, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellEditVsColInsert_rightOfInsert_adjustsCol() {
+        // col=5 在 colInsert(3, 2) 右侧，应向右移动 2
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 5, "hello", "");
+        ColInsertOp insert = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, insert);
+        assertNotNull(result[0]);
+        assertEquals(7, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellEditVsColInsert_atInsertPoint_adjustsCol() {
+        // col=3 恰好在 colInsert(3, 2) 插入点，应向右移动 2
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 3, "hello", "");
+        ColInsertOp insert = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, insert);
+        assertNotNull(result[0]);
+        assertEquals(5, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellEditVsColDelete_leftOfDelete_noChange() {
+        // col=1 在 colDelete(3, 2) 左侧，不受影响
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 1, "hello", "");
+        ColDeleteOp delete = new ColDeleteOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, delete);
+        assertNotNull(result[0]);
+        assertEquals(1, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_cellEditVsColDelete_insideDelete_returnsNull() {
+        // col=4 在 colDelete(3, 2) 范围 [3,5) 内，应被消除
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 4, "hello", "");
+        ColDeleteOp delete = new ColDeleteOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, delete);
+        assertNull(result[0]);
+    }
+
+    @Test
+    void transform_cellEditVsColDelete_rightOfDelete_adjustsCol() {
+        // col=6 在 colDelete(3, 2) 右侧，应向左移动 2
+        CellEditOp edit = new CellEditOp("user1", 1000L, 1, 0, 6, "hello", "");
+        ColDeleteOp delete = new ColDeleteOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(edit, delete);
+        assertNotNull(result[0]);
+        assertEquals(4, ((CellEditOp) result[0]).getCol());
+    }
+
+    @Test
+    void transform_colInsertVsColInsert_sameIndex_noChange() {
+        // 两个 colInsert 在同一位置，colIndex 相同时 opA 不被推后（无 tie-break）
+        ColInsertOp opA = new ColInsertOp("userB", 1000L, 1, 5, 1);
+        ColInsertOp opB = new ColInsertOp("userA", 1000L, 1, 5, 1);
+
+        CollabOperation[] result = OTTransformer.transform(opA, opB);
+        assertNotNull(result[0]);
+        // colIndex 相同时不推后（只有 > 才推后）
+        assertEquals(5, ((ColInsertOp) result[0]).getColIndex());
+    }
+
+    @Test
+    void transform_colInsertVsColInsert_differentIndex_rightShifted() {
+        // opA 在 col=7，opB 在 col=3 插入 2 列，opA 应向右移动 2
+        ColInsertOp opA = new ColInsertOp("user1", 1000L, 1, 7, 1);
+        ColInsertOp opB = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(opA, opB);
+        assertNotNull(result[0]);
+        assertEquals(9, ((ColInsertOp) result[0]).getColIndex());
+    }
+
+    @Test
+    void transform_colDeleteVsColInsert_rightOfInsert_adjustsColIndex() {
+        // colDelete(5, 1) vs colInsert(3, 2)，删除点在插入点右侧，应向右移动 2
+        ColDeleteOp opA = new ColDeleteOp("user1", 1000L, 1, 5, 1);
+        ColInsertOp opB = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(opA, opB);
+        assertNotNull(result[0]);
+        assertEquals(7, ((ColDeleteOp) result[0]).getColIndex());
+    }
+
+    @Test
+    void transform_colDeleteVsColDelete_noOverlap_rightShifted() {
+        // colDelete(5, 2) vs colDelete(2, 2)，删除点在右侧，应向左移动 2
+        ColDeleteOp opA = new ColDeleteOp("user1", 1000L, 1, 5, 2);
+        ColDeleteOp opB = new ColDeleteOp("user2", 1000L, 1, 2, 2);
+
+        CollabOperation[] result = OTTransformer.transform(opA, opB);
+        assertNotNull(result[0]);
+        assertEquals(3, ((ColDeleteOp) result[0]).getColIndex());
+    }
+
+    @Test
+    void transform_colResizeVsColInsert_rightOfInsert_adjustsColIndex() {
+        // colResize(5) vs colInsert(3, 2)，resize 点在插入点右侧，应向右移动 2
+        ColResizeOp resize = new ColResizeOp("user1", 1000L, 1, 5, 120);
+        ColInsertOp insert = new ColInsertOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(resize, insert);
+        assertNotNull(result[0]);
+        assertEquals(7, ((ColResizeOp) result[0]).getColIndex());
+    }
+
+    @Test
+    void transform_colResizeVsColDelete_insideDelete_returnsNull() {
+        // colResize(4) vs colDelete(3, 2)，resize 点在删除范围内，应被消除
+        ColResizeOp resize = new ColResizeOp("user1", 1000L, 1, 4, 120);
+        ColDeleteOp delete = new ColDeleteOp("user2", 1000L, 1, 3, 2);
+
+        CollabOperation[] result = OTTransformer.transform(resize, delete);
+        assertNull(result[0]);
+    }
+
+    @Test
+    void transform_rowInsertVsColInsert_returnsClone() {
+        // 行操作 vs 列操作，应返回克隆（不受影响）
+        RowInsertOp rowInsert = new RowInsertOp("user1", 1000L, 1, 3, 2);
+        ColInsertOp colInsert = new ColInsertOp("user2", 1000L, 1, 5, 1);
+
+        CollabOperation[] result = OTTransformer.transform(rowInsert, colInsert);
+        assertNotNull(result[0]);
+        assertInstanceOf(RowInsertOp.class, result[0]);
+        assertEquals(3, ((RowInsertOp) result[0]).getRowIndex());
+        assertEquals(2, ((RowInsertOp) result[0]).getCount());
+    }
+
+    @Test
+    void transform_rowDeleteVsColDelete_returnsClone() {
+        // 行操作 vs 列操作，应返回克隆（不受影响）
+        RowDeleteOp rowDelete = new RowDeleteOp("user1", 1000L, 1, 2, 3);
+        ColDeleteOp colDelete = new ColDeleteOp("user2", 1000L, 1, 1, 2);
+
+        CollabOperation[] result = OTTransformer.transform(rowDelete, colDelete);
+        assertNotNull(result[0]);
+        assertInstanceOf(RowDeleteOp.class, result[0]);
+        assertEquals(2, ((RowDeleteOp) result[0]).getRowIndex());
+        assertEquals(3, ((RowDeleteOp) result[0]).getCount());
+    }
+
+    // ============================================================
+    // 任务 9.3：前后端一致性验证（OT 收敛性）
+    // ============================================================
+
+    @Test
+    void convergence_colInsert_cellEdit_applyBothOrders() {
+        // 验证 OT 收敛性：两个用户分别先应用不同操作，最终结果应一致
+        // 用户1：先 colInsert(2, 1)，再 cellEdit(0, 3, "hello")（已被转换）
+        // 用户2：先 cellEdit(0, 3, "hello")，再 colInsert(2, 1)（已被转换）
+
+        ColInsertOp colInsert = new ColInsertOp("user1", 1000L, 1, 2, 1);
+        CellEditOp cellEdit = new CellEditOp("user2", 1000L, 1, 0, 3, "hello", "");
+
+        // 文档 A：先应用 colInsert，再应用转换后的 cellEdit
+        SpreadsheetData docA = createSmallDoc(3, 5);
+        DocumentApplier.apply(docA, colInsert);
+        CollabOperation[] transformedForA = OTTransformer.transform(cellEdit, colInsert);
+        assertNotNull(transformedForA[0]);
+        DocumentApplier.apply(docA, transformedForA[0]);
+
+        // 文档 B：先应用 cellEdit，再应用转换后的 colInsert
+        SpreadsheetData docB = createSmallDoc(3, 5);
+        DocumentApplier.apply(docB, cellEdit);
+        CollabOperation[] transformedForB = OTTransformer.transform(colInsert, cellEdit);
+        assertNotNull(transformedForB[0]);
+        DocumentApplier.apply(docB, transformedForB[0]);
+
+        // 两个文档的列数应相同
+        assertEquals(docA.getCells().get(0).size(), docB.getCells().get(0).size());
+        // 两个文档中 "hello" 应在同一位置
+        String contentA = docA.getCells().get(0).get(4).getContent();
+        String contentB = docB.getCells().get(0).get(4).getContent();
+        assertEquals(contentA, contentB);
+        assertEquals("hello", contentA);
+    }
+
+    @Test
+    void convergence_colDelete_cellEdit_applyBothOrders() {
+        // 验证 OT 收敛性：colDelete vs cellEdit（不在删除范围内）
+        ColDeleteOp colDelete = new ColDeleteOp("user1", 1000L, 1, 1, 1);
+        CellEditOp cellEdit = new CellEditOp("user2", 1000L, 1, 0, 3, "world", "");
+
+        // 文档 A：先应用 colDelete，再应用转换后的 cellEdit
+        SpreadsheetData docA = createSmallDoc(3, 5);
+        DocumentApplier.apply(docA, colDelete);
+        CollabOperation[] transformedForA = OTTransformer.transform(cellEdit, colDelete);
+        assertNotNull(transformedForA[0]);
+        DocumentApplier.apply(docA, transformedForA[0]);
+
+        // 文档 B：先应用 cellEdit，再应用转换后的 colDelete
+        SpreadsheetData docB = createSmallDoc(3, 5);
+        DocumentApplier.apply(docB, cellEdit);
+        CollabOperation[] transformedForB = OTTransformer.transform(colDelete, cellEdit);
+        assertNotNull(transformedForB[0]);
+        DocumentApplier.apply(docB, transformedForB[0]);
+
+        // 两个文档的列数应相同
+        assertEquals(docA.getCells().get(0).size(), docB.getCells().get(0).size());
+        // "world" 应在同一位置（col=3 -> col=2 after delete col=1）
+        String contentA = docA.getCells().get(0).get(2).getContent();
+        String contentB = docB.getCells().get(0).get(2).getContent();
+        assertEquals(contentA, contentB);
+        assertEquals("world", contentA);
+    }
+
+    @Test
+    void convergence_colInsert_colInsert_applyBothOrders() {
+        // 验证两个 colInsert 操作的 OT 收敛性
+        ColInsertOp opA = new ColInsertOp("user1", 1000L, 1, 2, 1);
+        ColInsertOp opB = new ColInsertOp("user2", 1000L, 1, 4, 2);
+
+        // 文档 A：先应用 opA，再应用转换后的 opB
+        SpreadsheetData docA = createSmallDoc(2, 5);
+        DocumentApplier.apply(docA, opA);
+        CollabOperation[] transformedForA = OTTransformer.transform(opB, opA);
+        assertNotNull(transformedForA[0]);
+        DocumentApplier.apply(docA, transformedForA[0]);
+
+        // 文档 B：先应用 opB，再应用转换后的 opA
+        SpreadsheetData docB = createSmallDoc(2, 5);
+        DocumentApplier.apply(docB, opB);
+        CollabOperation[] transformedForB = OTTransformer.transform(opA, opB);
+        assertNotNull(transformedForB[0]);
+        DocumentApplier.apply(docB, transformedForB[0]);
+
+        // 两个文档的列数应相同（5 + 1 + 2 = 8）
+        assertEquals(8, docA.getCells().get(0).size());
+        assertEquals(8, docB.getCells().get(0).size());
+        assertEquals(docA.getCells().get(0).size(), docB.getCells().get(0).size());
+    }
+
+    @Test
+    void otServer_receiveColInsert_incrementsRevision() {
+        OTServer server = new OTServer();
+        ColInsertOp op = new ColInsertOp("user1", 1000L, 0, 3, 1);
+        OTServer.ReceiveResult result = server.receiveOperation(0, op);
+        assertNotNull(result);
+        assertEquals(1, result.getRevision());
+    }
+
+    @Test
+    void otServer_receiveColDelete_transformsStaleEdit() {
+        OTServer server = new OTServer();
+        // 先提交一个 colDelete(2, 1)
+        server.receiveOperation(0, new ColDeleteOp("user1", 1000L, 0, 2, 1));
+        // 再提交一个基于 revision 0 的 cellEdit（col=4，落后了）
+        CellEditOp staleEdit = new CellEditOp("user2", 2000L, 0, 0, 4, "test", "");
+        OTServer.ReceiveResult result = server.receiveOperation(0, staleEdit);
+        assertNotNull(result);
+        assertEquals(2, result.getRevision());
+        // col=4 在 colDelete(2, 1) 右侧，应向左移动 1 变为 col=3
+        assertEquals(3, ((CellEditOp) result.getTransformedOp()).getCol());
+    }
 }

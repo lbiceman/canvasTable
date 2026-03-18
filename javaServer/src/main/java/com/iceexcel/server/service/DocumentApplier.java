@@ -38,6 +38,10 @@ public class DocumentApplier {
             applyRowResize(rowHeights, (RowResizeOp) op);
         } else if (op instanceof ColResizeOp) {
             applyColResize(colWidths, (ColResizeOp) op);
+        } else if (op instanceof ColInsertOp) {
+            applyColInsert(cells, colWidths, (ColInsertOp) op);
+        } else if (op instanceof ColDeleteOp) {
+            applyColDelete(cells, colWidths, (ColDeleteOp) op);
         } else if (op instanceof FontColorOp) {
             applyFontColor(cells, (FontColorOp) op);
         } else if (op instanceof BgColorOp) {
@@ -194,6 +198,70 @@ public class DocumentApplier {
     private static void applyVerticalAlign(List<List<Cell>> cells, VerticalAlignOp op) {
         if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
             cells.get(op.getRow()).get(op.getCol()).setVerticalAlign(op.getAlign());
+        }
+    }
+
+    private static void applyColInsert(List<List<Cell>> cells, List<Integer> colWidths, ColInsertOp op) {
+        int colIndex = op.getColIndex();
+        int count = op.getCount();
+
+        // 每行在 colIndex 处插入 count 个空 Cell
+        for (List<Cell> row : cells) {
+            for (int i = 0; i < count; i++) {
+                row.add(colIndex + i, new Cell());
+            }
+        }
+
+        // 在 colWidths 中插入 count 个默认列宽（100）
+        for (int i = 0; i < count; i++) {
+            colWidths.add(colIndex + i, 100);
+        }
+
+        // 更新合并单元格引用：调整 mergeParent 的 col 引用
+        for (List<Cell> row : cells) {
+            for (Cell cell : row) {
+                if (cell.getMergeParent() != null) {
+                    MergeParent mp = cell.getMergeParent();
+                    if (mp.getCol() >= colIndex) {
+                        mp.setCol(mp.getCol() + count);
+                    }
+                }
+            }
+        }
+    }
+
+    private static void applyColDelete(List<List<Cell>> cells, List<Integer> colWidths, ColDeleteOp op) {
+        int colIndex = op.getColIndex();
+        int count = op.getCount();
+
+        // 每行删除 colIndex 起的 count 个 Cell
+        for (List<Cell> row : cells) {
+            for (int i = 0; i < count && colIndex < row.size(); i++) {
+                row.remove(colIndex);
+            }
+        }
+
+        // 从 colWidths 中删除对应条目
+        for (int i = 0; i < count && colIndex < colWidths.size(); i++) {
+            colWidths.remove(colIndex);
+        }
+
+        // 更新合并单元格引用：调整 mergeParent 的 col 引用
+        int delEnd = colIndex + count;
+        for (List<Cell> row : cells) {
+            for (Cell cell : row) {
+                if (cell.getMergeParent() != null) {
+                    MergeParent mp = cell.getMergeParent();
+                    int mpCol = mp.getCol();
+                    if (mpCol >= colIndex && mpCol < delEnd) {
+                        // mergeParent 在被删除的列范围内，清除引用
+                        cell.setMergeParent(null);
+                        cell.setMerged(false);
+                    } else if (mpCol >= delEnd) {
+                        mp.setCol(mpCol - count);
+                    }
+                }
+            }
         }
     }
 }

@@ -1,0 +1,153 @@
+# 列插入/删除 OT 支持 — 实现任务列表
+
+## 任务
+
+- [x] 1. 更新 types.ts：新增 ColInsertOp、ColDeleteOp 类型定义
+  - [x] 1.1 在 `OperationType` 联合类型中新增 `'colInsert'` 和 `'colDelete'`
+  - [x] 1.2 新增 `ColInsertOp` 接口（继承 BaseOperation，包含 colIndex: number、count: number）
+  - [x] 1.3 新增 `ColDeleteOp` 接口（继承 BaseOperation，包含 colIndex: number、count: number）
+  - [x] 1.4 在 `CollabOperation` 联合类型中新增 `ColInsertOp | ColDeleteOp`
+  - **验收**：`src/collaboration/types.ts` 编译无错误，新类型可被其他模块导入
+
+- [x] 2. 更新 operations.ts：序列化、反序列化、invertOperation
+  - [x] 2.1 在 `VALID_OPERATION_TYPES` 集合中新增 `'colInsert'` 和 `'colDelete'`
+  - [x] 2.2 在 `deserializeOperation` 中新增 `case 'colInsert'`：校验 colIndex 为非负整数、count 为正整数
+  - [x] 2.3 在 `deserializeOperation` 中新增 `case 'colDelete'`：校验逻辑同上
+  - [x] 2.4 在 `invertOperation` 中新增 `case 'colInsert'`：返回 `{ ...op, type: 'colDelete' }`
+  - [x] 2.5 在 `invertOperation` 中新增 `case 'colDelete'`：返回 `{ ...op, type: 'colInsert' }`
+  - **验收**：序列化/反序列化往返无损，invertOperation(invertOperation(op)) 等价于原操作
+
+- [x] 3. 更新 ot.ts：新增辅助函数和 30 个转换规则
+  - [x] 3.1 新增辅助函数 `isColInDeleteRange`、`adjustColForInsert`、`adjustColForDelete`
+  - [x] 3.2 新增 `transformCellEditVsColInsert`：col >= colIndex → col += count
+  - [x] 3.3 新增 `transformCellMergeVsColInsert`：三段式逻辑（完全右移 / 不变 / 穿过时 endCol 增加）
+  - [x] 3.4 新增 `transformCellSplitVsColInsert`：col >= colIndex → col += count（rowSpan/colSpan 不变）
+  - [x] 3.5 新增 `transformColResizeVsColInsert`：colIndex >= insertOp.colIndex → colIndex += count
+  - [x] 3.6 新增 `transformColInsertVsColInsert`：colIndex > opB.colIndex → colIndex += count
+  - [x] 3.7 新增 `transformColDeleteVsColInsert`：colIndex > opB.colIndex → colIndex += count
+  - [x] 3.8 新增 `transformStyleOpVsColInsert`（通用样式辅助）：col >= colIndex → col += count
+  - [x] 3.9 新增 `transformCellEditVsColDelete`：范围内 → null；右侧 → col -= count
+  - [x] 3.10 新增 `transformCellMergeVsColDelete`：六段式逻辑（完全内部/左截/右截/收缩/右移/不变）
+  - [x] 3.11 新增 `transformCellSplitVsColDelete`：范围内 → null；右侧 → col -= count（rowSpan/colSpan 不变）
+  - [x] 3.12 新增 `transformColResizeVsColDelete`：范围内 → null；右侧 → colIndex -= count
+  - [x] 3.13 新增 `transformColInsertVsColDelete`：右侧 → colIndex -= count；范围内 → colIndex = opB.colIndex
+  - [x] 3.14 新增 `transformColDeleteVsColDelete`：六段式逻辑（需用原始值计算，见设计文档 3.2 节）
+  - [x] 3.15 新增 `transformStyleOpVsColDelete`（通用样式辅助）：范围内 → null；右侧 → col -= count
+  - [x] 3.16 移除 `transformSingle` 中 `colResize` 的短路判断（第一个 if 块）
+  - [x] 3.17 在 `transformSingle` 中新增 `opB.type === 'colInsert'` 分支，覆盖所有 15 种 opA 类型（含行操作返回克隆）
+  - [x] 3.18 在 `transformSingle` 中新增 `opB.type === 'colDelete'` 分支，覆盖所有 15 种 opA 类型（含行操作返回克隆）
+  - [x] 3.19 在 `transformSingle` 末尾保留 `opB.type === 'colResize'` 返回 opA 克隆的逻辑
+  - **验收**：TypeScript 编译无错误，所有 switch 分支无遗漏
+
+- [x] 4. 更新 model.ts：新增 insertColumns / deleteColumns 方法
+  - [x] 4.1 新增 `insertColumns(colIndex: number, count: number): boolean` 方法
+    - 参数校验（colIndex 非负、count 正整数）
+    - 每行在 colIndex 处插入 count 个空单元格
+    - 在 colWidths 中插入 count 个默认列宽
+    - 调用 `updateMergeReferencesAfterInsertCols` 更新合并/拆分单元格引用
+    - 调用 `clearAllCache()` 并设置 `isDirty = true`
+  - [x] 4.2 新增私有方法 `updateMergeReferencesAfterInsertCols(colIndex, count)`
+    - 遍历所有合并单元格，按 cellMerge vs colInsert 逻辑调整 startCol/endCol
+    - 遍历所有拆分单元格，调整 col（col >= colIndex → col += count）
+  - [x] 4.3 新增 `deleteColumns(colIndex: number, count: number): boolean` 方法
+    - 参数校验（colIndex 非负、count 正整数、删除后至少剩 1 列）
+    - 先调用 `splitMergedCellsInCols` 处理受影响的合并单元格
+    - 每行删除 colIndex 起的 count 个单元格
+    - 从 colWidths 中删除对应条目
+    - 调用 `updateMergeReferencesAfterDeleteCols` 更新引用
+    - 调用 `clearAllCache()` 并设置 `isDirty = true`
+  - [x] 4.4 新增私有方法 `updateMergeReferencesAfterDeleteCols(colIndex, count)`
+    - 遍历所有合并单元格，按 cellMerge vs colDelete 逻辑调整或删除
+    - 遍历所有拆分单元格，按 cellSplit vs colDelete 逻辑调整或删除
+  - **验收**：insertColumns/deleteColumns 返回值正确，单元格数据和列宽数组长度一致
+
+- [-] 5. 新增 Java 模型类：ColInsertOp.java 和 ColDeleteOp.java
+  - [x] 5.1 创建 `javaServer/src/main/java/com/iceexcel/server/model/ColInsertOp.java`
+    - 继承 `CollabOperation`
+    - 字段：`int colIndex`、`int count`
+    - 构造函数（无参 + 全参）
+    - `getType()` 返回 `"colInsert"`
+    - getter/setter、equals/hashCode
+  - [x] 5.2 创建 `javaServer/src/main/java/com/iceexcel/server/model/ColDeleteOp.java`
+    - 结构与 ColInsertOp 对称，`getType()` 返回 `"colDelete"`
+  - [x] 5.3 在 `CollabOperation.java` 的 `@JsonSubTypes` 注解中注册新类型：
+    - `@JsonSubTypes.Type(value = ColInsertOp.class, name = "colInsert")`
+    - `@JsonSubTypes.Type(value = ColDeleteOp.class, name = "colDelete")`
+  - **验收**：Java 编译无错误，Jackson 能正确序列化/反序列化 ColInsertOp 和 ColDeleteOp
+
+- [x] 6. 更新 OTTransformer.java：新增 30 个转换方法
+  - [x] 6.1 新增辅助方法 `isColInDeleteRange`、`adjustColForInsert`、`adjustColForDelete`
+  - [x] 6.2 新增 `transformCellEditVsColInsert`、`transformCellEditVsColDelete`
+  - [x] 6.3 新增 `transformCellMergeVsColInsert`、`transformCellMergeVsColDelete`
+  - [x] 6.4 新增 `transformCellSplitVsColInsert`、`transformCellSplitVsColDelete`
+  - [x] 6.5 新增 `transformColResizeVsColInsert`、`transformColResizeVsColDelete`
+  - [x] 6.6 新增 `transformColInsertVsColInsert`、`transformColInsertVsColDelete`
+  - [x] 6.7 新增 `transformColDeleteVsColInsert`、`transformColDeleteVsColDelete`
+  - [x] 6.8 新增样式操作的转换方法（fontColor/bgColor/fontSize/fontBold/fontItalic/fontUnderline/fontAlign/verticalAlign vs colInsert/colDelete，共 16 个）
+  - [x] 6.9 移除 `transformSingle` 中 colResize 的短路判断
+  - [x] 6.10 在 `transformSingle` 中新增 `instanceof ColInsertOp` 和 `instanceof ColDeleteOp` 分支
+  - **验收**：Java 编译无错误，转换逻辑与 TypeScript 实现完全对称
+
+- [x] 7. 更新 DocumentApplier.java：新增列操作应用逻辑
+  - [x] 7.1 在 `apply()` 方法中新增 `ColInsertOp` 和 `ColDeleteOp` 的分支
+  - [x] 7.2 实现 `applyColInsert(cells, colWidths, op)`：
+    - 每行在 op.colIndex 处插入 op.count 个空 Cell
+    - 在 colWidths 中插入 op.count 个默认列宽
+    - 更新合并/拆分单元格引用
+  - [x] 7.3 实现 `applyColDelete(cells, colWidths, op)`：
+    - 每行删除 op.colIndex 起的 op.count 个 Cell
+    - 从 colWidths 中删除对应条目
+    - 更新合并/拆分单元格引用
+  - **验收**：应用 ColInsertOp/ColDeleteOp 后，cells 和 colWidths 长度一致，合并单元格引用正确
+
+- [x] 8. 创建前端单元测试：col-operations.test.ts
+  - [x] 8.1 创建 `src/collaboration/__tests__/col-operations.test.ts`
+  - [x] 8.2 测试 ColInsertOp/ColDeleteOp 的序列化/反序列化（含字段校验错误场景）
+  - [x] 8.3 测试 invertOperation：colInsert ↔ colDelete 互为反向
+  - [x] 8.4 测试 transformCellEditVsColInsert（3 个用例：左侧/右侧/边界）
+  - [x] 8.5 测试 transformCellEditVsColDelete（4 个用例：左侧/右侧/范围内/边界）
+  - [x] 8.6 测试 transformCellMergeVsColInsert（3 个用例：完全右移/不变/穿过）
+  - [x] 8.7 测试 transformCellMergeVsColDelete（6 个用例：完全内部/左截/右截/收缩/右移/不变）
+  - [x] 8.8 测试 transformCellSplitVsColInsert 和 transformCellSplitVsColDelete
+  - [x] 8.9 测试 transformColResizeVsColInsert 和 transformColResizeVsColDelete
+  - [x] 8.10 测试 transformColInsertVsColInsert 和 transformColInsertVsColDelete
+  - [x] 8.11 测试 transformColDeleteVsColInsert 和 transformColDeleteVsColDelete（含所有 6 个重叠场景）
+  - [x] 8.12 测试行列操作交叉转换（rowInsert/rowDelete/rowResize vs colInsert/colDelete 均返回克隆）
+  - [x] 8.13 测试样式操作 vs colInsert/colDelete（各至少 2 个用例）
+  - [x] 8.14 编写收敛性属性测试：随机生成操作对，验证 OT 收敛性不变量
+  - **验收**：`npx vitest run src/collaboration/__tests__/col-operations.test.ts` 全部通过 ✅
+
+- [x] 10. 创建 Playwright E2E 测试：col-insert-delete.spec.ts
+  - [x] 10.1 创建 `e2e/col-insert-delete.spec.ts`，复用 `full-toolbar.spec.ts` 中的辅助函数（clickCell、getCellData 等）
+  - [x] 10.2 新增辅助函数 `getColCount`：通过 `window.app.getModel().getColCount()` 获取列数
+  - [x] 10.3 新增辅助函数 `rightClickColHeader`：右键点击列头区域（x = HEADER_WIDTH + col * DEFAULT_COL_WIDTH + DEFAULT_COL_WIDTH / 2，y = HEADER_HEIGHT / 2）
+  - [x] 10.4 测试套件：列插入基础功能
+    - 右键点击列头弹出上下文菜单，菜单包含"插入列"选项
+    - 点击"插入列"后列数增加 1
+    - 插入列后原列数据向右移动（A1 的内容移到 B1）
+    - 插入多列（输入 3）后列数增加 3
+  - [x] 10.5 测试套件：列删除基础功能
+    - 右键点击列头弹出上下文菜单，菜单包含"删除列"选项
+    - 点击"删除列"后列数减少 1
+    - 删除列后右侧列数据向左移动（B1 的内容移到 A1）
+    - 删除含有数据的列后数据消失
+  - [x] 10.6 测试套件：列操作与单元格数据的交互
+    - 在 B1 输入内容，插入 A 列后内容出现在 C1
+    - 在 B1 输入内容，删除 A 列后内容出现在 A1
+    - 在 A1 输入内容，删除 A 列后 A1 内容消失
+  - [x] 10.7 测试套件：列操作与合并单元格的交互
+    - 合并 B1:C1，在 A 列插入列后合并区域变为 C1:D1
+    - 合并 B1:D1，在合并区域内（C 列）插入列后合并区域扩展为 B1:E1
+  - [x] 10.8 测试套件：列操作与列宽的交互
+    - 插入列后新列使用默认列宽
+    - 删除列后相邻列宽度不变
+  - [x] 10.9 测试套件：视觉快照测试
+    - 插入列后截图对比（`col-insert-win32.png`）
+    - 删除列后截图对比（`col-delete-win32.png`）
+  - **验收**：`npx playwright test e2e/col-insert-delete.spec.ts` 全部通过 ✅
+
+- [x] 9. 更新 Java 后端测试：CoreAlgorithmSmokeTest.java
+  - [x] 9.1 新增列操作的烟雾测试用例（colInsert/colDelete 的基本应用）
+  - [x] 9.2 新增列操作 OT 转换的验证用例（至少覆盖 cellEdit vs colInsert/colDelete）
+  - [x] 9.3 新增前后端一致性验证：相同操作序列在 Java 和 TypeScript 中产生相同结果
+  - **验收**：`mvn test` 全部通过 ✅

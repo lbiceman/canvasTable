@@ -65,6 +65,29 @@ public class OTTransformer {
         return row;
     }
 
+    /**
+     * 判断列是否在删除范围内
+     */
+    private static boolean isColInDeleteRange(int col, ColDeleteOp deleteOp) {
+        return col >= deleteOp.getColIndex() && col < deleteOp.getColIndex() + deleteOp.getCount();
+    }
+
+    /**
+     * 根据列插入操作调整列索引
+     */
+    private static int adjustColForInsert(int col, ColInsertOp insertOp) {
+        return col >= insertOp.getColIndex() ? col + insertOp.getCount() : col;
+    }
+
+    /**
+     * 根据列删除操作调整列索引，返回 null 表示该列被删除
+     */
+    private static Integer adjustColForDelete(int col, ColDeleteOp deleteOp) {
+        if (isColInDeleteRange(col, deleteOp)) return null;
+        if (col >= deleteOp.getColIndex() + deleteOp.getCount()) return col - deleteOp.getCount();
+        return col;
+    }
+
     // ============================================================
     // 具体操作类型 vs RowInsert 的转换
     // ============================================================
@@ -317,6 +340,273 @@ public class OTTransformer {
     }
 
     // ============================================================
+    // 具体操作类型 vs ColInsert 的转换
+    // ============================================================
+
+    private static CellEditOp transformCellEditVsColInsert(CellEditOp op, ColInsertOp insertOp) {
+        CellEditOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static CellMergeOp transformCellMergeVsColInsert(CellMergeOp op, ColInsertOp insertOp) {
+        CellMergeOp result = cloneOp(op);
+        if (op.getStartCol() >= insertOp.getColIndex()) {
+            // 合并区域完全在插入点右侧，整体右移
+            result.setStartCol(op.getStartCol() + insertOp.getCount());
+            result.setEndCol(op.getEndCol() + insertOp.getCount());
+        } else if (op.getEndCol() < insertOp.getColIndex()) {
+            // 合并区域完全在插入点左侧，不变
+        } else {
+            // 插入点穿过合并区域，endCol 增加
+            result.setEndCol(op.getEndCol() + insertOp.getCount());
+        }
+        return result;
+    }
+
+    private static CellSplitOp transformCellSplitVsColInsert(CellSplitOp op, ColInsertOp insertOp) {
+        CellSplitOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static ColResizeOp transformColResizeVsColInsert(ColResizeOp op, ColInsertOp insertOp) {
+        ColResizeOp result = cloneOp(op);
+        result.setColIndex(adjustColForInsert(op.getColIndex(), insertOp));
+        return result;
+    }
+
+    private static ColInsertOp transformColInsertVsColInsert(ColInsertOp opA, ColInsertOp opB) {
+        ColInsertOp result = cloneOp(opA);
+        if (opA.getColIndex() > opB.getColIndex()) {
+            result.setColIndex(opA.getColIndex() + opB.getCount());
+        }
+        return result;
+    }
+
+    private static ColDeleteOp transformColDeleteVsColInsert(ColDeleteOp opA, ColInsertOp opB) {
+        ColDeleteOp result = cloneOp(opA);
+        if (opA.getColIndex() > opB.getColIndex()) {
+            result.setColIndex(opA.getColIndex() + opB.getCount());
+        }
+        return result;
+    }
+
+    private static FontColorOp transformFontColorVsColInsert(FontColorOp op, ColInsertOp insertOp) {
+        FontColorOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static BgColorOp transformBgColorVsColInsert(BgColorOp op, ColInsertOp insertOp) {
+        BgColorOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static FontSizeOp transformFontSizeVsColInsert(FontSizeOp op, ColInsertOp insertOp) {
+        FontSizeOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static FontBoldOp transformFontBoldVsColInsert(FontBoldOp op, ColInsertOp insertOp) {
+        FontBoldOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static FontItalicOp transformFontItalicVsColInsert(FontItalicOp op, ColInsertOp insertOp) {
+        FontItalicOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static FontUnderlineOp transformFontUnderlineVsColInsert(FontUnderlineOp op, ColInsertOp insertOp) {
+        FontUnderlineOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static FontAlignOp transformFontAlignVsColInsert(FontAlignOp op, ColInsertOp insertOp) {
+        FontAlignOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static VerticalAlignOp transformVerticalAlignVsColInsert(VerticalAlignOp op, ColInsertOp insertOp) {
+        VerticalAlignOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    // ============================================================
+    // 具体操作类型 vs ColDelete 的转换
+    // ============================================================
+
+    private static CellEditOp transformCellEditVsColDelete(CellEditOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        CellEditOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static CellMergeOp transformCellMergeVsColDelete(CellMergeOp op, ColDeleteOp deleteOp) {
+        int delEnd = deleteOp.getColIndex() + deleteOp.getCount();
+        // 完全在删除范围内
+        if (op.getStartCol() >= deleteOp.getColIndex() && op.getEndCol() < delEnd) return null;
+        // 左侧部分重叠（startCol 在左，endCol 在删除范围内）
+        if (op.getStartCol() < deleteOp.getColIndex() && op.getEndCol() >= deleteOp.getColIndex() && op.getEndCol() < delEnd) return null;
+        // 右侧部分重叠（startCol 在删除范围内，endCol 在右）
+        if (op.getStartCol() >= deleteOp.getColIndex() && op.getStartCol() < delEnd && op.getEndCol() >= delEnd) return null;
+        // 删除范围完全在合并区域内部（合并区域收缩）
+        if (op.getStartCol() < deleteOp.getColIndex() && delEnd <= op.getEndCol()) {
+            CellMergeOp result = cloneOp(op);
+            result.setEndCol(op.getEndCol() - deleteOp.getCount());
+            return result;
+        }
+        // 合并区域完全在删除范围右侧
+        if (op.getStartCol() >= delEnd) {
+            CellMergeOp result = cloneOp(op);
+            result.setStartCol(op.getStartCol() - deleteOp.getCount());
+            result.setEndCol(op.getEndCol() - deleteOp.getCount());
+            return result;
+        }
+        // 合并区域完全在删除范围左侧，不变
+        return cloneOp(op);
+    }
+
+    private static CellSplitOp transformCellSplitVsColDelete(CellSplitOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        CellSplitOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static ColResizeOp transformColResizeVsColDelete(ColResizeOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getColIndex(), deleteOp);
+        if (newCol == null) return null;
+        ColResizeOp result = cloneOp(op);
+        result.setColIndex(newCol);
+        return result;
+    }
+
+    private static ColInsertOp transformColInsertVsColDelete(ColInsertOp opA, ColDeleteOp opB) {
+        ColInsertOp result = cloneOp(opA);
+        int delEnd = opB.getColIndex() + opB.getCount();
+        if (opA.getColIndex() > delEnd) {
+            result.setColIndex(opA.getColIndex() - opB.getCount());
+        } else if (opA.getColIndex() <= opB.getColIndex()) {
+            // 不变
+        } else {
+            result.setColIndex(opB.getColIndex());
+        }
+        return result;
+    }
+
+    private static ColDeleteOp transformColDeleteVsColDelete(ColDeleteOp opA, ColDeleteOp opB) {
+        int origColIndex = opA.getColIndex();
+        int origCount = opA.getCount();
+        int aEnd = origColIndex + origCount;
+        int bEnd = opB.getColIndex() + opB.getCount();
+
+        // A 完全在 B 之后
+        if (origColIndex >= bEnd) {
+            ColDeleteOp result = cloneOp(opA);
+            result.setColIndex(origColIndex - opB.getCount());
+            return result;
+        }
+        // A 完全在 B 之前
+        if (aEnd <= opB.getColIndex()) return cloneOp(opA);
+        // A 被 B 完全包含
+        if (origColIndex >= opB.getColIndex() && aEnd <= bEnd) return null;
+        // A 完全包含 B
+        if (origColIndex < opB.getColIndex() && aEnd > bEnd) {
+            ColDeleteOp result = cloneOp(opA);
+            result.setCount(origCount - opB.getCount());
+            return result;
+        }
+        // A 的前部分与 B 重叠（A 左侧在 B 左侧，A 右侧在 B 内部）
+        if (origColIndex < opB.getColIndex() && aEnd > opB.getColIndex() && aEnd <= bEnd) {
+            ColDeleteOp result = cloneOp(opA);
+            result.setCount(opB.getColIndex() - origColIndex);
+            return result;
+        }
+        // A 的后部分与 B 重叠（A 左侧在 B 内部，A 右侧在 B 右侧）
+        int newCount = aEnd - bEnd;
+        ColDeleteOp result = cloneOp(opA);
+        result.setColIndex(opB.getColIndex());
+        result.setCount(newCount);
+        return result;
+    }
+
+    private static FontColorOp transformFontColorVsColDelete(FontColorOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontColorOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static BgColorOp transformBgColorVsColDelete(BgColorOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        BgColorOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static FontSizeOp transformFontSizeVsColDelete(FontSizeOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontSizeOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static FontBoldOp transformFontBoldVsColDelete(FontBoldOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontBoldOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static FontItalicOp transformFontItalicVsColDelete(FontItalicOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontItalicOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static FontUnderlineOp transformFontUnderlineVsColDelete(FontUnderlineOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontUnderlineOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static FontAlignOp transformFontAlignVsColDelete(FontAlignOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        FontAlignOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static VerticalAlignOp transformVerticalAlignVsColDelete(VerticalAlignOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        VerticalAlignOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    // ============================================================
     // CellEdit vs CellEdit
     // ============================================================
 
@@ -405,8 +695,52 @@ public class OTTransformer {
      * 对两个操作执行单向转换：将 opA 相对于 opB 进行转换
      */
     private static CollabOperation transformSingle(CollabOperation opA, CollabOperation opB) {
-        // colResize 不影响其他操作，也不受其他操作影响
-        if (opA instanceof ColResizeOp || opB instanceof ColResizeOp) {
+        // opB 是 colInsert
+        if (opB instanceof ColInsertOp) {
+            ColInsertOp insertOp = (ColInsertOp) opB;
+            if (opA instanceof CellEditOp) return transformCellEditVsColInsert((CellEditOp) opA, insertOp);
+            if (opA instanceof CellMergeOp) return transformCellMergeVsColInsert((CellMergeOp) opA, insertOp);
+            if (opA instanceof CellSplitOp) return transformCellSplitVsColInsert((CellSplitOp) opA, insertOp);
+            if (opA instanceof ColResizeOp) return transformColResizeVsColInsert((ColResizeOp) opA, insertOp);
+            if (opA instanceof RowInsertOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof RowDeleteOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof RowResizeOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof ColInsertOp) return transformColInsertVsColInsert((ColInsertOp) opA, insertOp);
+            if (opA instanceof ColDeleteOp) return transformColDeleteVsColInsert((ColDeleteOp) opA, insertOp);
+            if (opA instanceof FontColorOp) return transformFontColorVsColInsert((FontColorOp) opA, insertOp);
+            if (opA instanceof BgColorOp) return transformBgColorVsColInsert((BgColorOp) opA, insertOp);
+            if (opA instanceof FontSizeOp) return transformFontSizeVsColInsert((FontSizeOp) opA, insertOp);
+            if (opA instanceof FontBoldOp) return transformFontBoldVsColInsert((FontBoldOp) opA, insertOp);
+            if (opA instanceof FontItalicOp) return transformFontItalicVsColInsert((FontItalicOp) opA, insertOp);
+            if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsColInsert((FontUnderlineOp) opA, insertOp);
+            if (opA instanceof FontAlignOp) return transformFontAlignVsColInsert((FontAlignOp) opA, insertOp);
+            if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsColInsert((VerticalAlignOp) opA, insertOp);
+        }
+
+        // opB 是 colDelete
+        if (opB instanceof ColDeleteOp) {
+            ColDeleteOp deleteOp = (ColDeleteOp) opB;
+            if (opA instanceof CellEditOp) return transformCellEditVsColDelete((CellEditOp) opA, deleteOp);
+            if (opA instanceof CellMergeOp) return transformCellMergeVsColDelete((CellMergeOp) opA, deleteOp);
+            if (opA instanceof CellSplitOp) return transformCellSplitVsColDelete((CellSplitOp) opA, deleteOp);
+            if (opA instanceof ColResizeOp) return transformColResizeVsColDelete((ColResizeOp) opA, deleteOp);
+            if (opA instanceof RowInsertOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof RowDeleteOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof RowResizeOp) return cloneOp(opA); // 行列独立
+            if (opA instanceof ColInsertOp) return transformColInsertVsColDelete((ColInsertOp) opA, deleteOp);
+            if (opA instanceof ColDeleteOp) return transformColDeleteVsColDelete((ColDeleteOp) opA, deleteOp);
+            if (opA instanceof FontColorOp) return transformFontColorVsColDelete((FontColorOp) opA, deleteOp);
+            if (opA instanceof BgColorOp) return transformBgColorVsColDelete((BgColorOp) opA, deleteOp);
+            if (opA instanceof FontSizeOp) return transformFontSizeVsColDelete((FontSizeOp) opA, deleteOp);
+            if (opA instanceof FontBoldOp) return transformFontBoldVsColDelete((FontBoldOp) opA, deleteOp);
+            if (opA instanceof FontItalicOp) return transformFontItalicVsColDelete((FontItalicOp) opA, deleteOp);
+            if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsColDelete((FontUnderlineOp) opA, deleteOp);
+            if (opA instanceof FontAlignOp) return transformFontAlignVsColDelete((FontAlignOp) opA, deleteOp);
+            if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsColDelete((VerticalAlignOp) opA, deleteOp);
+        }
+
+        // opB 是 colResize 时，不影响其他操作
+        if (opB instanceof ColResizeOp) {
             return cloneOp(opA);
         }
 
