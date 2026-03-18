@@ -1,6 +1,10 @@
-import { Cell, SpreadsheetData, CellPosition } from './types';
+import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule } from './types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
+import { DataTypeDetector } from './type-detector';
+import { NumberFormatter, DateFormatter } from './format-engine';
+import { ValidationEngine } from './validation';
+import { ConditionalFormatEngine } from './conditional-format';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -25,10 +29,15 @@ export class SpreadsheetModel {
   private fontSize: number = 12; // 全局字体大小（默认12px）
   private formulaEngine: FormulaEngine;
   private formulaChangeCallbacks: Array<(row: number, col: number, newValue: string) => void> = [];
+  private conditionalFormats: ConditionalFormatRule[] = []; // 条件格式规则列表
+  private conditionalFormatEngine: ConditionalFormatEngine; // 条件格式引擎
 
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
     this.historyManager = new HistoryManager();
+
+    // 初始化条件格式引擎
+    this.conditionalFormatEngine = new ConditionalFormatEngine();
 
     // 初始化公式引擎
     this.formulaEngine = FormulaEngine.getInstance();
@@ -225,9 +234,9 @@ export class SpreadsheetModel {
   }
 
   // 设置单元格内容
-  public setCellContent(row: number, col: number, content: string): void {
+  public setCellContent(row: number, col: number, content: string): SetCellContentResult {
     if (!this.isValidPosition(row, col)) {
-      return;
+      return { success: false };
     }
 
     const cacheKey = `${row}-${col}`;
@@ -249,7 +258,25 @@ export class SpreadsheetModel {
 
     // 如果内容没有变化，直接返回
     if (oldContent === content) {
-      return;
+      return { success: true };
+    }
+
+    // 在写入前检查验证规则
+    const targetCell = (cell.isMerged && cell.mergeParent)
+      ? this.data.cells[targetRow][targetCol]
+      : cell;
+
+    let warningResult: ValidationResult | undefined;
+    if (targetCell.validation) {
+      const validationResult = ValidationEngine.validate(content, targetCell.validation);
+      if (!validationResult.valid) {
+        if (targetCell.validation.mode === 'block') {
+          // 阻止模式：拒绝无效输入，不写入内容
+          return { success: false, validationResult };
+        }
+        // 警告模式：允许写入，但记录警告信息返回给调用方
+        warningResult = validationResult;
+      }
     }
 
     // 记录历史
@@ -265,7 +292,7 @@ export class SpreadsheetModel {
       if (!validation.valid) {
         console.error('公式验证失败:', validation.error);
         this.notifyFormulaError(validation.error || '公式错误');
-        return;
+        return { success: false };
       }
 
       const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
@@ -273,7 +300,7 @@ export class SpreadsheetModel {
       if (result.isError) {
         console.error('公式计算错误:', result.errorMessage);
         this.notifyFormulaError(result.errorMessage || '公式计算错误');
-        return;
+        return { success: false };
       }
 
       if (cell.isMerged && cell.mergeParent) {
@@ -303,6 +330,19 @@ export class SpreadsheetModel {
         this.contentCache[cacheKey] = content;
       }
 
+      // 自动类型检测：仅在未手动设置格式时执行
+      const detectCell = (cell.isMerged && cell.mergeParent)
+        ? this.data.cells[targetRow][targetCol]
+        : cell;
+      if (!detectCell.format) {
+        const detection = DataTypeDetector.detect(content);
+        detectCell.dataType = detection.dataType;
+        detectCell.rawValue = detection.rawValue;
+        if (detection.format) {
+          detectCell.format = detection.format;
+        }
+      }
+
       const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
       for (const affected of affectedCells) {
         this.recalculateCell(affected.row, affected.col);
@@ -311,6 +351,8 @@ export class SpreadsheetModel {
 
     this.isDirty = true;
     this.clearCacheIfNeeded();
+
+    return { success: true, validationResult: warningResult };
   }
 
   // 设置单元格内容（不记录历史，用于撤销/重做）
@@ -1698,6 +1740,11 @@ export class SpreadsheetModel {
     fontUnderline?: boolean;
     fontAlign?: 'left' | 'center' | 'right';
     verticalAlign?: 'top' | 'middle' | 'bottom';
+    format?: CellFormat;
+    rawValue?: number;
+    wrapText?: boolean;
+    richText?: RichTextSegment[];
+    validation?: ValidationRule;
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -1724,6 +1771,11 @@ export class SpreadsheetModel {
         fontUnderline: parentCell.fontUnderline,
         fontAlign: parentCell.fontAlign,
         verticalAlign: parentCell.verticalAlign,
+        format: parentCell.format,
+        rawValue: parentCell.rawValue,
+        wrapText: parentCell.wrapText,
+        richText: parentCell.richText,
+        validation: parentCell.validation,
       };
     }
 
@@ -1743,6 +1795,11 @@ export class SpreadsheetModel {
       fontUnderline: cell.fontUnderline,
       fontAlign: cell.fontAlign,
       verticalAlign: cell.verticalAlign,
+      format: cell.format,
+      rawValue: cell.rawValue,
+      wrapText: cell.wrapText,
+      richText: cell.richText,
+      validation: cell.validation,
     };
   }
 
@@ -1919,9 +1976,11 @@ export class SpreadsheetModel {
         defaultColWidth: DEFAULT_COL_WIDTH
       },
       data: {
-        cells: [] as any[],
+        cells: [] as Record<string, unknown>[],
         rowHeights: customRowHeights,
-        colWidths: customColWidths
+        colWidths: customColWidths,
+        // 序列化条件格式规则（仅在有规则时包含）
+        ...(this.conditionalFormats.length > 0 ? { conditionalFormats: this.conditionalFormats } : {})
       }
     };
 
@@ -1930,9 +1989,10 @@ export class SpreadsheetModel {
       for (let j = 0; j < this.getColCount(); j++) {
         const cell = this.data.cells[i][j];
 
-        // 只保存有内容、合并信息或颜色的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign || cell.formulaContent) {
-          const cellData: any = {
+        // 只保存有内容、合并信息、颜色或数据类型格式化相关字段的单元格
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign || cell.formulaContent || cell.dataType || cell.rawValue !== undefined || cell.format || cell.richText || cell.wrapText || cell.validation) {
+          // 导出数据对象类型，使用 Record 避免 any
+          const cellData: Record<string, unknown> = {
             row: i,
             col: j,
             content: cell.content,
@@ -1952,6 +2012,14 @@ export class SpreadsheetModel {
           if (cell.formulaContent) {
             cellData.formulaContent = cell.formulaContent;
           }
+
+          // 序列化数据类型与格式化相关字段（仅非空值）
+          if (cell.dataType) cellData.dataType = cell.dataType;
+          if (cell.rawValue !== undefined) cellData.rawValue = cell.rawValue;
+          if (cell.format) cellData.format = cell.format;
+          if (cell.richText) cellData.richText = cell.richText;
+          if (cell.wrapText) cellData.wrapText = cell.wrapText;
+          if (cell.validation) cellData.validation = cell.validation;
 
           exportData.data.cells.push(cellData);
         }
@@ -2202,27 +2270,48 @@ export class SpreadsheetModel {
 
       // 导入单元格数据
       if (data.cells && Array.isArray(data.cells)) {
-        data.cells.forEach((cellData: any) => {
-          const { row, col, content, formulaContent, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign } = cellData;
+        // 使用 Record 类型避免 any，cellData 为 JSON 反序列化的通用对象
+        data.cells.forEach((cellData: Record<string, unknown>) => {
+          const { row, col, content, formulaContent, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign,
+            // 数据类型与格式化新增字段（旧格式文件中不存在，默认 undefined）
+            dataType, rawValue, format, richText, wrapText, validation
+          } = cellData;
 
-          if (this.isValidPosition(row, col)) {
-            this.data.cells[row][col] = {
-              content: content || '',
-              formulaContent: formulaContent,
-              rowSpan: rowSpan || 1,
-              colSpan: colSpan || 1,
-              isMerged: isMerged || false,
-              mergeParent: mergeParent,
-              fontColor: fontColor,
-              bgColor: bgColor,
-              fontSize: fontSize,
-              fontBold: fontBold,
-              fontItalic: fontItalic,
-              fontUnderline: fontUnderline,
-              verticalAlign: verticalAlign,
+          if (this.isValidPosition(row as number, col as number)) {
+            this.data.cells[row as number][col as number] = {
+              content: (content as string) || '',
+              formulaContent: formulaContent as string | undefined,
+              rowSpan: (rowSpan as number) || 1,
+              colSpan: (colSpan as number) || 1,
+              isMerged: (isMerged as boolean) || false,
+              mergeParent: mergeParent as { row: number; col: number } | undefined,
+              fontColor: fontColor as string | undefined,
+              bgColor: bgColor as string | undefined,
+              fontSize: fontSize as number | undefined,
+              fontBold: fontBold as boolean | undefined,
+              fontItalic: fontItalic as boolean | undefined,
+              fontUnderline: fontUnderline as boolean | undefined,
+              verticalAlign: verticalAlign as 'top' | 'middle' | 'bottom' | undefined,
+              // 反序列化数据类型与格式化字段（旧格式文件自动兼容，值为 undefined）
+              dataType: dataType as Cell['dataType'],
+              rawValue: rawValue as number | undefined,
+              format: format as CellFormat | undefined,
+              richText: richText as RichTextSegment[] | undefined,
+              wrapText: wrapText as boolean | undefined,
+              validation: validation as ValidationRule | undefined,
             };
           }
         });
+      }
+
+      // 反序列化条件格式规则（旧格式文件无此字段，默认空数组）
+      const importedConditionalFormats = (data.conditionalFormats as ConditionalFormatRule[] | undefined) || [];
+      this.conditionalFormats = importedConditionalFormats;
+
+      // 重建条件格式引擎，同步导入的规则
+      this.conditionalFormatEngine = new ConditionalFormatEngine();
+      for (const rule of this.conditionalFormats) {
+        this.conditionalFormatEngine.addRule(rule);
       }
 
       // 重新计算所有公式
@@ -2798,6 +2887,97 @@ export class SpreadsheetModel {
           }
         }
         break;
+      case 'setFormat':
+        // 撤销时使用 cells 数组恢复原始格式，重做时使用范围应用新格式
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              const cell = this.data.cells[cellData.row][cellData.col];
+              cell.format = cellData.format;
+              // 撤销时恢复 content、rawValue、dataType
+              if (cellData.content !== undefined) {
+                cell.content = cellData.content;
+              }
+              if (cellData.rawValue !== undefined) {
+                cell.rawValue = cellData.rawValue;
+              } else {
+                cell.rawValue = undefined;
+              }
+              if (cellData.dataType !== undefined) {
+                cell.dataType = cellData.dataType;
+              } else {
+                cell.dataType = undefined;
+              }
+            }
+          }
+        } else if (data.startRow !== undefined && data.format !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                const cell = this.data.cells[r][c];
+                cell.format = data.format;
+                this.reformatCellContent(cell, data.format);
+              }
+            }
+          }
+        }
+        break;
+      case 'setWrapText':
+        // 撤销时使用 cells 数组恢复原始换行设置，重做时使用范围应用
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].wrapText = cellData.wrapText;
+            }
+          }
+        } else if (data.startRow !== undefined && data.wrapText !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].wrapText = data.wrapText;
+              }
+            }
+          }
+        }
+        break;
+      case 'setRichText':
+        // 撤销/重做时使用 cells 数组恢复富文本内容
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].richText = cellData.richText;
+            }
+          }
+        }
+        break;
+      case 'setValidation':
+        // 撤销/重做时使用 cells 数组恢复验证规则
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].validation = cellData.validation;
+            }
+          }
+        }
+        break;
+      case 'setConditionalFormat':
+        // 条件格式的撤销/重做：添加或移除规则
+        if (data.action === 'add' && data.rule) {
+          this.conditionalFormats.push(data.rule);
+          this.conditionalFormatEngine.addRule(data.rule);
+        } else if (data.action === 'remove' && data.ruleId) {
+          this.conditionalFormats = this.conditionalFormats.filter((r) => r.id !== data.ruleId);
+          this.conditionalFormatEngine.removeRule(data.ruleId);
+        }
+        break;
     }
     this.isDirty = true;
   }
@@ -2816,4 +2996,621 @@ export class SpreadsheetModel {
   public getHistoryManager(): HistoryManager {
     return this.historyManager;
   }
+
+  // ============================================================
+  // 格式设置方法
+  // ============================================================
+
+  /**
+   * 根据格式重新格式化单元格内容
+   * 当单元格有 rawValue 时，使用对应的格式化器更新 content 显示字符串
+   */
+  private reformatCellContent(cell: Cell, format: CellFormat): void {
+    if (cell.rawValue === undefined) {
+      return;
+    }
+
+    const { category, pattern, currencySymbol } = format;
+
+    // 数字相关格式：使用 NumberFormatter
+    if (category === 'number' || category === 'currency' || category === 'percentage' || category === 'scientific') {
+      if (category === 'currency' && currencySymbol) {
+        cell.content = NumberFormatter.formatCurrency(cell.rawValue, currencySymbol);
+      } else {
+        cell.content = NumberFormatter.format(cell.rawValue, pattern);
+      }
+      return;
+    }
+
+    // 日期/时间格式：使用 DateFormatter
+    if (category === 'date' || category === 'time' || category === 'datetime') {
+      cell.content = DateFormatter.format(cell.rawValue, pattern);
+      return;
+    }
+
+    // 常规格式：如果有 rawValue，直接转为字符串
+    if (category === 'general') {
+      cell.content = String(cell.rawValue);
+    }
+  }
+
+  // 设置单元格格式
+  public setCellFormat(row: number, col: number, format: CellFormat): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的格式
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      const targetCell = this.data.cells[parentRow][parentCol];
+      const oldFormat = targetCell.format ? { ...targetCell.format } : undefined;
+      const oldContent = targetCell.content;
+      const oldRawValue = targetCell.rawValue;
+      const oldDataType = targetCell.dataType;
+
+      this.historyManager.record({
+        type: 'setFormat',
+        data: { cells: [{ row: parentRow, col: parentCol, format }] },
+        undoData: { cells: [{ row: parentRow, col: parentCol, format: oldFormat, content: oldContent, rawValue: oldRawValue, dataType: oldDataType }] }
+      });
+
+      targetCell.format = format;
+      this.reformatCellContent(targetCell, format);
+    } else {
+      const oldFormat = cell.format ? { ...cell.format } : undefined;
+      const oldContent = cell.content;
+      const oldRawValue = cell.rawValue;
+      const oldDataType = cell.dataType;
+
+      this.historyManager.record({
+        type: 'setFormat',
+        data: { cells: [{ row, col, format }] },
+        undoData: { cells: [{ row, col, format: oldFormat, content: oldContent, rawValue: oldRawValue, dataType: oldDataType }] }
+      });
+
+      cell.format = format;
+      this.reformatCellContent(cell, format);
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置区域格式
+  public setRangeFormat(startRow: number, startCol: number, endRow: number, endCol: number, format: CellFormat): void {
+    if (!this.isValidRange(startRow, startCol, endRow, endCol)) {
+      return;
+    }
+
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+    // 收集旧值用于撤销
+    const undoCells: { row: number; col: number; format: CellFormat | undefined; content: string; rawValue: number | undefined; dataType: string | undefined }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const targetCell = this.data.cells[parentRow][parentCol];
+            undoCells.push({
+              row: parentRow, col: parentCol,
+              format: targetCell.format ? { ...targetCell.format } : undefined,
+              content: targetCell.content,
+              rawValue: targetCell.rawValue,
+              dataType: targetCell.dataType
+            });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            undoCells.push({
+              row: i, col: j,
+              format: cell.format ? { ...cell.format } : undefined,
+              content: cell.content,
+              rawValue: cell.rawValue,
+              dataType: cell.dataType
+            });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    // 记录历史
+    this.historyManager.record({
+      type: 'setFormat',
+      data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, format },
+      undoData: { cells: undoCells }
+    });
+
+    // 应用格式
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const targetCell = this.data.cells[parentRow][parentCol];
+            targetCell.format = format;
+            this.reformatCellContent(targetCell, format);
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.format = format;
+            this.reformatCellContent(cell, format);
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
+  // 清除单元格格式（恢复为常规）
+  public clearCellFormat(row: number, col: number): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+    let targetCell = cell;
+
+    // 如果是被合并的单元格，清除合并父单元格的格式
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      targetCell = this.data.cells[parentRow][parentCol];
+    }
+
+    // 如果有 rawValue，将其转回字符串作为 content
+    if (targetCell.rawValue !== undefined) {
+      targetCell.content = String(targetCell.rawValue);
+    }
+    targetCell.format = undefined;
+    targetCell.dataType = undefined;
+    targetCell.rawValue = undefined;
+
+    this.isDirty = true;
+  }
+
+  // 清除区域格式（恢复为常规）
+  public clearRangeFormat(startRow: number, startCol: number, endRow: number, endCol: number): void {
+    if (!this.isValidRange(startRow, startCol, endRow, endCol)) {
+      return;
+    }
+
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const targetCell = this.data.cells[parentRow][parentCol];
+            if (targetCell.rawValue !== undefined) {
+              targetCell.content = String(targetCell.rawValue);
+            }
+            targetCell.format = undefined;
+            targetCell.dataType = undefined;
+            targetCell.rawValue = undefined;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            if (cell.rawValue !== undefined) {
+              cell.content = String(cell.rawValue);
+            }
+            cell.format = undefined;
+            cell.dataType = undefined;
+            cell.rawValue = undefined;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置单元格自动换行
+  public setCellWrapText(row: number, col: number, wrap: boolean): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      const oldWrap = this.data.cells[parentRow][parentCol].wrapText || false;
+
+      this.historyManager.record({
+        type: 'setWrapText',
+        data: { cells: [{ row: parentRow, col: parentCol, wrapText: wrap }] },
+        undoData: { cells: [{ row: parentRow, col: parentCol, wrapText: oldWrap }] }
+      });
+
+      this.data.cells[parentRow][parentCol].wrapText = wrap;
+    } else {
+      const oldWrap = cell.wrapText || false;
+
+      this.historyManager.record({
+        type: 'setWrapText',
+        data: { cells: [{ row, col, wrapText: wrap }] },
+        undoData: { cells: [{ row, col, wrapText: oldWrap }] }
+      });
+
+      cell.wrapText = wrap;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置区域自动换行
+  public setRangeWrapText(startRow: number, startCol: number, endRow: number, endCol: number, wrap: boolean): void {
+    if (!this.isValidRange(startRow, startCol, endRow, endCol)) {
+      return;
+    }
+
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const processedCells = new Set<string>();
+    // 收集旧值用于撤销
+    const undoCells: { row: number; col: number; wrapText: boolean }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            undoCells.push({ row: parentRow, col: parentCol, wrapText: this.data.cells[parentRow][parentCol].wrapText || false });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            undoCells.push({ row: i, col: j, wrapText: cell.wrapText || false });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    // 记录历史
+    this.historyManager.record({
+      type: 'setWrapText',
+      data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, wrapText: wrap },
+      undoData: { cells: undoCells }
+    });
+
+    // 应用换行设置
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].wrapText = wrap;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.wrapText = wrap;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置单元格富文本
+  public setCellRichText(row: number, col: number, richText: RichTextSegment[]): void {
+      if (!this.isValidPosition(row, col)) {
+        return;
+      }
+
+      const cell = this.data.cells[row][col];
+
+      // 优化：当所有片段样式完全相同时，合并为普通 content 存储
+      const optimized = this.optimizeRichText(richText);
+
+      if (cell.isMerged && cell.mergeParent) {
+        const { row: parentRow, col: parentCol } = cell.mergeParent;
+        const targetCell = this.data.cells[parentRow][parentCol];
+        const oldRichText = targetCell.richText ? targetCell.richText.map((s) => ({ ...s })) : undefined;
+
+        this.historyManager.record({
+          type: 'setRichText',
+          data: { cells: [{ row: parentRow, col: parentCol, richText: optimized.richText }] },
+          undoData: { cells: [{ row: parentRow, col: parentCol, richText: oldRichText }] }
+        });
+
+        if (optimized.merged) {
+          // 所有片段样式相同，合并为普通 content
+          targetCell.content = optimized.content;
+          targetCell.richText = undefined;
+        } else {
+          targetCell.richText = optimized.richText;
+        }
+      } else {
+        const oldRichText = cell.richText ? cell.richText.map((s) => ({ ...s })) : undefined;
+
+        this.historyManager.record({
+          type: 'setRichText',
+          data: { cells: [{ row, col, richText: optimized.richText }] },
+          undoData: { cells: [{ row, col, richText: oldRichText }] }
+        });
+
+        if (optimized.merged) {
+          // 所有片段样式相同，合并为普通 content
+          cell.content = optimized.content;
+          cell.richText = undefined;
+        } else {
+          cell.richText = optimized.richText;
+        }
+      }
+
+      this.isDirty = true;
+    }
+
+  /**
+   * 优化富文本：当所有片段样式完全相同时，合并为普通文本
+   * 比较的样式属性：fontBold、fontItalic、fontUnderline、fontColor、fontSize
+   */
+  private optimizeRichText(segments: RichTextSegment[]): {
+    merged: boolean;
+    content: string;
+    richText: RichTextSegment[] | undefined;
+  } {
+    // 空数组直接合并为普通文本
+    if (segments.length === 0) {
+      return { merged: true, content: '', richText: undefined };
+    }
+
+    // 以第一个片段的样式为基准，比较所有片段
+    const baseStyle = segments[0];
+    const allSameStyle = segments.every((segment) =>
+      (segment.fontBold ?? false) === (baseStyle.fontBold ?? false) &&
+      (segment.fontItalic ?? false) === (baseStyle.fontItalic ?? false) &&
+      (segment.fontUnderline ?? false) === (baseStyle.fontUnderline ?? false) &&
+      (segment.fontColor ?? '') === (baseStyle.fontColor ?? '') &&
+      (segment.fontSize ?? 0) === (baseStyle.fontSize ?? 0)
+    );
+
+    if (allSameStyle) {
+      // 所有片段样式相同，拼接文本内容
+      const mergedContent = segments.map((s) => s.text).join('');
+      return { merged: true, content: mergedContent, richText: undefined };
+    }
+
+    // 样式不同，保持富文本格式
+    return { merged: false, content: '', richText: segments };
+  }
+
+  // 设置单元格数据验证规则
+  public setCellValidation(row: number, col: number, rule: ValidationRule | undefined): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      const targetCell = this.data.cells[parentRow][parentCol];
+      const oldRule = targetCell.validation ? { ...targetCell.validation } : undefined;
+
+      this.historyManager.record({
+        type: 'setValidation',
+        data: { cells: [{ row: parentRow, col: parentCol, validation: rule }] },
+        undoData: { cells: [{ row: parentRow, col: parentCol, validation: oldRule }] }
+      });
+
+      targetCell.validation = rule;
+    } else {
+      const oldRule = cell.validation ? { ...cell.validation } : undefined;
+
+      this.historyManager.record({
+        type: 'setValidation',
+        data: { cells: [{ row, col, validation: rule }] },
+        undoData: { cells: [{ row, col, validation: oldRule }] }
+      });
+
+      cell.validation = rule;
+    }
+
+    this.isDirty = true;
+  }
+
+  // ============================================================
+  // 行高自动调整
+  // ============================================================
+
+  // 自动调整行高以适应换行文本
+  public autoFitRowHeight(row: number): void {
+    if (row < 0 || row >= this.data.rowHeights.length) {
+      return;
+    }
+
+    const colCount = this.getColCount();
+    let maxHeight = DEFAULT_ROW_HEIGHT;
+
+    // 创建临时 Canvas 上下文用于文本测量
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    for (let col = 0; col < colCount; col++) {
+      const cell = this.data.cells[row][col];
+
+      // 跳过被合并的子单元格
+      if (cell.isMerged && cell.mergeParent) {
+        continue;
+      }
+
+      // 仅处理 wrapText=true 的单元格
+      if (!cell.wrapText) {
+        continue;
+      }
+
+      const content = cell.content;
+      if (!content) {
+        continue;
+      }
+
+      // 计算单元格可用宽度（考虑合并单元格）
+      let cellWidth = 0;
+      for (let c = col; c < col + cell.colSpan; c++) {
+        cellWidth += this.getColWidth(c);
+      }
+      // 减去内边距
+      const padding = 8;
+      const availableWidth = cellWidth - padding * 2;
+
+      if (availableWidth <= 0) {
+        continue;
+      }
+
+      // 设置字体用于测量
+      const fontSize = cell.fontSize || this.fontSize;
+      ctx.font = `${cell.fontBold ? 'bold ' : ''}${cell.fontItalic ? 'italic ' : ''}${fontSize}px Arial`;
+
+      const lineHeight = fontSize + 4;
+
+      // 按换行符分割段落，再按宽度自动换行
+      const paragraphs = content.split('\n');
+      let totalLines = 0;
+
+      for (const paragraph of paragraphs) {
+        if (paragraph === '') {
+          totalLines += 1;
+          continue;
+        }
+
+        // 逐字符测量，按宽度换行
+        let currentLine = '';
+        let lines = 0;
+
+        for (let i = 0; i < paragraph.length; i++) {
+          const testLine = currentLine + paragraph[i];
+          const metrics = ctx.measureText(testLine);
+
+          if (metrics.width > availableWidth && currentLine !== '') {
+            lines += 1;
+            currentLine = paragraph[i];
+          } else {
+            currentLine = testLine;
+          }
+        }
+        // 最后一行
+        if (currentLine !== '') {
+          lines += 1;
+        }
+
+        totalLines += lines;
+      }
+
+      // 计算所需高度
+      const requiredHeight = totalLines * lineHeight + padding * 2;
+      if (requiredHeight > maxHeight) {
+        maxHeight = requiredHeight;
+      }
+    }
+
+    // 更新行高（不记录历史，由调用方决定是否记录）
+    if (maxHeight > this.data.rowHeights[row]) {
+      this.data.rowHeights[row] = maxHeight;
+      this.isDirty = true;
+    }
+  }
+
+  /**
+   * 添加条件格式规则
+   * 规则存储在 Model 级别，同时同步到条件格式引擎
+   */
+  public addConditionalFormat(rule: ConditionalFormatRule): void {
+    // 记录历史，撤销时移除该规则
+    this.historyManager.record({
+      type: 'setConditionalFormat',
+      data: { action: 'add', rule },
+      undoData: { action: 'remove', ruleId: rule.id }
+    });
+
+    this.conditionalFormats.push(rule);
+    this.conditionalFormatEngine.addRule(rule);
+    this.isDirty = true;
+  }
+
+  /**
+   * 移除指定 ID 的条件格式规则
+   */
+  public removeConditionalFormat(ruleId: string): void {
+    // 找到要移除的规则，用于撤销时恢复
+    const removedRule = this.conditionalFormats.find((r) => r.id === ruleId);
+    if (removedRule) {
+      this.historyManager.record({
+        type: 'setConditionalFormat',
+        data: { action: 'remove', ruleId },
+        undoData: { action: 'add', rule: { ...removedRule } }
+      });
+    }
+
+    this.conditionalFormats = this.conditionalFormats.filter((r) => r.id !== ruleId);
+    this.conditionalFormatEngine.removeRule(ruleId);
+    this.isDirty = true;
+  }
+
+  /**
+   * 获取所有条件格式规则（只读副本）
+   */
+  public getConditionalFormats(): ConditionalFormatRule[] {
+    return [...this.conditionalFormats];
+  }
+
+  /**
+   * 获取条件格式引擎实例（供渲染器使用）
+   */
+  public getConditionalFormatEngine(): ConditionalFormatEngine {
+    return this.conditionalFormatEngine;
+  }
+
 }

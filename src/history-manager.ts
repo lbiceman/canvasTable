@@ -15,7 +15,13 @@ export type ActionType =
   | 'deleteRows'
   | 'clearContent'
   | 'resizeRow'
-  | 'resizeCol';
+  | 'resizeCol'
+  | 'setFormat'
+  | 'setWrapText'
+  | 'setRichText'
+  | 'setValidation'
+  | 'setConditionalFormat';
+
 
 // 历史记录项
 export interface HistoryAction {

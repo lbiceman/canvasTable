@@ -1,11 +1,12 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
-import { RenderConfig, CellPosition, Selection } from './types';
+import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
 import { SearchDialog, SearchResult } from './search-dialog';
 import { CollaborationEngine } from './collaboration/collaboration-engine';
 import { CollabOperation } from './collaboration/types';
+import { ValidationEngine } from './validation';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -51,6 +52,18 @@ export class SpreadsheetApp {
   private resizeStartX: number = 0;
   private resizeStartHeight: number = 0;
   private resizeStartWidth: number = 0;
+
+  // 下拉列表菜单
+  private dropdownMenu: HTMLDivElement | null = null;
+  private dropdownRow: number = -1;
+  private dropdownCol: number = -1;
+
+  // 验证提示 tooltip
+  private validationTooltip: HTMLDivElement | null = null;
+  private validationTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // 条件格式设置面板
+  private conditionalFormatPanel: HTMLDivElement | null = null;
 
   constructor(_containerId: string) {
     // 创建模型
@@ -100,6 +113,15 @@ export class SpreadsheetApp {
     this.createContextMenu();
     // 创建列操作右键菜单
     this.createColContextMenu();
+
+    // 创建下拉列表菜单
+    this.createDropdownMenu();
+
+    // 创建验证提示 tooltip
+    this.createValidationTooltip();
+
+    // 创建条件格式设置面板
+    this.createConditionalFormatPanel();
 
     // 设置滚动回调
     this.renderer.setScrollChangeCallback(this.handleScrollChange.bind(this));
@@ -328,6 +350,222 @@ export class SpreadsheetApp {
     }
     this.contextMenuCol = null;
   }
+
+  // 创建下拉列表菜单 DOM 元素
+  private createDropdownMenu(): void {
+    this.dropdownMenu = document.createElement('div');
+    this.dropdownMenu.className = 'dropdown-validation-menu';
+    this.dropdownMenu.style.display = 'none';
+    document.body.appendChild(this.dropdownMenu);
+
+    // 点击外部关闭下拉菜单
+    document.addEventListener('mousedown', (e) => {
+      if (this.dropdownMenu && !this.dropdownMenu.contains(e.target as Node)) {
+        this.hideDropdownMenu();
+      }
+    });
+  }
+
+  // 显示下拉列表验证菜单
+  private showDropdownMenu(row: number, col: number): void {
+    if (!this.dropdownMenu) return;
+
+    // 如果已经在显示同一单元格的下拉菜单，则关闭
+    if (this.dropdownRow === row && this.dropdownCol === col && this.dropdownMenu.style.display !== 'none') {
+      this.hideDropdownMenu();
+      return;
+    }
+
+    // 获取单元格信息
+    const cellInfo = this.model.getMergedCellInfo(row, col);
+    if (!cellInfo || !cellInfo.validation || cellInfo.validation.type !== 'dropdown') return;
+
+    // 获取下拉选项
+    const options = ValidationEngine.getDropdownOptions(cellInfo.validation);
+    if (options.length === 0) return;
+
+    // 清空菜单内容
+    this.dropdownMenu.innerHTML = '';
+
+    // 当前单元格内容，用于高亮已选项
+    const currentContent = cellInfo.content || '';
+
+    // 创建选项列表
+    for (const option of options) {
+      const item = document.createElement('div');
+      item.className = 'dropdown-validation-item';
+      if (option === currentContent) {
+        item.classList.add('dropdown-validation-item-selected');
+      }
+      item.textContent = option;
+      item.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // 获取旧内容
+        const previousContent = this.model.getCell(row, col)?.content ?? '';
+
+        // 写入单元格
+        this.model.setCellContent(row, col, option);
+
+        // 协同模式下提交操作
+        if (this.isCollaborationMode() && option !== previousContent) {
+          this.submitCollabOperation({
+            ...this.createBaseOp(),
+            type: 'cellEdit',
+            row,
+            col,
+            content: option,
+            previousContent,
+          });
+        }
+
+        // 关闭菜单
+        this.hideDropdownMenu();
+
+        // 更新状态栏和重新渲染
+        this.updateSelectedCellInfo();
+        this.renderer.render();
+      });
+      this.dropdownMenu.appendChild(item);
+    }
+
+    // 计算菜单位置（基于单元格在画布上的位置）
+    const cellRect = this.renderer.getCellRect(cellInfo.row, cellInfo.col);
+    if (!cellRect) return;
+
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const menuLeft = canvasRect.left + cellRect.x;
+    const menuTop = canvasRect.top + cellRect.y + cellRect.height;
+
+    this.dropdownMenu.style.left = `${menuLeft}px`;
+    this.dropdownMenu.style.top = `${menuTop}px`;
+    this.dropdownMenu.style.minWidth = `${cellRect.width}px`;
+    this.dropdownMenu.style.display = 'block';
+
+    // 记录当前下拉菜单对应的单元格
+    this.dropdownRow = row;
+    this.dropdownCol = col;
+  }
+
+  // 隐藏下拉列表验证菜单
+  private hideDropdownMenu(): void {
+    if (this.dropdownMenu) {
+      this.dropdownMenu.style.display = 'none';
+      this.dropdownMenu.innerHTML = '';
+    }
+    this.dropdownRow = -1;
+    this.dropdownCol = -1;
+  }
+
+  // 创建验证提示 tooltip 元素
+  private createValidationTooltip(): void {
+    this.validationTooltip = document.createElement('div');
+    this.validationTooltip.className = 'validation-tooltip';
+    this.validationTooltip.style.display = 'none';
+    document.body.appendChild(this.validationTooltip);
+  }
+
+  // 显示验证提示 tooltip
+  private showValidationTooltip(
+    row: number,
+    col: number,
+    type: 'info' | 'error',
+    title: string,
+    message: string
+  ): void {
+    if (!this.validationTooltip) return;
+
+    // 清除之前的自动隐藏定时器
+    this.clearTooltipTimer();
+
+    // 获取单元格位置
+    const cellRect = this.renderer.getCellRect(row, col);
+    if (!cellRect) return;
+
+    // 设置 tooltip 内容
+    this.validationTooltip.innerHTML = '';
+    this.validationTooltip.className = `validation-tooltip validation-tooltip-${type}`;
+
+    if (title) {
+      const titleEl = document.createElement('div');
+      titleEl.className = 'validation-tooltip-title';
+      titleEl.textContent = title;
+      this.validationTooltip.appendChild(titleEl);
+    }
+
+    if (message) {
+      const msgEl = document.createElement('div');
+      msgEl.className = 'validation-tooltip-message';
+      msgEl.textContent = message;
+      this.validationTooltip.appendChild(msgEl);
+    }
+
+    // 计算位置（单元格下方）
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const tooltipLeft = canvasRect.left + cellRect.x;
+    const tooltipTop = canvasRect.top + cellRect.y + cellRect.height + 4;
+
+    this.validationTooltip.style.left = `${tooltipLeft}px`;
+    this.validationTooltip.style.top = `${tooltipTop}px`;
+    this.validationTooltip.style.display = 'block';
+
+    // 错误提示 4 秒后自动隐藏，输入提示在选中期间持续显示
+    if (type === 'error') {
+      this.validationTooltipTimer = setTimeout(() => {
+        this.hideValidationTooltip();
+      }, 4000);
+    }
+  }
+
+  // 隐藏验证提示 tooltip
+  private hideValidationTooltip(): void {
+    if (this.validationTooltip) {
+      this.validationTooltip.style.display = 'none';
+    }
+    this.clearTooltipTimer();
+  }
+
+  // 清除 tooltip 自动隐藏定时器
+  private clearTooltipTimer(): void {
+    if (this.validationTooltipTimer !== null) {
+      clearTimeout(this.validationTooltipTimer);
+      this.validationTooltipTimer = null;
+    }
+  }
+
+  // 检查并显示单元格的输入提示
+  private showInputHintIfNeeded(row: number, col: number): void {
+    const cellInfo = this.model.getMergedCellInfo(row, col);
+    if (!cellInfo || !cellInfo.validation) {
+      this.hideValidationTooltip();
+      return;
+    }
+
+    const { validation } = cellInfo;
+    const { inputTitle, inputMessage } = validation;
+
+    // 有输入提示时显示浅蓝色 tooltip
+    if (inputTitle || inputMessage) {
+      this.showValidationTooltip(
+        cellInfo.row,
+        cellInfo.col,
+        'info',
+        inputTitle || '',
+        inputMessage || ''
+      );
+    } else {
+      this.hideValidationTooltip();
+    }
+  }
+
+  // 显示验证错误提示
+  private showValidationError(row: number, col: number, errorTitle?: string, errorMessage?: string): void {
+    const title = errorTitle || '输入无效';
+    const message = errorMessage || '输入的值不符合此单元格的验证规则。';
+    this.showValidationTooltip(row, col, 'error', title, message);
+  }
+
 
   // 插入行
   private insertRows(count: number): void {
@@ -593,6 +831,9 @@ export class SpreadsheetApp {
     // 初始化字体大小选择器
     this.initFontSizePicker();
 
+    // 初始化数字格式下拉菜单
+    this.initNumberFormatPicker();
+
     // 初始化垂直对齐选择器
     this.initVerticalAlignPicker();
 
@@ -631,6 +872,18 @@ export class SpreadsheetApp {
     const fontAlignRightBtn = document.getElementById('font-align-right-btn');
     if (fontAlignRightBtn) {
       fontAlignRightBtn.addEventListener('click', () => this.handleFontAlignChange('right'));
+    }
+
+    // 自动换行按钮事件
+    const wrapTextBtn = document.getElementById('wrap-text-btn');
+    if (wrapTextBtn) {
+      wrapTextBtn.addEventListener('click', this.handleWrapTextChange.bind(this));
+    }
+
+    // 条件格式按钮事件
+    const conditionalFormatBtn = document.getElementById('conditional-format-btn');
+    if (conditionalFormatBtn) {
+      conditionalFormatBtn.addEventListener('click', () => this.showConditionalFormatPanel());
     }
 
     const setContentButton = document.getElementById('set-content');
@@ -821,9 +1074,30 @@ export class SpreadsheetApp {
       cellInfo.col,
       (value) => {
         const previousContent = this.model.getCell(cellInfo.row, cellInfo.col)?.content ?? '';
-        this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+        const result = this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+
+        // 验证失败时显示错误提示（需求 5.5）
+        if (!result.success && result.validationResult && !result.validationResult.valid) {
+          this.showValidationError(
+            cellInfo.row,
+            cellInfo.col,
+            result.validationResult.errorTitle,
+            result.validationResult.errorMessage
+          );
+          return;
+        }
+        // 警告模式下也显示错误提示
+        if (result.validationResult && !result.validationResult.valid) {
+          this.showValidationError(
+            cellInfo.row,
+            cellInfo.col,
+            result.validationResult.errorTitle,
+            result.validationResult.errorMessage
+          );
+        }
+
         // 协同模式下提交操作
-        if (this.isCollaborationMode()) {
+        if (this.isCollaborationMode() && value !== previousContent) {
           this.submitCollabOperation({
             ...this.createBaseOp(),
             type: 'cellEdit',
@@ -1388,6 +1662,35 @@ export class SpreadsheetApp {
       const cellInfo = this.model.getMergedCellInfo(cellPosition.row, cellPosition.col);
 
       if (cellInfo) {
+        // 检查是否点击了下拉验证箭头区域（单元格右侧 20px 区域）
+        if (cellInfo.validation && cellInfo.validation.type === 'dropdown') {
+          const cellRect = this.renderer.getCellRect(cellInfo.row, cellInfo.col);
+          if (cellRect) {
+            const arrowWidth = 20;
+            const clickXInCell = x - cellRect.x;
+            if (clickXInCell >= cellRect.width - arrowWidth) {
+              // 先设置选择区域
+              this.selectionStart = { row: cellInfo.row, col: cellInfo.col };
+              this.currentSelection = {
+                startRow: cellInfo.row,
+                startCol: cellInfo.col,
+                endRow: cellInfo.row + cellInfo.rowSpan - 1,
+                endCol: cellInfo.col + cellInfo.colSpan - 1
+              };
+              this.renderer.setSelection(
+                cellInfo.row, cellInfo.col,
+                cellInfo.row + cellInfo.rowSpan - 1,
+                cellInfo.col + cellInfo.colSpan - 1
+              );
+              this.updateSelectedCellInfo();
+
+              // 显示下拉菜单
+              this.showDropdownMenu(cellInfo.row, cellInfo.col);
+              return;
+            }
+          }
+        }
+
         // 如果是合并单元格，选择整个合并区域
         if (cellInfo.rowSpan > 1 || cellInfo.colSpan > 1) {
           this.selectionStart = { row: cellInfo.row, col: cellInfo.col };
@@ -1440,6 +1743,19 @@ export class SpreadsheetApp {
       const cellInfo = this.model.getMergedCellInfo(cellPosition.row, cellPosition.col);
 
       if (cellInfo) {
+        // 如果单元格有下拉列表验证，双击时显示下拉菜单而非编辑器
+        if (cellInfo.validation && cellInfo.validation.type === 'dropdown') {
+          this.currentSelection = {
+            startRow: cellInfo.row,
+            startCol: cellInfo.col,
+            endRow: cellInfo.row + cellInfo.rowSpan - 1,
+            endCol: cellInfo.col + cellInfo.colSpan - 1
+          };
+          this.updateSelectedCellInfo();
+          this.showDropdownMenu(cellInfo.row, cellInfo.col);
+          return;
+        }
+
         // 更新选择区域
         this.currentSelection = {
           startRow: cellInfo.row,
@@ -1472,7 +1788,28 @@ export class SpreadsheetApp {
               // 获取旧内容
               const previousContent = this.model.getCell(cellInfo.row, cellInfo.col)?.content ?? '';
               // 设置单元格内容
-              this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+              const result = this.model.setCellContent(cellInfo.row, cellInfo.col, value);
+
+              // 验证失败时显示错误提示（需求 5.5）
+              if (!result.success && result.validationResult && !result.validationResult.valid) {
+                this.showValidationError(
+                  cellInfo.row,
+                  cellInfo.col,
+                  result.validationResult.errorTitle,
+                  result.validationResult.errorMessage
+                );
+                return;
+              }
+              // 警告模式下也显示错误提示
+              if (result.validationResult && !result.validationResult.valid) {
+                this.showValidationError(
+                  cellInfo.row,
+                  cellInfo.col,
+                  result.validationResult.errorTitle,
+                  result.validationResult.errorMessage
+                );
+              }
+
               // 协同模式下提交操作
               if (this.isCollaborationMode() && value !== previousContent) {
                 this.submitCollabOperation({
@@ -1821,6 +2158,28 @@ export class SpreadsheetApp {
   // 可选字号列表（偶数）
   private static readonly FONT_SIZES = [8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 48];
 
+  // 数字格式映射表：data-format 值 → CellFormat（general 表示移除格式）
+  private static readonly NUMBER_FORMAT_MAP: Record<string, CellFormat | undefined> = {
+    'general': undefined,
+    'number': { category: 'number', pattern: '#,##0.00' },
+    'currency': { category: 'currency', pattern: '¥#,##0.00', currencySymbol: '¥' },
+    'percentage': { category: 'percentage', pattern: '0.00%' },
+    'scientific': { category: 'scientific', pattern: '0.00E+0' },
+    'date': { category: 'date', pattern: 'yyyy-MM-dd' },
+    'time': { category: 'time', pattern: 'HH:mm:ss' },
+  };
+
+  // 格式类别到下拉菜单显示文本的映射
+  private static readonly FORMAT_DISPLAY_TEXT: Record<string, string> = {
+    'general': '常规',
+    'number': '数字',
+    'currency': '货币',
+    'percentage': '百分比',
+    'scientific': '科学计数法',
+    'date': '日期',
+    'time': '时间',
+  };
+
   // 初始化字体大小选择器
   private initFontSizePicker(): void {
     const btn = document.getElementById('font-size-btn');
@@ -1871,6 +2230,626 @@ export class SpreadsheetApp {
         optionEl.classList.toggle('active', optionEl.dataset.size === String(size));
       });
     }
+  }
+
+  // 初始化数字格式下拉菜单
+  private initNumberFormatPicker(): void {
+    const btn = document.getElementById('number-format-btn');
+    const dropdown = document.getElementById('number-format-dropdown');
+    if (!btn || !dropdown) return;
+
+    // 点击按钮切换下拉框
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 监听格式选项点击
+    const options = dropdown.querySelectorAll('.number-format-option');
+    options.forEach((option) => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const formatKey = (option as HTMLElement).dataset.format;
+        if (formatKey !== undefined) {
+          this.handleNumberFormatChange(formatKey);
+        }
+        dropdown.classList.remove('visible');
+      });
+    });
+
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+  }
+
+  // 更新数字格式下拉菜单 UI 状态
+  private updateNumberFormatUI(formatCategory: string): void {
+    const textEl = document.getElementById('number-format-text');
+    if (textEl) {
+      textEl.textContent = SpreadsheetApp.FORMAT_DISPLAY_TEXT[formatCategory] || '常规';
+    }
+
+    const dropdown = document.getElementById('number-format-dropdown');
+    if (dropdown) {
+      dropdown.querySelectorAll('.number-format-option').forEach((el) => {
+        const optionEl = el as HTMLElement;
+        optionEl.classList.toggle('active', optionEl.dataset.format === formatCategory);
+      });
+    }
+  }
+
+  // 处理数字格式变更
+  private handleNumberFormatChange(formatKey: string): void {
+    if (!this.currentSelection) return;
+
+    const format = SpreadsheetApp.NUMBER_FORMAT_MAP[formatKey];
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    if (format === undefined) {
+      // "常规"格式：清除选中区域的格式
+      this.model.clearRangeFormat(startRow, startCol, endRow, endCol);
+    } else {
+      // 设置选中区域的格式
+      this.model.setRangeFormat(startRow, startCol, endRow, endCol, format);
+    }
+
+    // 更新 UI 显示
+    this.updateNumberFormatUI(formatKey);
+
+    // 重新渲染
+    this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
+  }
+
+  // 处理换行按钮点击
+  private handleWrapTextChange(): void {
+    if (!this.currentSelection) return;
+
+    const wrapTextBtn = document.getElementById('wrap-text-btn');
+    if (!wrapTextBtn) return;
+
+    // 切换换行状态
+    const isWrap = !wrapTextBtn.classList.contains('active');
+    wrapTextBtn.classList.toggle('active', isWrap);
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 设置选中区域的换行属性
+    this.model.setRangeWrapText(startRow, startCol, endRow, endCol, isWrap);
+
+    // 重新渲染
+    this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
+  }
+
+  // 更新换行按钮 UI 状态
+  private updateWrapTextUI(wrap: boolean): void {
+    const wrapTextBtn = document.getElementById('wrap-text-btn');
+    if (wrapTextBtn) {
+      wrapTextBtn.classList.toggle('active', wrap);
+    }
+  }
+
+  // ============================================================
+  // 条件格式设置面板
+  // ============================================================
+
+  // 条件格式条件类型标签映射
+  private static readonly CONDITION_TYPE_LABELS: Record<string, string> = {
+    greaterThan: '大于',
+    lessThan: '小于',
+    equals: '等于',
+    between: '介于',
+    textContains: '文本包含',
+    textStartsWith: '文本开头为',
+    textEndsWith: '文本结尾为',
+    dataBar: '数据条',
+    colorScale: '色阶',
+    iconSet: '图标集',
+  };
+
+  // 创建条件格式设置面板（DOM 覆盖层）
+  private createConditionalFormatPanel(): void {
+    const panel = document.createElement('div');
+    panel.className = 'cf-panel';
+    panel.style.display = 'none';
+    document.body.appendChild(panel);
+    this.conditionalFormatPanel = panel;
+
+    // 点击面板外部关闭
+    document.addEventListener('mousedown', (e) => {
+      if (this.conditionalFormatPanel &&
+          this.conditionalFormatPanel.style.display !== 'none' &&
+          !this.conditionalFormatPanel.contains(e.target as Node)) {
+        // 检查点击目标是否是条件格式按钮本身
+        const btn = document.getElementById('conditional-format-btn');
+        if (btn && (btn === e.target || btn.contains(e.target as Node))) return;
+        this.hideConditionalFormatPanel();
+      }
+    });
+  }
+
+  // 显示条件格式设置面板
+  private showConditionalFormatPanel(): void {
+    if (!this.conditionalFormatPanel) return;
+
+    // 如果面板已显示，则关闭
+    if (this.conditionalFormatPanel.style.display !== 'none') {
+      this.hideConditionalFormatPanel();
+      return;
+    }
+
+    this.renderConditionalFormatPanel();
+    this.conditionalFormatPanel.style.display = 'block';
+    // 触发动画
+    requestAnimationFrame(() => {
+      this.conditionalFormatPanel?.classList.add('visible');
+    });
+  }
+
+  // 隐藏条件格式设置面板
+  private hideConditionalFormatPanel(): void {
+    if (!this.conditionalFormatPanel) return;
+    this.conditionalFormatPanel.classList.remove('visible');
+    this.conditionalFormatPanel.style.display = 'none';
+  }
+
+  // 获取当前选区的范围文本（如 "A1:C3"）
+  private getSelectionRangeText(): string {
+    if (!this.currentSelection) return 'A1';
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+    const startLabel = `${this.columnIndexToLetter(minCol)}${minRow + 1}`;
+    const endLabel = `${this.columnIndexToLetter(maxCol)}${maxRow + 1}`;
+    if (startLabel === endLabel) return startLabel;
+    return `${startLabel}:${endLabel}`;
+  }
+
+  // 获取当前选区的范围对象
+  private getSelectionRange(): { startRow: number; startCol: number; endRow: number; endCol: number } {
+    if (!this.currentSelection) {
+      return { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+    }
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    return {
+      startRow: Math.min(startRow, endRow),
+      startCol: Math.min(startCol, endCol),
+      endRow: Math.max(startRow, endRow),
+      endCol: Math.max(startCol, endCol),
+    };
+  }
+
+  // 渲染条件格式面板内容
+  private renderConditionalFormatPanel(): void {
+    if (!this.conditionalFormatPanel) return;
+
+    const rules = this.model.getConditionalFormats();
+    const panel = this.conditionalFormatPanel;
+    panel.innerHTML = '';
+
+    // 标题栏
+    const titleBar = document.createElement('div');
+    titleBar.className = 'cf-panel-title-bar';
+
+    const title = document.createElement('h3');
+    title.className = 'cf-panel-title';
+    title.textContent = '条件格式';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'cf-panel-close-btn';
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', () => this.hideConditionalFormatPanel());
+
+    titleBar.appendChild(title);
+    titleBar.appendChild(closeBtn);
+    panel.appendChild(titleBar);
+
+    // 已有规则列表
+    const listSection = document.createElement('div');
+    listSection.className = 'cf-rule-list';
+
+    if (rules.length === 0) {
+      const emptyTip = document.createElement('div');
+      emptyTip.className = 'cf-empty-tip';
+      emptyTip.textContent = '暂无条件格式规则';
+      listSection.appendChild(emptyTip);
+    } else {
+      rules.forEach((rule) => {
+        const ruleItem = this.createRuleItem(rule);
+        listSection.appendChild(ruleItem);
+      });
+    }
+    panel.appendChild(listSection);
+
+    // 分隔线
+    const divider = document.createElement('div');
+    divider.className = 'cf-divider';
+    panel.appendChild(divider);
+
+    // 新增规则表单
+    const formSection = document.createElement('div');
+    formSection.className = 'cf-form';
+
+    const formTitle = document.createElement('div');
+    formTitle.className = 'cf-form-title';
+    formTitle.textContent = '添加新规则';
+    formSection.appendChild(formTitle);
+
+    // 应用范围
+    const rangeGroup = this.createFormGroup('应用范围');
+    const rangeInput = document.createElement('input');
+    rangeInput.type = 'text';
+    rangeInput.className = 'cf-input';
+    rangeInput.value = this.getSelectionRangeText();
+    rangeInput.readOnly = true;
+    rangeGroup.appendChild(rangeInput);
+    formSection.appendChild(rangeGroup);
+
+    // 条件类型
+    const typeGroup = this.createFormGroup('条件类型');
+    const typeSelect = document.createElement('select');
+    typeSelect.className = 'cf-select';
+    const conditionTypes: Array<ConditionalFormatCondition['type']> = [
+      'greaterThan', 'lessThan', 'equals', 'between',
+      'textContains', 'textStartsWith', 'textEndsWith',
+      'dataBar', 'colorScale', 'iconSet',
+    ];
+    conditionTypes.forEach((ct) => {
+      const opt = document.createElement('option');
+      opt.value = ct;
+      opt.textContent = SpreadsheetApp.CONDITION_TYPE_LABELS[ct] || ct;
+      typeSelect.appendChild(opt);
+    });
+    typeGroup.appendChild(typeSelect);
+    formSection.appendChild(typeGroup);
+
+    // 值输入区域（根据条件类型动态显示）
+    const valueContainer = document.createElement('div');
+    valueContainer.className = 'cf-value-container';
+    formSection.appendChild(valueContainer);
+
+    // 样式设置区域
+    const styleContainer = document.createElement('div');
+    styleContainer.className = 'cf-style-container';
+    formSection.appendChild(styleContainer);
+
+    // 初始渲染值输入和样式区域
+    this.renderConditionValueInputs(valueContainer, styleContainer, typeSelect.value as ConditionalFormatCondition['type']);
+
+    // 条件类型变更时更新值输入区域
+    typeSelect.addEventListener('change', () => {
+      this.renderConditionValueInputs(valueContainer, styleContainer, typeSelect.value as ConditionalFormatCondition['type']);
+    });
+
+    // 添加按钮
+    const addBtn = document.createElement('button');
+    addBtn.className = 'cf-add-btn';
+    addBtn.textContent = '添加规则';
+    addBtn.addEventListener('click', () => {
+      this.handleAddConditionalFormatRule(typeSelect, valueContainer, styleContainer);
+    });
+    formSection.appendChild(addBtn);
+
+    panel.appendChild(formSection);
+  }
+
+  // 创建表单分组
+  private createFormGroup(label: string): HTMLDivElement {
+    const group = document.createElement('div');
+    group.className = 'cf-form-group';
+    const labelEl = document.createElement('label');
+    labelEl.className = 'cf-label';
+    labelEl.textContent = label;
+    group.appendChild(labelEl);
+    return group;
+  }
+
+  // 根据条件类型渲染值输入区域和样式区域
+  private renderConditionValueInputs(
+    valueContainer: HTMLDivElement,
+    styleContainer: HTMLDivElement,
+    conditionType: ConditionalFormatCondition['type']
+  ): void {
+    valueContainer.innerHTML = '';
+    styleContainer.innerHTML = '';
+
+    const isVisualType = conditionType === 'dataBar' || conditionType === 'colorScale' || conditionType === 'iconSet';
+
+    // 值输入
+    if (conditionType === 'between') {
+      // 介于：两个输入框
+      const minGroup = this.createFormGroup('最小值');
+      const minInput = document.createElement('input');
+      minInput.type = 'number';
+      minInput.className = 'cf-input';
+      minInput.dataset.field = 'min';
+      minGroup.appendChild(minInput);
+      valueContainer.appendChild(minGroup);
+
+      const maxGroup = this.createFormGroup('最大值');
+      const maxInput = document.createElement('input');
+      maxInput.type = 'number';
+      maxInput.className = 'cf-input';
+      maxInput.dataset.field = 'max';
+      maxGroup.appendChild(maxInput);
+      valueContainer.appendChild(maxGroup);
+    } else if (conditionType === 'dataBar') {
+      // 数据条：颜色选择
+      const colorGroup = this.createFormGroup('数据条颜色');
+      const colorInput = document.createElement('input');
+      colorInput.type = 'color';
+      colorInput.className = 'cf-color-input';
+      colorInput.value = '#4CAF50';
+      colorInput.dataset.field = 'barColor';
+      colorGroup.appendChild(colorInput);
+      valueContainer.appendChild(colorGroup);
+    } else if (conditionType === 'colorScale') {
+      // 色阶：最小/最大颜色
+      const minColorGroup = this.createFormGroup('最小值颜色');
+      const minColorInput = document.createElement('input');
+      minColorInput.type = 'color';
+      minColorInput.className = 'cf-color-input';
+      minColorInput.value = '#F44336';
+      minColorInput.dataset.field = 'minColor';
+      minColorGroup.appendChild(minColorInput);
+      valueContainer.appendChild(minColorGroup);
+
+      const maxColorGroup = this.createFormGroup('最大值颜色');
+      const maxColorInput = document.createElement('input');
+      maxColorInput.type = 'color';
+      maxColorInput.className = 'cf-color-input';
+      maxColorInput.value = '#4CAF50';
+      maxColorInput.dataset.field = 'maxColor';
+      maxColorGroup.appendChild(maxColorInput);
+      valueContainer.appendChild(maxColorGroup);
+    } else if (conditionType === 'iconSet') {
+      // 图标集：类型选择
+      const iconGroup = this.createFormGroup('图标类型');
+      const iconSelect = document.createElement('select');
+      iconSelect.className = 'cf-select';
+      iconSelect.dataset.field = 'iconType';
+      const iconTypes: Array<{ value: string; label: string }> = [
+        { value: 'arrows', label: '箭头' },
+        { value: 'circles', label: '圆点' },
+        { value: 'flags', label: '旗帜' },
+      ];
+      iconTypes.forEach(({ value, label }) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        iconSelect.appendChild(opt);
+      });
+      iconGroup.appendChild(iconSelect);
+      valueContainer.appendChild(iconGroup);
+    } else if (conditionType === 'greaterThan' || conditionType === 'lessThan' || conditionType === 'equals') {
+      // 数值比较：单个值输入
+      const valGroup = this.createFormGroup('值');
+      const valInput = document.createElement('input');
+      valInput.type = 'text';
+      valInput.className = 'cf-input';
+      valInput.dataset.field = 'value';
+      valGroup.appendChild(valInput);
+      valueContainer.appendChild(valGroup);
+    } else {
+      // 文本条件：文本输入
+      const textGroup = this.createFormGroup('文本');
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.className = 'cf-input';
+      textInput.dataset.field = 'text';
+      textGroup.appendChild(textInput);
+      valueContainer.appendChild(textGroup);
+    }
+
+    // 样式设置（仅非可视化类型显示字体/背景颜色）
+    if (!isVisualType) {
+      const fontColorGroup = this.createFormGroup('字体颜色');
+      const fontColorInput = document.createElement('input');
+      fontColorInput.type = 'color';
+      fontColorInput.className = 'cf-color-input';
+      fontColorInput.value = '#F44336';
+      fontColorInput.dataset.field = 'fontColor';
+      fontColorGroup.appendChild(fontColorInput);
+      styleContainer.appendChild(fontColorGroup);
+
+      const bgColorGroup = this.createFormGroup('背景颜色');
+      const bgColorInput = document.createElement('input');
+      bgColorInput.type = 'color';
+      bgColorInput.className = 'cf-color-input';
+      bgColorInput.value = '#FFEB3B';
+      bgColorInput.dataset.field = 'bgColor';
+      bgColorGroup.appendChild(bgColorInput);
+      styleContainer.appendChild(bgColorGroup);
+    }
+  }
+
+  // 处理添加条件格式规则
+  private handleAddConditionalFormatRule(
+    typeSelect: HTMLSelectElement,
+    valueContainer: HTMLDivElement,
+    styleContainer: HTMLDivElement
+  ): void {
+    const conditionType = typeSelect.value as ConditionalFormatCondition['type'];
+    const range = this.getSelectionRange();
+
+    // 构建条件对象
+    const condition = this.buildConditionFromInputs(conditionType, valueContainer);
+    if (!condition) return;
+
+    // 构建样式对象
+    const style = this.buildStyleFromInputs(conditionType, styleContainer);
+
+    // 生成唯一 ID
+    const id = `cf_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    // 获取当前规则数量作为优先级
+    const existingRules = this.model.getConditionalFormats();
+    const priority = existingRules.length;
+
+    const rule: ConditionalFormatRule = {
+      id,
+      range,
+      priority,
+      condition,
+      style,
+    };
+
+    this.model.addConditionalFormat(rule);
+    this.renderer.render();
+
+    // 重新渲染面板以显示新规则
+    this.renderConditionalFormatPanel();
+  }
+
+  // 从输入框构建条件对象
+  private buildConditionFromInputs(
+    conditionType: ConditionalFormatCondition['type'],
+    valueContainer: HTMLDivElement
+  ): ConditionalFormatCondition | null {
+    const getInputValue = (field: string): string => {
+      const input = valueContainer.querySelector(`[data-field="${field}"]`) as HTMLInputElement | HTMLSelectElement | null;
+      return input ? input.value : '';
+    };
+
+    switch (conditionType) {
+      case 'greaterThan': {
+        const val = parseFloat(getInputValue('value'));
+        if (isNaN(val)) { alert('请输入有效的数值'); return null; }
+        return { type: 'greaterThan', value: val };
+      }
+      case 'lessThan': {
+        const val = parseFloat(getInputValue('value'));
+        if (isNaN(val)) { alert('请输入有效的数值'); return null; }
+        return { type: 'lessThan', value: val };
+      }
+      case 'equals': {
+        const raw = getInputValue('value');
+        const num = parseFloat(raw);
+        return { type: 'equals', value: isNaN(num) ? raw : num };
+      }
+      case 'between': {
+        const min = parseFloat(getInputValue('min'));
+        const max = parseFloat(getInputValue('max'));
+        if (isNaN(min) || isNaN(max)) { alert('请输入有效的最小值和最大值'); return null; }
+        return { type: 'between', min, max };
+      }
+      case 'textContains': {
+        const text = getInputValue('text');
+        if (!text) { alert('请输入文本'); return null; }
+        return { type: 'textContains', text };
+      }
+      case 'textStartsWith': {
+        const text = getInputValue('text');
+        if (!text) { alert('请输入文本'); return null; }
+        return { type: 'textStartsWith', text };
+      }
+      case 'textEndsWith': {
+        const text = getInputValue('text');
+        if (!text) { alert('请输入文本'); return null; }
+        return { type: 'textEndsWith', text };
+      }
+      case 'dataBar': {
+        const color = getInputValue('barColor') || '#4CAF50';
+        return { type: 'dataBar', color };
+      }
+      case 'colorScale': {
+        const minColor = getInputValue('minColor') || '#F44336';
+        const maxColor = getInputValue('maxColor') || '#4CAF50';
+        return { type: 'colorScale', minColor, maxColor };
+      }
+      case 'iconSet': {
+        const iconType = (getInputValue('iconType') || 'arrows') as 'arrows' | 'circles' | 'flags';
+        return { type: 'iconSet', iconType, thresholds: [33, 67] };
+      }
+      default:
+        return null;
+    }
+  }
+
+  // 从输入框构建样式对象
+  private buildStyleFromInputs(
+    conditionType: ConditionalFormatCondition['type'],
+    styleContainer: HTMLDivElement
+  ): ConditionalFormatStyle {
+    const isVisualType = conditionType === 'dataBar' || conditionType === 'colorScale' || conditionType === 'iconSet';
+    if (isVisualType) return {};
+
+    const fontColorInput = styleContainer.querySelector('[data-field="fontColor"]') as HTMLInputElement | null;
+    const bgColorInput = styleContainer.querySelector('[data-field="bgColor"]') as HTMLInputElement | null;
+
+    const style: ConditionalFormatStyle = {};
+    if (fontColorInput) style.fontColor = fontColorInput.value;
+    if (bgColorInput) style.bgColor = bgColorInput.value;
+    return style;
+  }
+
+  // 创建规则列表项
+  private createRuleItem(rule: ConditionalFormatRule): HTMLDivElement {
+    const item = document.createElement('div');
+    item.className = 'cf-rule-item';
+
+    // 规则描述
+    const desc = document.createElement('div');
+    desc.className = 'cf-rule-desc';
+
+    const condLabel = SpreadsheetApp.CONDITION_TYPE_LABELS[rule.condition.type] || rule.condition.type;
+    const rangeText = `${this.columnIndexToLetter(rule.range.startCol)}${rule.range.startRow + 1}:${this.columnIndexToLetter(rule.range.endCol)}${rule.range.endRow + 1}`;
+
+    // 条件详情文本
+    let detailText = condLabel;
+    const { condition } = rule;
+    if (condition.type === 'between') {
+      detailText += ` ${condition.min} ~ ${condition.max}`;
+    } else if (condition.type === 'greaterThan' || condition.type === 'lessThan') {
+      detailText += ` ${condition.value}`;
+    } else if (condition.type === 'equals') {
+      detailText += ` ${condition.value}`;
+    } else if (condition.type === 'textContains' || condition.type === 'textStartsWith' || condition.type === 'textEndsWith') {
+      detailText += ` "${condition.text}"`;
+    }
+
+    desc.innerHTML = `<span class="cf-rule-range">${rangeText}</span> <span class="cf-rule-condition">${detailText}</span>`;
+
+    // 样式预览
+    const preview = document.createElement('span');
+    preview.className = 'cf-rule-preview';
+    preview.textContent = 'Aa';
+    if (rule.style.fontColor) preview.style.color = rule.style.fontColor;
+    if (rule.style.bgColor) preview.style.backgroundColor = rule.style.bgColor;
+    if (rule.condition.type === 'dataBar') {
+      preview.textContent = '▮';
+      preview.style.color = rule.condition.color;
+    } else if (rule.condition.type === 'colorScale') {
+      preview.style.background = `linear-gradient(to right, ${rule.condition.minColor}, ${rule.condition.maxColor})`;
+      preview.style.color = 'transparent';
+    } else if (rule.condition.type === 'iconSet') {
+      preview.textContent = '▲●▼';
+      preview.style.fontSize = '10px';
+    }
+
+    // 删除按钮
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'cf-rule-delete-btn';
+    deleteBtn.textContent = '删除';
+    deleteBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.model.removeConditionalFormat(rule.id);
+      this.renderer.render();
+      this.renderConditionalFormatPanel();
+    });
+
+    item.appendChild(desc);
+    item.appendChild(preview);
+    item.appendChild(deleteBtn);
+    return item;
   }
 
   // 垂直对齐显示文本映射
@@ -2340,7 +3319,27 @@ export class SpreadsheetApp {
       const previousContent = this.model.getCell(startRow, startCol)?.content ?? '';
 
       // 设置单元格内容
-      this.model.setCellContent(startRow, startCol, content);
+      const result = this.model.setCellContent(startRow, startCol, content);
+
+      // 验证失败时显示错误提示（需求 5.5）
+      if (!result.success && result.validationResult && !result.validationResult.valid) {
+        this.showValidationError(
+          startRow,
+          startCol,
+          result.validationResult.errorTitle,
+          result.validationResult.errorMessage
+        );
+        return;
+      }
+      // 警告模式下也显示错误提示
+      if (result.validationResult && !result.validationResult.valid) {
+        this.showValidationError(
+          startRow,
+          startCol,
+          result.validationResult.errorTitle,
+          result.validationResult.errorMessage
+        );
+      }
 
       // 协同模式下提交操作
       if (this.isCollaborationMode() && content !== previousContent) {
@@ -2458,12 +3457,25 @@ export class SpreadsheetApp {
 
         // 更新垂直对齐按钮状态
         this.updateVerticalAlignUI(cellInfo.verticalAlign || 'middle');
+
+        // 更新数字格式下拉菜单状态
+        const formatCategory = cellInfo.format?.category || 'general';
+        this.updateNumberFormatUI(formatCategory);
+
+        // 更新换行按钮状态
+        this.updateWrapTextUI(cellInfo.wrapText || false);
       }
     }
 
     // 协同模式下广播光标位置
     if (this.isCollaborationMode() && this.currentSelection) {
       this.collaborationEngine!.sendCursor(this.currentSelection);
+    }
+
+    // 检查并显示输入提示 tooltip（需求 5.6）
+    if (this.currentSelection) {
+      const { startRow, startCol } = this.currentSelection;
+      this.showInputHintIfNeeded(startRow, startCol);
     }
   }
 

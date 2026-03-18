@@ -1,4 +1,4 @@
-import { Selection, SpreadsheetData } from '../types';
+import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule } from '../types';
 
 // ============================================================
 // 操作类型定义
@@ -22,7 +22,11 @@ export type OperationType =
   | 'fontItalic'
   | 'fontUnderline'
   | 'fontAlign'
-  | 'verticalAlign';
+  | 'verticalAlign'
+  | 'setFormat'
+  | 'setWrapText'
+  | 'setRichText'
+  | 'setValidation';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -165,6 +169,38 @@ export interface VerticalAlignOp extends BaseOperation {
   align: 'top' | 'middle' | 'bottom';
 }
 
+// 设置单元格格式操作
+export interface SetFormatOp extends BaseOperation {
+  type: 'setFormat';
+  row: number;
+  col: number;
+  format: CellFormat;
+}
+
+// 设置文本换行操作
+export interface SetWrapTextOp extends BaseOperation {
+  type: 'setWrapText';
+  row: number;
+  col: number;
+  wrapText: boolean;
+}
+
+// 设置富文本操作
+export interface SetRichTextOp extends BaseOperation {
+  type: 'setRichText';
+  row: number;
+  col: number;
+  richText: RichTextSegment[];
+}
+
+// 设置数据验证操作
+export interface SetValidationOp extends BaseOperation {
+  type: 'setValidation';
+  row: number;
+  col: number;
+  validation: ValidationRule;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -183,7 +219,11 @@ export type CollabOperation =
   | FontItalicOp
   | FontUnderlineOp
   | FontAlignOp
-  | VerticalAlignOp;
+  | VerticalAlignOp
+  | SetFormatOp
+  | SetWrapTextOp
+  | SetRichTextOp
+  | SetValidationOp;
 
 // ============================================================
 // 远程用户与光标感知

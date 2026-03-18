@@ -1,6 +1,8 @@
 import { SpreadsheetModel } from './model';
-import { Viewport, Selection, RenderConfig, CellPosition } from './types';
+import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment } from './types';
 import { CursorAwareness } from './collaboration/cursor-awareness';
+import { NumberFormatter, DateFormatter } from './format-engine';
+import { ConditionalFormatEngine } from './conditional-format';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -465,6 +467,289 @@ export class SpreadsheetRenderer {
     this.ctx.stroke();
   }
 
+  // 根据单元格格式信息获取格式化后的显示文本
+  private getFormattedDisplayText(cellInfo: {
+    content: string;
+    format?: CellFormat;
+    rawValue?: number;
+  }): string {
+    const { format, rawValue, content } = cellInfo;
+
+    // 有 format + rawValue 时，调用对应格式化引擎
+    if (format && rawValue !== undefined) {
+      const { category, pattern } = format;
+
+      // 数字/货币/百分比/科学计数法 → NumberFormatter
+      if (category === 'number' || category === 'currency' || category === 'percentage' || category === 'scientific') {
+        return NumberFormatter.format(rawValue, pattern);
+      }
+
+      // 日期/时间/日期时间 → DateFormatter
+      if (category === 'date' || category === 'time' || category === 'datetime') {
+        return DateFormatter.format(rawValue, pattern);
+      }
+    }
+
+    // 无格式或通用格式 → 使用原始 content
+    return content;
+  }
+
+  /**
+   * 渲染自动换行文本
+   * 按 \n 分割段落，每段按单元格宽度自动换行，根据 verticalAlign 定位多行文本
+   */
+  private renderWrappedText(
+    text: string,
+    x: number, y: number,
+    cellWidth: number, cellHeight: number,
+    fontSize: number,
+    align: string, verticalAlign: string,
+    fontColor: string,
+    iconOffset: number
+  ): void {
+    const { cellPadding } = this.config;
+    const lineHeight = fontSize * 1.4;
+    const maxTextWidth = cellWidth - 2 * cellPadding - iconOffset;
+
+    if (maxTextWidth <= 0) return;
+
+    // 1. 按 \n 分割为段落
+    const paragraphs = text.split('\n');
+
+    // 2. 每段按单元格宽度进行自动换行（逐字测量）
+    const lines: string[] = [];
+    for (const paragraph of paragraphs) {
+      if (paragraph === '') {
+        // 空段落也占一行
+        lines.push('');
+        continue;
+      }
+
+      let currentLine = '';
+      for (let i = 0; i < paragraph.length; i++) {
+        const char = paragraph[i];
+        const testLine = currentLine + char;
+        const testWidth = this.ctx.measureText(testLine).width;
+
+        if (testWidth > maxTextWidth && currentLine.length > 0) {
+          // 当前行已满，换行
+          lines.push(currentLine);
+          currentLine = char;
+        } else {
+          currentLine = testLine;
+        }
+      }
+      // 段落最后一行
+      if (currentLine.length > 0) {
+        lines.push(currentLine);
+      }
+    }
+
+    if (lines.length === 0) return;
+
+    // 3. 计算总高度
+    const totalTextHeight = lines.length * lineHeight;
+
+    // 4. 根据 verticalAlign 计算起始 Y
+    let startY: number;
+    switch (verticalAlign) {
+      case 'top':
+        startY = y + cellPadding + fontSize / 2;
+        break;
+      case 'bottom':
+        startY = y + cellHeight - cellPadding - totalTextHeight + fontSize / 2;
+        break;
+      default: // middle
+        startY = y + (cellHeight - totalTextHeight) / 2 + fontSize / 2;
+        break;
+    }
+
+    // 5. 设置裁剪区域，防止文本溢出单元格
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(x, y, cellWidth, cellHeight);
+    this.ctx.clip();
+
+    this.ctx.fillStyle = fontColor;
+    this.ctx.textBaseline = 'middle';
+
+    // 6. 逐行绘制
+    for (let i = 0; i < lines.length; i++) {
+      const lineY = startY + i * lineHeight;
+
+      // 计算文本 X 坐标（根据对齐方式）
+      let textX: number;
+      this.ctx.textAlign = align as CanvasTextAlign;
+      switch (align) {
+        case 'center':
+          textX = x + cellWidth / 2 + iconOffset / 2;
+          break;
+        case 'right':
+          textX = x + cellWidth - cellPadding;
+          break;
+        default: // left
+          textX = x + cellPadding + iconOffset;
+          break;
+      }
+
+      this.ctx.fillText(lines[i], textX, lineY);
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 渲染富文本内容
+   * 逐段测量宽度，根据 textAlign 计算起始位置，逐段设置字体样式并绘制
+   * 支持加粗、斜体、下划线、字体颜色、字号
+   */
+  private renderRichText(
+    segments: RichTextSegment[],
+    x: number, y: number,
+    cellWidth: number, cellHeight: number,
+    defaultFontSize: number,
+    textAlign: string,
+    verticalAlign: string,
+    defaultFontColor: string,
+    iconOffset: number
+  ): void {
+    const { cellPadding, fontFamily } = this.config;
+    const maxTextWidth = cellWidth - 2 * cellPadding - iconOffset;
+
+    if (maxTextWidth <= 0 || segments.length === 0) return;
+
+    // 设置裁剪区域，防止文本溢出单元格
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(x, y, cellWidth, cellHeight);
+    this.ctx.clip();
+
+    // 1. 逐段测量宽度，计算总宽度
+    interface SegmentMeasure {
+      segment: RichTextSegment;
+      width: number;
+      font: string;
+      fontSize: number;
+    }
+
+    const measures: SegmentMeasure[] = [];
+    let totalWidth = 0;
+
+    for (const segment of segments) {
+      const fontSize = segment.fontSize || defaultFontSize;
+      const fontWeight = segment.fontBold ? 'bold ' : '';
+      const fontStyle = segment.fontItalic ? 'italic ' : '';
+      const font = `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
+
+      this.ctx.font = font;
+      const width = this.ctx.measureText(segment.text).width;
+
+      measures.push({ segment, width, font, fontSize });
+      totalWidth += width;
+    }
+
+    // 2. 根据 textAlign 计算起始 X 位置
+    let startX: number;
+    switch (textAlign) {
+      case 'center':
+        startX = x + cellPadding + iconOffset + (maxTextWidth - totalWidth) / 2;
+        break;
+      case 'right':
+        startX = x + cellWidth - cellPadding - totalWidth;
+        break;
+      default: // left
+        startX = x + cellPadding + iconOffset;
+        break;
+    }
+
+    // 3. 根据 verticalAlign 计算文本 Y 坐标
+    // 使用最大字号来确定行高
+    let maxFontSize = defaultFontSize;
+    for (const m of measures) {
+      if (m.fontSize > maxFontSize) {
+        maxFontSize = m.fontSize;
+      }
+    }
+
+    let textY: number;
+    switch (verticalAlign) {
+      case 'top':
+        textY = y + maxFontSize / 2 + cellPadding;
+        break;
+      case 'bottom':
+        textY = y + cellHeight - maxFontSize / 2 - cellPadding;
+        break;
+      default: // middle
+        textY = y + cellHeight / 2;
+        break;
+    }
+
+    // 4. 逐段设置字体样式并绘制
+    this.ctx.textAlign = 'left';
+    this.ctx.textBaseline = 'middle';
+    let currentX = startX;
+
+    for (const { segment, width, font, fontSize } of measures) {
+      this.ctx.font = font;
+      this.ctx.fillStyle = segment.fontColor || defaultFontColor;
+
+      this.ctx.fillText(segment.text, currentX, textY);
+
+      // 5. 处理下划线绘制
+      if (segment.fontUnderline) {
+        const underlineY = textY + fontSize / 2 + 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(currentX, underlineY);
+        this.ctx.lineTo(currentX + width, underlineY);
+        this.ctx.strokeStyle = segment.fontColor || defaultFontColor;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+      }
+
+      currentX += width;
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 计算文本溢出可用宽度
+   * 从当前单元格右侧开始，检查相邻空单元格，累加其宽度
+   * 直到文本完全容纳或遇到非空单元格
+   */
+  private calculateOverflowWidth(
+    row: number, col: number, textWidth: number, cellWidth: number
+  ): number {
+    // 如果文本已经在单元格内，无需溢出
+    if (textWidth <= cellWidth) {
+      return cellWidth;
+    }
+
+    let availableWidth = cellWidth;
+    const totalCols = this.model.getColCount();
+
+    // 从右侧相邻列开始检查
+    for (let c = col + 1; c < totalCols; c++) {
+      // 检查右侧单元格是否为空
+      const adjacentCell = this.model.getCell(row, c);
+      if (adjacentCell && adjacentCell.content !== '') {
+        // 遇到非空单元格，停止扩展
+        break;
+      }
+
+      // 累加空单元格的宽度
+      availableWidth += this.model.getColWidth(c);
+
+      // 如果已经足够容纳文本，停止扩展
+      if (availableWidth >= textWidth) {
+        break;
+      }
+    }
+
+    return availableWidth;
+  }
+
+
   // 绘制单元格
   private renderCells(): void {
     const { headerWidth, headerHeight, cellPadding, fontFamily } = this.config;
@@ -473,6 +758,9 @@ export class SpreadsheetRenderer {
     this.ctx.font = `${this.cellFontSize}px ${fontFamily}`;
     this.ctx.textAlign = 'left';
     this.ctx.textBaseline = 'middle';
+
+    // 获取条件格式引擎（在循环外获取，避免重复调用）
+    const cfEngine = this.model.getConditionalFormatEngine();
 
     let currentY = headerHeight + offsetY;
 
@@ -517,20 +805,103 @@ export class SpreadsheetRenderer {
           // 记录是否需要绘制下划线
           const needUnderline = cellInfo.fontUnderline;
 
+          // 【条件格式】评估条件格式规则，获取样式覆盖和可视化效果
+          const rawCell = this.model.getCell(cellInfo.row, cellInfo.col);
+          const cfResult = rawCell ? cfEngine.evaluate(cellInfo.row, cellInfo.col, rawCell) : null;
+          const cfVisuals = rawCell ? this.getConditionalFormatVisuals(cfEngine, cellInfo.row, cellInfo.col, rawCell) : null;
+
+          // 确定最终背景色：条件格式覆盖 > 单元格自定义颜色
+          const effectiveBgColor = cfResult?.bgColor || cellInfo.bgColor;
+
           // 绘制背景颜色
-          if (cellInfo.bgColor) {
-            this.ctx.fillStyle = cellInfo.bgColor;
+          if (effectiveBgColor) {
+            this.ctx.fillStyle = effectiveBgColor;
             this.ctx.fillRect(currentX, currentY, totalWidth, totalHeight);
           }
 
-          // 绘制单元格内容
-          if (cellInfo.content) {
-            // 文本截断处理
-            const maxTextWidth = totalWidth - 2 * cellPadding;
-            let text = cellInfo.content;
-            let textWidth = this.ctx.measureText(text).width;
+          // 【条件格式】绘制数据条背景
+          if (cfVisuals?.dataBar) {
+            this.renderDataBar(cfVisuals.dataBar, currentX, currentY, totalWidth, totalHeight);
+          }
 
-            if (textWidth > maxTextWidth) {
+          // 确定显示文本：有 format + rawValue 时调用格式化引擎，否则使用 content
+          const displayText = this.getFormattedDisplayText(cellInfo);
+
+          // 确定最终字体颜色：条件格式覆盖 > 单元格自定义颜色 > 主题默认颜色
+          const effectiveFontColor = cfResult?.fontColor || cellInfo.fontColor || this.themeColors.cellText;
+
+          // 【富文本】优先使用 richText 渲染（需求 6.5：richText 优先于 content）
+          if (cellInfo.richText && cellInfo.richText.length > 0) {
+            const iconOffset = cfVisuals?.icon ? 18 : 0;
+            const align = cellInfo.fontAlign || 'left';
+            const verticalAlign = cellInfo.verticalAlign || 'middle';
+            const fontSize = cellInfo.fontSize || this.cellFontSize;
+            this.renderRichText(
+              cellInfo.richText,
+              currentX, currentY,
+              totalWidth, totalHeight,
+              fontSize,
+              align, verticalAlign,
+              effectiveFontColor,
+              iconOffset
+            );
+          } else if (displayText) {
+            // 如果有图标集，为图标预留左侧空间
+            const iconOffset = cfVisuals?.icon ? 18 : 0;
+
+            // 判断是否需要换行渲染：wrapText=true 或内容包含 \n
+            const needWrap = cellInfo.wrapText || displayText.includes('\n');
+
+            if (needWrap) {
+              // 使用换行渲染路径
+              const align = cellInfo.fontAlign || 'left';
+              const verticalAlign = cellInfo.verticalAlign || 'middle';
+              const fontSize = cellInfo.fontSize || this.cellFontSize;
+              this.renderWrappedText(
+                displayText,
+                currentX, currentY,
+                totalWidth, totalHeight,
+                fontSize,
+                align, verticalAlign,
+                effectiveFontColor,
+                iconOffset
+              );
+            } else {
+            // 单行文本处理（含溢出逻辑）
+            const align = cellInfo.fontAlign || 'left';
+            const maxTextWidth = totalWidth - 2 * cellPadding - iconOffset;
+            let text = displayText;
+            const fullTextWidth = this.ctx.measureText(text).width;
+            let textWidth = fullTextWidth;
+
+            // 【文本溢出】仅对左对齐且非换行的单元格启用向右溢出
+            const canOverflow = align === 'left' && !cellInfo.wrapText && fullTextWidth > maxTextWidth;
+            let overflowWidth = 0;
+
+            if (canOverflow) {
+              // 计算溢出可用宽度（含 padding）
+              const overflowAvailable = this.calculateOverflowWidth(
+                cellInfo.row, cellInfo.col, fullTextWidth + 2 * cellPadding + iconOffset, totalWidth
+              );
+              const overflowMaxTextWidth = overflowAvailable - 2 * cellPadding - iconOffset;
+
+              if (fullTextWidth <= overflowMaxTextWidth) {
+                // 溢出区域足够容纳完整文本，不截断
+                overflowWidth = overflowAvailable - totalWidth;
+                text = displayText;
+                textWidth = fullTextWidth;
+              } else {
+                // 溢出区域仍不够，在溢出宽度内截断
+                overflowWidth = overflowAvailable - totalWidth;
+                const truncMaxWidth = overflowAvailable - 2 * cellPadding - iconOffset;
+                while (text.length > 0 && textWidth > truncMaxWidth) {
+                  text = text.slice(0, -1);
+                  textWidth = this.ctx.measureText(text + '...').width;
+                }
+                text += '...';
+              }
+            } else if (fullTextWidth > maxTextWidth) {
+              // 非溢出场景的常规截断
               while (text.length > 0 && textWidth > maxTextWidth) {
                 text = text.slice(0, -1);
                 textWidth = this.ctx.measureText(text + '...').width;
@@ -538,21 +909,31 @@ export class SpreadsheetRenderer {
               text += '...';
             }
 
+            // 如果有溢出，扩展裁剪区域以覆盖溢出部分
+            if (overflowWidth > 0) {
+              this.ctx.save();
+              this.ctx.beginPath();
+              this.ctx.rect(
+                currentX, currentY,
+                totalWidth + overflowWidth, totalHeight
+              );
+              this.ctx.clip();
+            }
+
             // 设置文本对齐方式
-            const align = cellInfo.fontAlign || 'left';
             this.ctx.textAlign = align;
             
-            // 计算文本X坐标
+            // 计算文本X坐标（图标集时左对齐需偏移）
             let textX: number;
             switch (align) {
               case 'center':
-                textX = currentX + totalWidth / 2;
+                textX = currentX + totalWidth / 2 + iconOffset / 2;
                 break;
               case 'right':
                 textX = currentX + totalWidth - cellPadding;
                 break;
               default: // left
-                textX = currentX + cellPadding;
+                textX = currentX + cellPadding + iconOffset;
             }
 
             // 根据垂直对齐方式计算文本Y坐标
@@ -570,8 +951,8 @@ export class SpreadsheetRenderer {
                 textY = currentY + totalHeight / 2;
             }
 
-            // 使用单元格的字体颜色，如果没有设置则使用主题默认颜色
-            this.ctx.fillStyle = cellInfo.fontColor || this.themeColors.cellText;
+            // 使用最终确定的字体颜色
+            this.ctx.fillStyle = effectiveFontColor;
             this.ctx.fillText(
               text,
               textX,
@@ -582,12 +963,28 @@ export class SpreadsheetRenderer {
             if (needUnderline) {
               const underlineY = textY + 2;
               this.ctx.beginPath();
-              this.ctx.moveTo(currentX + cellPadding, underlineY);
-              this.ctx.lineTo(currentX + cellPadding + textWidth, underlineY);
-              this.ctx.strokeStyle = cellInfo.fontColor || this.themeColors.cellText;
+              this.ctx.moveTo(currentX + cellPadding + iconOffset, underlineY);
+              this.ctx.lineTo(currentX + cellPadding + iconOffset + textWidth, underlineY);
+              this.ctx.strokeStyle = effectiveFontColor;
               this.ctx.lineWidth = 1;
               this.ctx.stroke();
             }
+
+            // 恢复溢出裁剪区域
+            if (overflowWidth > 0) {
+              this.ctx.restore();
+            }
+            }
+          }
+
+          // 【条件格式】绘制图标集图标（在文本之后绘制，位于单元格左侧）
+          if (cfVisuals?.icon) {
+            this.renderConditionalIcon(cfVisuals.icon, currentX + cellPadding, currentY, totalHeight);
+          }
+
+          // 【数据验证】对有 dropdown 验证的单元格绘制 ▼ 下拉箭头图标
+          if (cellInfo.validation?.type === 'dropdown') {
+            this.renderDropdownArrow(currentX, currentY, totalWidth, totalHeight);
           }
 
           this.ctx.restore();
@@ -598,6 +995,205 @@ export class SpreadsheetRenderer {
 
       currentY += rowHeight;
     }
+  }
+
+  /**
+   * 获取单元格的条件格式可视化效果（数据条、图标集）
+   * 这些效果由专门的方法处理，不通过 evaluate() 返回
+   */
+  private getConditionalFormatVisuals(
+    cfEngine: ConditionalFormatEngine,
+    row: number,
+    col: number,
+    cell: Cell
+  ): { dataBar?: DataBarParams; icon?: IconInfo } | null {
+    const rules = cfEngine.getRules();
+    let dataBar: DataBarParams | undefined;
+    let icon: IconInfo | undefined;
+
+    for (const rule of rules) {
+      // 检查单元格是否在规则范围内
+      const { startRow, startCol, endRow, endCol } = rule.range;
+      if (row < startRow || row > endRow || col < startCol || col > endCol) {
+        continue;
+      }
+
+      // 数据条效果
+      if (rule.condition.type === 'dataBar' && !dataBar) {
+        const params = cfEngine.getDataBarParams(row, col, cell, rule);
+        if (params) {
+          dataBar = params;
+        }
+      }
+
+      // 图标集效果
+      if (rule.condition.type === 'iconSet' && !icon) {
+        const iconInfo = cfEngine.getIconSetIcon(row, col, cell, rule);
+        if (iconInfo) {
+          icon = iconInfo;
+        }
+      }
+    }
+
+    if (!dataBar && !icon) {
+      return null;
+    }
+
+    return { dataBar, icon };
+  }
+
+  /**
+   * 绘制数据条背景（水平条形图）
+   * 在单元格内绘制与数值成比例的半透明水平条
+   */
+  private renderDataBar(
+    dataBar: DataBarParams,
+    x: number,
+    y: number,
+    cellWidth: number,
+    cellHeight: number
+  ): void {
+    const barPadding = 2;
+    const barHeight = cellHeight - 2 * barPadding;
+    const barWidth = (cellWidth - 2 * barPadding) * dataBar.percentage;
+
+    if (barWidth <= 0) return;
+
+    this.ctx.save();
+    // 使用半透明颜色绘制数据条，避免遮挡文本
+    this.ctx.globalAlpha = 0.3;
+    this.ctx.fillStyle = dataBar.color;
+    this.ctx.fillRect(x + barPadding, y + barPadding, barWidth, barHeight);
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制条件格式图标（箭头、圆点、旗帜）
+   * 图标绘制在单元格左侧，文本内容向右偏移
+   */
+  private renderConditionalIcon(
+    icon: IconInfo,
+    x: number,
+    y: number,
+    cellHeight: number
+  ): void {
+    const iconSize = 12;
+    const iconY = y + (cellHeight - iconSize) / 2;
+
+    this.ctx.save();
+
+    switch (icon.type) {
+      case 'arrows':
+        this.renderArrowIcon(x, iconY, iconSize, icon.index);
+        break;
+      case 'circles':
+        this.renderCircleIcon(x, iconY, iconSize, icon.index);
+        break;
+      case 'flags':
+        this.renderFlagIcon(x, iconY, iconSize, icon.index);
+        break;
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制箭头图标
+   * index: 0=红色下箭头, 1=黄色横箭头, 2=绿色上箭头
+   */
+  private renderArrowIcon(x: number, y: number, size: number, index: number): void {
+    const colors = ['#ff4444', '#ffaa00', '#44bb44'];
+    const color = colors[index] || colors[0];
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+
+    this.ctx.fillStyle = color;
+    this.ctx.beginPath();
+
+    if (index === 2) {
+      // 上箭头 ▲
+      this.ctx.moveTo(cx, y);
+      this.ctx.lineTo(x + size, y + size);
+      this.ctx.lineTo(x, y + size);
+    } else if (index === 0) {
+      // 下箭头 ▼
+      this.ctx.moveTo(x, y);
+      this.ctx.lineTo(x + size, y);
+      this.ctx.lineTo(cx, y + size);
+    } else {
+      // 横箭头 ►
+      this.ctx.moveTo(x, y);
+      this.ctx.lineTo(x + size, cy);
+      this.ctx.lineTo(x, y + size);
+    }
+
+    this.ctx.closePath();
+    this.ctx.fill();
+  }
+
+  /**
+   * 绘制圆点图标
+   * index: 0=红色, 1=黄色, 2=绿色
+   */
+  private renderCircleIcon(x: number, y: number, size: number, index: number): void {
+    const colors = ['#ff4444', '#ffaa00', '#44bb44'];
+    const color = colors[index] || colors[0];
+    const radius = size / 2;
+
+    this.ctx.fillStyle = color;
+    this.ctx.beginPath();
+    this.ctx.arc(x + radius, y + radius, radius, 0, Math.PI * 2);
+    this.ctx.fill();
+  }
+
+  /**
+   * 绘制旗帜图标
+   * index: 0=红色, 1=黄色, 2=绿色
+   */
+  private renderFlagIcon(x: number, y: number, size: number, index: number): void {
+    const colors = ['#ff4444', '#ffaa00', '#44bb44'];
+    const color = colors[index] || colors[0];
+
+    // 旗杆
+    this.ctx.strokeStyle = this.themeColors.cellText;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 1, y);
+    this.ctx.lineTo(x + 1, y + size);
+    this.ctx.stroke();
+
+    // 旗面（三角形）
+    this.ctx.fillStyle = color;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 2, y);
+    this.ctx.lineTo(x + size, y + size * 0.3);
+    this.ctx.lineTo(x + 2, y + size * 0.6);
+    this.ctx.closePath();
+    this.ctx.fill();
+  }
+
+  /**
+   * 绘制下拉验证箭头图标 ▼
+   * 在单元格右侧绘制一个小三角形，指示该单元格有下拉列表验证
+   */
+  private renderDropdownArrow(cellX: number, cellY: number, cellWidth: number, cellHeight: number): void {
+    const arrowSize = 8;
+    const padding = 4;
+    // 箭头位于单元格右侧居中
+    const arrowX = cellX + cellWidth - arrowSize - padding;
+    const arrowY = cellY + (cellHeight - arrowSize / 2) / 2;
+
+    this.ctx.save();
+    this.ctx.fillStyle = this.themeColors.cellText;
+    this.ctx.globalAlpha = 0.6;
+    this.ctx.beginPath();
+    // 绘制向下的三角形 ▼
+    this.ctx.moveTo(arrowX, arrowY);
+    this.ctx.lineTo(arrowX + arrowSize, arrowY);
+    this.ctx.lineTo(arrowX + arrowSize / 2, arrowY + arrowSize / 2);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.restore();
   }
 
   // 绘制网格线

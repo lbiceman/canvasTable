@@ -1,5 +1,112 @@
+// ============================================================
+// 数据类型与格式化相关类型定义
+// ============================================================
+
+// 单元格数据类型
+export type DataType = 'text' | 'number' | 'date' | 'percentage' | 'currency';
+
+// 格式类别
+export type FormatCategory = 'general' | 'number' | 'currency' | 'percentage' | 'scientific' | 'date' | 'time' | 'datetime' | 'custom';
+
+// 单元格格式信息
+export interface CellFormat {
+  category: FormatCategory;
+  pattern: string;          // 格式模式字符串，如 "#,##0.00"、"yyyy-MM-dd"
+  currencySymbol?: string;  // 货币符号，如 "¥"、"$"
+}
+
+// 富文本片段
+export interface RichTextSegment {
+  text: string;
+  fontBold?: boolean;
+  fontItalic?: boolean;
+  fontUnderline?: boolean;
+  fontColor?: string;
+  fontSize?: number;
+}
+
+// 条件格式规则
+export interface ConditionalFormatRule {
+  id: string;
+  range: { startRow: number; startCol: number; endRow: number; endCol: number };
+  priority: number;
+  condition: ConditionalFormatCondition;
+  style: ConditionalFormatStyle;
+}
+
+// 条件格式条件（联合类型）
+export type ConditionalFormatCondition =
+  | { type: 'greaterThan'; value: number }
+  | { type: 'lessThan'; value: number }
+  | { type: 'equals'; value: number | string }
+  | { type: 'between'; min: number; max: number }
+  | { type: 'textContains'; text: string }
+  | { type: 'textStartsWith'; text: string }
+  | { type: 'textEndsWith'; text: string }
+  | { type: 'dataBar'; minValue?: number; maxValue?: number; color: string }
+  | { type: 'colorScale'; minColor: string; midColor?: string; maxColor: string }
+  | { type: 'iconSet'; iconType: 'arrows' | 'circles' | 'flags'; thresholds: number[] };
+
+// 条件格式样式
+export interface ConditionalFormatStyle {
+  fontColor?: string;
+  bgColor?: string;
+}
+
+// 条件格式评估结果
+export interface ConditionalFormatResult {
+  fontColor?: string;
+  bgColor?: string;
+  dataBar?: DataBarParams;
+  icon?: IconInfo;
+}
+
+// 数据条渲染参数
+export interface DataBarParams {
+  percentage: number;  // 0-1 之间的填充比例
+  color: string;
+}
+
+// 图标集图标信息
+export interface IconInfo {
+  type: 'arrows' | 'circles' | 'flags';
+  index: number;  // 图标索引（0=最差, 1=中等, 2=最好）
+}
+
+// 数据验证规则
+export interface ValidationRule {
+  type: 'dropdown' | 'numberRange' | 'textLength' | 'custom';
+  mode: 'block' | 'warning';
+  options?: string[];              // dropdown 选项列表
+  min?: number;                    // 数值/文本长度最小值
+  max?: number;                    // 数值/文本长度最大值
+  customExpression?: string;       // 自定义验证表达式
+  inputTitle?: string;             // 输入提示标题
+  inputMessage?: string;           // 输入提示内容
+  errorTitle?: string;             // 错误提示标题
+  errorMessage?: string;           // 错误提示内容
+}
+
+// 数据验证结果
+export interface ValidationResult {
+  valid: boolean;
+  errorTitle?: string;
+  errorMessage?: string;
+}
+
+// 设置单元格内容的返回结果
+export interface SetCellContentResult {
+  success: boolean;
+  validationResult?: ValidationResult;
+}
+
+// ============================================================
+// 单元格数据结构
+// ============================================================
+
 // 单元格数据结构
 export interface Cell {
+  // === 现有字段 ===
   content: string;
   formulaContent?: string;
   rowSpan: number;
@@ -14,6 +121,14 @@ export interface Cell {
   fontUnderline?: boolean;
   fontAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
+
+  // === 数据类型与格式化新增字段 ===
+  dataType?: DataType;             // 数据类型
+  rawValue?: number;               // 原始数值（数字/日期/百分比/货币的实际值）
+  format?: CellFormat;             // 格式信息
+  richText?: RichTextSegment[];    // 富文本内容
+  wrapText?: boolean;              // 是否自动换行
+  validation?: ValidationRule;     // 数据验证规则
 }
 
 // 表格数据结构

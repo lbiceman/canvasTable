@@ -1,0 +1,373 @@
+# 实现计划：数据类型与格式化
+
+## 概述
+
+基于 MVC 架构，按照"类型定义 → 核心引擎 → Model 集成 → 渲染器增强 → 编辑器增强 → UI 交互 → 持久化"的顺序逐步实现。每个任务构建在前一个任务之上，确保代码始终可运行。
+
+## 任务
+
+- [x] 1. 扩展类型定义
+  - [x] 1.1 在 `src/types.ts` 中新增数据类型与格式化相关类型定义
+    - 新增 `DataType`、`FormatCategory`、`CellFormat`、`RichTextSegment` 类型
+    - 新增 `ConditionalFormatRule`、`ConditionalFormatCondition`、`ConditionalFormatStyle` 类型
+    - 新增 `ConditionalFormatResult`、`DataBarParams`、`IconInfo` 类型
+    - 新增 `ValidationRule`、`ValidationResult` 类型
+    - _需求: 1.1, 1.4, 2.1, 4.1, 4.2, 5.2, 6.1, 6.2_
+  - [x] 1.2 扩展 `Cell` 接口，添加新字段
+    - 添加 `dataType?: DataType`、`rawValue?: number`、`format?: CellFormat` 字段
+    - 添加 `richText?: RichTextSegment[]`、`wrapText?: boolean`、`validation?: ValidationRule` 字段
+    - 确保所有新字段为可选，保持向后兼容
+    - _需求: 3.3, 6.1, 7.1, 5.1_
+
+- [x] 2. 实现格式化引擎
+  - [x] 2.1 创建 `src/format-engine.ts`，实现 `NumberFormatter` 类
+    - 实现 `format(value: number, pattern: string): string` 方法，支持 `#`、`0`、`,`、`.`、`%`、`E+` 占位符
+    - 实现 `parse(text: string, pattern: string): number | null` 方法
+    - 实现 `formatCurrency`、`formatPercentage`、`formatThousands`、`formatScientific` 快捷方法
+    - _需求: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
+  - [x] 2.2 为 NumberFormatter 编写属性测试
+    - **属性 1: 数字格式化往返一致性** — 对任意有效数值 v 和格式模式 p，`parse(format(v, p), p)` 应等价于 v
+    - **验证: 需求 1.7**
+  - [x] 2.3 在 `src/format-engine.ts` 中实现 `DateFormatter` 类
+    - 实现 `format(timestamp: number, pattern: string): string` 方法，支持 `yyyy`、`MM`、`dd`、`HH`、`mm`、`ss`、`hh`、`A` 占位符
+    - 实现 `parse(text: string, pattern: string): number | null` 方法
+    - 实现 `autoParse(text: string): number | null` 方法，尝试多种日期模式自动解析
+    - _需求: 2.1, 2.2, 2.3, 2.4, 2.5, 2.7_
+  - [x] 2.4 为 DateFormatter 编写属性测试
+    - **属性 2: 日期格式化往返一致性** — 对任意有效日期时间戳 t 和格式模式 p，`parse(format(t, p), p)` 应等价于 t
+    - **验证: 需求 2.6**
+  - [x] 2.5 为 NumberFormatter 和 DateFormatter 编写单元测试
+    - 测试各内置格式类型的格式化输出（货币、百分比、千分位、科学计数法）
+    - 测试日期格式化各模式（`yyyy-MM-dd`、`yyyy/MM/dd`、`yyyy年MM月dd日`、`HH:mm:ss` 等）
+    - 测试非数值输入保持原始文本不变
+    - 测试无法解析的日期文本返回 null
+    - _需求: 1.2, 1.5, 2.1, 2.2, 2.7_
+
+- [x] 3. 实现数据类型检测器
+  - [x] 3.1 创建 `src/type-detector.ts`，实现 `DataTypeDetector` 类
+    - 实现 `detect(input: string): DetectionResult` 方法
+    - 按优先级检测：空字符串 → 公式 → 百分比 → 货币 → 日期 → 纯数字 → 文本
+    - 检测结果包含 `dataType`、`rawValue`、`format` 信息
+    - _需求: 3.1, 3.2, 3.3, 3.4, 3.6_
+  - [x] 3.2 为 DataTypeDetector 编写单元测试
+    - 测试各类型输入的检测结果（纯数字、百分比、货币、日期、文本）
+    - 测试百分比的 rawValue 存储为小数值（如 "12%" → 0.12）
+    - 测试空字符串和公式前缀的处理
+    - _需求: 3.2, 3.4, 3.6_
+
+- [x] 4. 检查点 — 确保核心引擎测试通过
+  - 确保所有测试通过，如有问题请向用户确认。
+
+- [x] 5. 集成 Model 层
+  - [x] 5.1 修改 `src/model.ts`，在 `setCellContent` 中集成自动类型检测
+    - 在非公式内容写入后，调用 `DataTypeDetector.detect()` 自动设置 `dataType`、`rawValue`、`format`
+    - 仅在单元格未手动设置格式时执行自动检测（检查 `cell.format` 是否已存在）
+    - _需求: 3.1, 3.3, 3.5_
+  - [x] 5.2 在 `src/model.ts` 中新增格式设置方法
+    - 实现 `setCellFormat(row, col, format)` 和 `setRangeFormat(...)` 方法
+    - 实现 `setCellWrapText(row, col, wrap)` 和 `setRangeWrapText(...)` 方法
+    - 实现 `setCellRichText(row, col, richText)` 方法
+    - 实现 `setCellValidation(row, col, rule)` 方法
+    - _需求: 1.1, 7.1, 6.1, 5.1_
+  - [x] 5.3 在 `src/model.ts` 中实现 `autoFitRowHeight` 方法
+    - 遍历该行所有 `wrapText=true` 的单元格，计算换行后文本高度
+    - 使用临时 Canvas 上下文测量文本宽度
+    - 取所有单元格所需高度的最大值，更新行高
+    - _需求: 7.3_
+
+- [x] 6. 实现数据验证引擎
+  - [x] 6.1 创建 `src/validation.ts`，实现 `ValidationEngine` 类
+    - 实现 `validate(value: string, rule: ValidationRule): ValidationResult` 方法
+    - 支持下拉列表、数值范围、文本长度、自定义验证四种类型
+    - 实现 `getDropdownOptions(rule: ValidationRule): string[]` 方法
+    - _需求: 5.1, 5.2, 5.7_
+  - [x] 6.2 在 `src/model.ts` 的 `setCellContent` 中集成验证逻辑
+    - 在内容写入前检查单元格的 `validation` 规则
+    - 阻止模式下拒绝无效输入并恢复原值，警告模式下允许输入但返回警告信息
+    - _需求: 5.1, 5.5, 5.7_
+  - [x] 6.3 为 ValidationEngine 编写单元测试
+    - 测试下拉列表验证（有效选项通过、无效选项拒绝）
+    - 测试数值范围验证（范围内通过、范围外拒绝）
+    - 测试文本长度验证
+    - 测试阻止模式和警告模式的行为差异
+    - _需求: 5.2, 5.5, 5.7_
+
+- [x] 7. 实现条件格式引擎
+  - [x] 7.1 创建 `src/conditional-format.ts`，实现 `ConditionalFormatEngine` 类
+    - 实现 `addRule`、`removeRule` 方法管理规则
+    - 实现 `evaluate(row, col, cell)` 方法，按优先级评估条件并返回匹配样式
+    - 支持比较条件：大于、小于、等于、介于、文本包含、文本开头为、文本结尾为
+    - _需求: 4.1, 4.2, 4.3, 4.7_
+  - [x] 7.2 在 `ConditionalFormatEngine` 中实现可视化效果方法
+    - 实现 `getDataBarParams` 方法，计算数据条填充比例
+    - 实现 `getColorScaleColor` 方法，在两种或三种颜色之间插值计算
+    - 实现 `getIconSetIcon` 方法，根据阈值返回对应图标信息
+    - _需求: 4.4, 4.5, 4.6_
+  - [x] 7.3 在 `src/model.ts` 中新增 `conditionalFormats` 数组字段，并提供增删方法
+    - 条件格式规则存储在 Model 级别而非 Cell 级别
+    - _需求: 4.1, 4.8_
+  - [x] 7.4 为 ConditionalFormatEngine 编写单元测试
+    - 测试各比较条件的评估结果
+    - 测试多规则优先级排序
+    - 测试数据条百分比计算
+    - 测试色阶颜色插值
+    - _需求: 4.2, 4.3, 4.7_
+
+- [x] 8. 检查点 — 确保引擎和 Model 集成测试通过
+  - 确保所有测试通过，如有问题请向用户确认。
+
+- [x] 9. 增强渲染器 — 格式化显示与条件格式
+  - [x] 9.1 修改 `src/renderer.ts`，在 `renderCells` 中集成格式化显示
+    - 对有 `format` + `rawValue` 的单元格，调用 `FormatEngine` 获取格式化显示字符串
+    - 对无格式的单元格保持使用 `content`（现有逻辑不变）
+    - _需求: 1.1, 2.4_
+  - [x] 9.2 修改 `src/renderer.ts`，在 `renderCells` 中集成条件格式渲染
+    - 评估条件格式规则，覆盖 `fontColor`/`bgColor`
+    - 绘制数据条背景（水平条形图）
+    - 绘制条件格式图标（箭头、圆点、旗帜）
+    - _需求: 4.1, 4.3, 4.4, 4.6, 4.8_
+
+- [x] 10. 增强渲染器 — 文本换行与溢出
+  - [x] 10.1 在 `src/renderer.ts` 中实现 `renderWrappedText` 私有方法
+    - 按 `\n` 分割段落，每段按单元格宽度自动换行
+    - 根据 `verticalAlign` 属性定位多行文本垂直位置
+    - 在 `renderCells` 中对 `wrapText=true` 或包含 `\n` 的单元格调用此方法
+    - _需求: 7.1, 7.2, 7.5_
+  - [x] 10.2 在 `src/renderer.ts` 中实现 `calculateOverflowWidth` 私有方法
+    - 检查右侧相邻单元格是否为空，累加可用宽度
+    - 仅对 `fontAlign='left'` 且 `wrapText=false` 的单元格启用溢出
+    - 在 `renderCells` 中集成溢出逻辑，扩展文本绘制区域
+    - _需求: 8.1, 8.2, 8.3, 8.5_
+
+- [x] 11. 增强渲染器 — 富文本与验证指示器
+  - [x] 11.1 在 `src/renderer.ts` 中实现 `renderRichText` 私有方法
+    - 逐段测量宽度，根据 `textAlign` 计算起始位置
+    - 逐段设置字体样式（加粗、斜体、颜色、字号）并绘制
+    - 处理下划线绘制
+    - 在 `renderCells` 中对有 `richText` 的单元格优先使用此方法
+    - _需求: 6.3, 6.5_
+  - [x] 11.2 在 `src/renderer.ts` 中绘制验证相关指示器
+    - 对有 `dropdown` 验证的单元格绘制 ▼ 下拉箭头图标
+    - _需求: 5.3_
+
+- [x] 12. 增强内联编辑器
+  - [x] 12.1 修改 `src/inline-editor.ts`，支持 Alt+Enter 插入换行符
+    - 在 `keydown` 事件监听中检测 `Alt+Enter` 组合键
+    - 在光标位置插入 `\n`，不触发保存
+    - _需求: 7.6_
+  - [x] 12.2 修改 `src/inline-editor.ts`，支持富文本编辑模式
+    - 新增 `contenteditable` 的 `<div>` 作为富文本编辑器
+    - 实现 `showRichText` 方法加载富文本内容
+    - 实现 `applyStyleToSelection` 方法对选中文本应用样式
+    - 实现 `getRichTextSegments` 方法提取编辑后的富文本片段
+    - _需求: 6.4_
+
+- [x] 13. 检查点 — 确保渲染器和编辑器增强功能正常
+  - 确保所有测试通过，如有问题请向用户确认。
+
+- [x] 14. UI 交互与工具栏
+  - [x] 14.1 修改 `index.html`，在工具栏中新增控件
+    - 在字号选择器右侧添加数字格式下拉菜单（常规、数字、货币、百分比、科学计数法、日期、时间）
+    - 在垂直对齐按钮右侧添加换行切换按钮
+    - 新增条件格式按钮和数据验证按钮
+    - _需求: 1.1, 7.1, 4.1, 5.1_
+  - [x] 14.2 修改 `src/app.ts`，处理格式下拉菜单交互
+    - 监听格式下拉菜单变更事件，调用 `model.setCellFormat` / `model.setRangeFormat`
+    - 监听换行按钮点击，调用 `model.setCellWrapText` / `model.setRangeWrapText`
+    - _需求: 1.1, 7.1_
+  - [x] 14.3 修改 `src/app.ts`，实现下拉列表验证的交互
+    - 点击下拉箭头或双击有 dropdown 验证的单元格时，显示 DOM 下拉菜单
+    - 选择选项后写入单元格并关闭菜单
+    - _需求: 5.3, 5.4_
+  - [x] 14.4 修改 `src/app.ts`，实现验证提示与错误提示
+    - 选中有输入提示的单元格时，显示浅蓝色 tooltip
+    - 验证失败时显示浅红色错误 tooltip
+    - _需求: 5.5, 5.6_
+  - [x] 14.5 修改 `src/app.ts`，实现条件格式设置面板交互
+    - 打开条件格式设置面板，支持添加/编辑/删除规则
+    - 调用 `ConditionalFormatEngine.addRule` / `removeRule`
+    - _需求: 4.1_
+
+- [x] 15. 历史记录与协同编辑扩展
+  - [x] 15.1 修改 `src/history-manager.ts`，新增 ActionType
+    - 添加 `setFormat`、`setWrapText`、`setRichText`、`setValidation`、`setConditionalFormat` 操作类型
+    - 在 Model 层各新增方法中记录历史操作，支持撤销/重做
+    - _需求: 1.1, 5.1, 6.1, 7.1_
+  - [x] 15.2 修改 `src/collaboration/types.ts`，新增协同操作类型
+    - 添加 `SetFormatOp`、`SetWrapTextOp`、`SetRichTextOp`、`SetValidationOp` 操作接口
+    - _需求: 1.1, 5.1, 6.1, 7.1_
+
+- [x] 16. 数据持久化兼容
+  - [x] 16.1 修改 `src/model.ts` 或 `src/data-manager.ts` 的导出逻辑
+    - 在 `exportToJSON` 中序列化新字段：`dataType`、`rawValue`、`format`、`richText`、`wrapText`、`validation`
+    - 在 `SpreadsheetData` 级别序列化 `conditionalFormats` 数组
+    - _需求: 1.1, 2.1, 6.1, 7.1, 4.1, 5.1_
+  - [x] 16.2 修改 `src/model.ts` 或 `src/data-manager.ts` 的导入逻辑
+    - 在 `importFromJSON` 中反序列化新字段，旧格式文件自动兼容（新字段默认 `undefined`）
+    - 反序列化 `conditionalFormats` 数组，默认为空数组
+    - _需求: 1.1, 2.1, 6.1, 7.1, 4.1, 5.1_
+  - [x] 16.3 修改富文本合并优化逻辑
+    - 当富文本所有片段样式完全相同时，合并为普通 `content` 存储
+    - _需求: 6.6_
+
+- [x] 17. Java 后端 — 扩展 Cell 模型与数据结构
+  - [x] 17.1 修改 `javaServer/.../model/Cell.java`，新增格式化相关字段
+    - 添加 `dataType`（String）、`rawValue`（Double）、`wrapText`（Boolean）字段及 getter/setter
+    - 添加 `format`（CellFormat 嵌套对象）字段，包含 `category`、`pattern`、`currencySymbol`
+    - 添加 `richText`（List<RichTextSegment>）字段
+    - 添加 `validation`（ValidationRule 嵌套对象）字段
+    - 使用 `@JsonInclude(NON_NULL)` 确保空字段不序列化，保持向后兼容
+  - [x] 17.2 创建 Java 嵌套模型类
+    - 创建 `CellFormat.java`（category、pattern、currencySymbol）
+    - 创建 `RichTextSegment.java`（text、fontBold、fontItalic、fontUnderline、fontColor、fontSize）
+    - 创建 `ValidationRule.java`（type、mode、options、min、max、customExpression、inputTitle、inputMessage、errorTitle、errorMessage）
+    - 放置在 `javaServer/.../model/` 目录下
+  - [x] 17.3 修改 `javaServer/.../model/SpreadsheetData.java`，新增 `conditionalFormats` 字段
+    - 添加 `List<ConditionalFormatRule> conditionalFormats` 字段，默认空列表
+    - 创建 `ConditionalFormatRule.java`（id、range、priority、condition、style）
+    - 使用 Jackson 多态或 Map 处理 `condition` 的多种类型
+
+- [x] 18. Java 后端 — 新增协同操作类型
+  - [x] 18.1 创建 `SetFormatOp.java` 操作类
+    - 继承 `CollabOperation`，包含 `row`、`col`、`format`（CellFormat）字段
+    - `getType()` 返回 `"setFormat"`
+    - 参照 `FontColorOp.java` 的模式实现 equals/hashCode
+  - [x] 18.2 创建 `SetWrapTextOp.java` 操作类
+    - 继承 `CollabOperation`，包含 `row`、`col`、`wrapText`（boolean）字段
+    - `getType()` 返回 `"setWrapText"`
+  - [x] 18.3 创建 `SetRichTextOp.java` 操作类
+    - 继承 `CollabOperation`，包含 `row`、`col`、`richText`（List<RichTextSegment>）字段
+    - `getType()` 返回 `"setRichText"`
+  - [x] 18.4 创建 `SetValidationOp.java` 操作类
+    - 继承 `CollabOperation`，包含 `row`、`col`、`validation`（ValidationRule）字段
+    - `getType()` 返回 `"setValidation"`
+  - [x] 18.5 修改 `CollabOperation.java`，注册新操作子类型
+    - 在 `@JsonSubTypes` 注解中添加 `setFormat`、`setWrapText`、`setRichText`、`setValidation` 四个映射
+
+- [x] 19. Java 后端 — DocumentApplier 支持新操作
+  - [x] 19.1 修改 `javaServer/.../service/DocumentApplier.java`，处理新操作类型
+    - 在 `apply()` 方法的 switch/if 分支中添加 `setFormat`、`setWrapText`、`setRichText`、`setValidation` 处理
+    - 实现 `applySetFormat`：将 CellFormat 写入目标 Cell 的 format 字段
+    - 实现 `applySetWrapText`：将 wrapText 写入目标 Cell
+    - 实现 `applySetRichText`：将 richText 列表写入目标 Cell
+    - 实现 `applySetValidation`：将 ValidationRule 写入目标 Cell
+
+- [x] 20. Java 后端 — OTTransformer 支持新操作
+  - [x] 20.1 修改 `javaServer/.../service/OTTransformer.java`，为新操作添加行列偏移转换
+    - 为 `SetFormatOp`、`SetWrapTextOp`、`SetRichTextOp`、`SetValidationOp` 添加 vs RowInsert/RowDelete/ColInsert/ColDelete 的转换方法
+    - 参照现有 `transformFontColorVsRowInsert` 等方法的模式，调整 row/col 坐标
+  - [x] 20.2 在 `transformSingle` 方法中注册新操作类型的转换分支
+    - 添加新操作类型与所有现有操作类型的组合处理
+    - 对未知类型组合返回原操作（fallback 安全处理）
+
+- [x] 21. 前端自动化测试 — 核心引擎与 Model 集成
+  - [x] 21.1 创建 `src/__tests__/format-engine.test.ts`，为 NumberFormatter 编写单元测试
+    - 测试 `format()` 方法：千分位格式 `#,##0`、小数格式 `#,##0.00`、百分比 `0.00%`、科学计数法 `0.00E+0`
+    - 测试 `parse()` 方法：将格式化字符串解析回数值
+    - 测试 `formatCurrency()`：验证 `¥` 和 `$` 货币符号前缀
+    - 测试 `formatPercentage()`：验证小数转百分比显示（0.12 → "12.00%"）
+    - 测试边界情况：0、负数、极大数、极小数、NaN、Infinity
+    - 测试非数值输入保持原始文本不变
+    - _需求: 1.1, 1.2, 1.3, 1.4, 1.5, 1.6_
+  - [x] 21.2 创建 `src/__tests__/format-engine-date.test.ts`，为 DateFormatter 编写单元测试
+    - 测试 `format()` 方法：`yyyy-MM-dd`、`yyyy/MM/dd`、`yyyy年MM月dd日`、`HH:mm:ss`、`hh:mm:ss A`
+    - 测试 `parse()` 方法：将日期字符串解析为时间戳
+    - 测试 `autoParse()` 方法：自动识别多种日期格式
+    - 测试无法解析的日期文本返回 null
+    - 测试日期时间组合格式 `yyyy-MM-dd HH:mm:ss`
+    - _需求: 2.1, 2.2, 2.3, 2.5, 2.7_
+  - [x] 21.3 创建 `src/__tests__/format-engine.pbt.test.ts`，为格式化引擎编写属性测试
+    - **属性 1: 数字格式化往返一致性** — `parse(format(v, p), p) ≈ v`（使用 fast-check）
+    - **属性 2: 日期格式化往返一致性** — `parse(format(t, p), p) ≈ t`
+    - **属性 3: 格式化输出为非空字符串** — 对任意有效数值，format 输出不为空
+    - _需求: 1.7, 2.6_
+  - [x] 21.4 创建 `src/__tests__/type-detector.test.ts`，为 DataTypeDetector 编写单元测试
+    - 测试纯数字检测：`"1234"` → number、`"-56.78"` → number
+    - 测试百分比检测：`"12%"` → percentage，rawValue=0.12
+    - 测试货币检测：`"¥100"` → currency、`"$50.00"` → currency
+    - 测试日期检测：`"2024-01-15"` → date、`"2024/01/15"` → date
+    - 测试文本检测：`"hello"` → text
+    - 测试空字符串和公式前缀 `"="` 的处理
+    - _需求: 3.1, 3.2, 3.4, 3.6_
+  - [x] 21.5 创建 `src/__tests__/validation.test.ts`，为 ValidationEngine 编写单元测试
+    - 测试下拉列表验证：有效选项通过、无效选项拒绝
+    - 测试数值范围验证：范围内通过、范围外拒绝、边界值
+    - 测试文本长度验证：长度范围内通过、超出拒绝
+    - 测试阻止模式（block）和警告模式（warning）的行为差异
+    - 测试 `getDropdownOptions()` 返回正确选项列表
+    - _需求: 5.1, 5.2, 5.5, 5.7_
+  - [x] 21.6 创建 `src/__tests__/conditional-format.test.ts`，为 ConditionalFormatEngine 编写单元测试
+    - 测试比较条件评估：greaterThan、lessThan、equals、between、textContains、textStartsWith、textEndsWith
+    - 测试多规则优先级排序（priority 数值越小优先级越高）
+    - 测试 `getDataBarParams()`：数据条百分比计算
+    - 测试 `getColorScaleColor()`：色阶颜色插值
+    - 测试 `getIconSetIcon()`：图标集阈值判断
+    - 测试 `addRule()` 和 `removeRule()` 管理方法
+    - _需求: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7_
+  - [x] 21.7 创建 `src/__tests__/model-format-integration.test.ts`，为 Model 层格式集成编写测试
+    - 测试 `setCellContent()` 自动类型检测：输入数字/百分比/货币/日期后验证 dataType 和 rawValue
+    - 测试手动设置格式后跳过自动检测
+    - 测试 `setCellFormat()` 和 `setRangeFormat()` 方法
+    - 测试 `setCellWrapText()` 和 `setRangeWrapText()` 方法
+    - 测试 `setCellValidation()` 方法
+    - 测试验证集成：阻止模式下无效输入被拒绝、警告模式下允许输入
+    - _需求: 3.1, 3.3, 3.5, 5.1, 5.5_
+
+- [x] 22. 前端自动化测试 — 运行与修复
+  - 执行 `npx vitest run` 运行所有前端单元测试和属性测试
+  - 如有测试失败，修改实现代码或测试代码直到所有用例通过
+  - 确保不破坏现有 `src/collaboration/__tests__/` 下的测试
+
+- [x] 23. Java 后端自动化测试 — 新模型与操作类型
+  - [x] 23.1 创建 `DataTypeFormattingModelTest.java`，测试新模型类的 JSON 序列化
+    - 测试 `CellFormat` 的 JSON 序列化/反序列化往返一致性
+    - 测试 `RichTextSegment` 的 JSON 序列化/反序列化
+    - 测试 `ValidationRule` 的 JSON 序列化/反序列化
+    - 测试 `ConditionalFormatRule` 的 JSON 序列化/反序列化
+    - 测试 Cell 新增字段（dataType、rawValue、format、richText、wrapText、validation）的序列化
+    - 测试 `@JsonInclude(NON_NULL)` 确保空字段不出现在 JSON 中
+    - 测试旧格式 JSON（不含新字段）反序列化兼容性
+  - [x] 23.2 创建 `DataTypeFormattingOpsTest.java`，测试新协同操作类型
+    - 测试 `SetFormatOp` 的 JSON 序列化/反序列化（含 `@JsonSubTypes` 多态）
+    - 测试 `SetWrapTextOp` 的 JSON 序列化/反序列化
+    - 测试 `SetRichTextOp` 的 JSON 序列化/反序列化
+    - 测试 `SetValidationOp` 的 JSON 序列化/反序列化
+    - 测试 `CollabOperation` 多态反序列化能正确识别新操作类型
+  - [x] 23.3 创建 `DataTypeFormattingApplierTest.java`，测试 DocumentApplier 对新操作的处理
+    - 测试 `applySetFormat`：将 CellFormat 正确写入 Cell
+    - 测试 `applySetWrapText`：将 wrapText 正确写入 Cell
+    - 测试 `applySetRichText`：将 richText 列表正确写入 Cell
+    - 测试 `applySetValidation`：将 ValidationRule 正确写入 Cell
+    - 测试对不存在的单元格坐标的安全处理
+  - [x] 23.4 创建 `DataTypeFormattingOTTest.java`，测试 OTTransformer 对新操作的转换
+    - 测试新操作 vs RowInsert：行坐标正确偏移
+    - 测试新操作 vs RowDelete：行坐标正确偏移或操作被丢弃
+    - 测试新操作 vs ColInsert：列坐标正确偏移
+    - 测试新操作 vs ColDelete：列坐标正确偏移或操作被丢弃
+    - 测试新操作之间的互相转换（同一单元格冲突处理）
+  - [x] 23.5 创建 `SpreadsheetDataFormatTest.java`，测试 SpreadsheetData 级别的条件格式序列化
+    - 测试 `conditionalFormats` 数组的 JSON 序列化/反序列化
+    - 测试空 conditionalFormats 数组的默认值处理
+    - 测试旧格式 SpreadsheetData JSON（不含 conditionalFormats）的兼容性
+
+- [x] 24. Java 后端自动化测试 — 运行与修复
+  - 执行 `mvn test` 运行所有 Java 测试
+  - 如有测试失败，修改实现代码或测试代码直到所有用例通过
+  - 确保不破坏现有 `CoreAlgorithmSmokeTest` 中的测试
+
+- [x] 25. 最终检查点 — 前后端全部测试通过
+  - 执行 `npx vitest run` 确保前端所有测试通过
+  - 执行 `mvn test`（在 javaServer 目录）确保 Java 后端所有测试通过
+  - 如有问题请向用户确认
+
+## 备注
+
+- 原标记 `*` 的测试任务已改为必选，确保所有引擎模块有完整测试覆盖
+- 任务 21 为前端自动化测试（vitest 单元测试 + fast-check 属性测试）
+- 任务 23 为 Java 后端自动化测试（JUnit 5 单元测试）
+- 任务 22 和 24 为测试运行与修复环节，确保测试失败时迭代修复直到全部通过
+- 任务 25 为最终全量验证检查点
+- 每个任务引用了具体的需求编号，确保可追溯性
+- 检查点任务确保增量验证，及时发现问题
+- 属性测试验证格式化引擎的往返一致性等通用正确性属性
+- 单元测试验证具体示例和边界情况

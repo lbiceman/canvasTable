@@ -165,6 +165,30 @@ public class OTTransformer {
         return result;
     }
 
+    private static SetFormatOp transformSetFormatVsRowInsert(SetFormatOp op, RowInsertOp insertOp) {
+        SetFormatOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
+    private static SetWrapTextOp transformSetWrapTextVsRowInsert(SetWrapTextOp op, RowInsertOp insertOp) {
+        SetWrapTextOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
+    private static SetRichTextOp transformSetRichTextVsRowInsert(SetRichTextOp op, RowInsertOp insertOp) {
+        SetRichTextOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
+    private static SetValidationOp transformSetValidationVsRowInsert(SetValidationOp op, RowInsertOp insertOp) {
+        SetValidationOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
     // ============================================================
     // 具体操作类型 vs RowDelete 的转换
     // ============================================================
@@ -263,6 +287,38 @@ public class OTTransformer {
         Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
         if (newRow == null) return null;
         VerticalAlignOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetFormatOp transformSetFormatVsRowDelete(SetFormatOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetFormatOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetWrapTextOp transformSetWrapTextVsRowDelete(SetWrapTextOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetWrapTextOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetRichTextOp transformSetRichTextVsRowDelete(SetRichTextOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetRichTextOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetValidationOp transformSetValidationVsRowDelete(SetValidationOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetValidationOp result = cloneOp(op);
         result.setRow(newRow);
         return result;
     }
@@ -440,6 +496,30 @@ public class OTTransformer {
         return result;
     }
 
+    private static SetFormatOp transformSetFormatVsColInsert(SetFormatOp op, ColInsertOp insertOp) {
+        SetFormatOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static SetWrapTextOp transformSetWrapTextVsColInsert(SetWrapTextOp op, ColInsertOp insertOp) {
+        SetWrapTextOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static SetRichTextOp transformSetRichTextVsColInsert(SetRichTextOp op, ColInsertOp insertOp) {
+        SetRichTextOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static SetValidationOp transformSetValidationVsColInsert(SetValidationOp op, ColInsertOp insertOp) {
+        SetValidationOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
     // ============================================================
     // 具体操作类型 vs ColDelete 的转换
     // ============================================================
@@ -606,6 +686,38 @@ public class OTTransformer {
         return result;
     }
 
+    private static SetFormatOp transformSetFormatVsColDelete(SetFormatOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetFormatOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetWrapTextOp transformSetWrapTextVsColDelete(SetWrapTextOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetWrapTextOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetRichTextOp transformSetRichTextVsColDelete(SetRichTextOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetRichTextOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetValidationOp transformSetValidationVsColDelete(SetValidationOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetValidationOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
     // ============================================================
     // CellEdit vs CellEdit
     // ============================================================
@@ -715,6 +827,10 @@ public class OTTransformer {
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsColInsert((FontUnderlineOp) opA, insertOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsColInsert((FontAlignOp) opA, insertOp);
             if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsColInsert((VerticalAlignOp) opA, insertOp);
+            if (opA instanceof SetFormatOp) return transformSetFormatVsColInsert((SetFormatOp) opA, insertOp);
+            if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColInsert((SetWrapTextOp) opA, insertOp);
+            if (opA instanceof SetRichTextOp) return transformSetRichTextVsColInsert((SetRichTextOp) opA, insertOp);
+            if (opA instanceof SetValidationOp) return transformSetValidationVsColInsert((SetValidationOp) opA, insertOp);
         }
 
         // opB 是 colDelete
@@ -737,6 +853,10 @@ public class OTTransformer {
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsColDelete((FontUnderlineOp) opA, deleteOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsColDelete((FontAlignOp) opA, deleteOp);
             if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsColDelete((VerticalAlignOp) opA, deleteOp);
+            if (opA instanceof SetFormatOp) return transformSetFormatVsColDelete((SetFormatOp) opA, deleteOp);
+            if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColDelete((SetWrapTextOp) opA, deleteOp);
+            if (opA instanceof SetRichTextOp) return transformSetRichTextVsColDelete((SetRichTextOp) opA, deleteOp);
+            if (opA instanceof SetValidationOp) return transformSetValidationVsColDelete((SetValidationOp) opA, deleteOp);
         }
 
         // opB 是 colResize 时，不影响其他操作
@@ -761,6 +881,10 @@ public class OTTransformer {
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsRowInsert((FontUnderlineOp) opA, insertOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsRowInsert((FontAlignOp) opA, insertOp);
             if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsRowInsert((VerticalAlignOp) opA, insertOp);
+            if (opA instanceof SetFormatOp) return transformSetFormatVsRowInsert((SetFormatOp) opA, insertOp);
+            if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowInsert((SetWrapTextOp) opA, insertOp);
+            if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowInsert((SetRichTextOp) opA, insertOp);
+            if (opA instanceof SetValidationOp) return transformSetValidationVsRowInsert((SetValidationOp) opA, insertOp);
         }
 
         // opB 是 rowDelete
@@ -780,6 +904,10 @@ public class OTTransformer {
             if (opA instanceof FontUnderlineOp) return transformFontUnderlineVsRowDelete((FontUnderlineOp) opA, deleteOp);
             if (opA instanceof FontAlignOp) return transformFontAlignVsRowDelete((FontAlignOp) opA, deleteOp);
             if (opA instanceof VerticalAlignOp) return transformVerticalAlignVsRowDelete((VerticalAlignOp) opA, deleteOp);
+            if (opA instanceof SetFormatOp) return transformSetFormatVsRowDelete((SetFormatOp) opA, deleteOp);
+            if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowDelete((SetWrapTextOp) opA, deleteOp);
+            if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowDelete((SetRichTextOp) opA, deleteOp);
+            if (opA instanceof SetValidationOp) return transformSetValidationVsRowDelete((SetValidationOp) opA, deleteOp);
         }
 
         // opB 是 cellEdit
@@ -853,6 +981,38 @@ public class OTTransformer {
             }
             if (opA instanceof VerticalAlignOp) {
                 VerticalAlignOp result = cloneOp((VerticalAlignOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetFormatOp) {
+                SetFormatOp result = cloneOp((SetFormatOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetWrapTextOp) {
+                SetWrapTextOp result = cloneOp((SetWrapTextOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetRichTextOp) {
+                SetRichTextOp result = cloneOp((SetRichTextOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetValidationOp) {
+                SetValidationOp result = cloneOp((SetValidationOp) opA);
                 if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
                     result.setRow(mergeOp.getStartRow());
                     result.setCol(mergeOp.getStartCol());
@@ -936,7 +1096,87 @@ public class OTTransformer {
                 }
                 return result;
             }
+            if (opA instanceof SetFormatOp) {
+                SetFormatOp result = cloneOp((SetFormatOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetWrapTextOp) {
+                SetWrapTextOp result = cloneOp((SetWrapTextOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetRichTextOp) {
+                SetRichTextOp result = cloneOp((SetRichTextOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetValidationOp) {
+                SetValidationOp result = cloneOp((SetValidationOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
             // rowInsert/rowDelete/rowResize/colResize 不受 cellSplit 影响
+            return cloneOp(opA);
+        }
+
+        // opB 是 setFormat：同一单元格的 setFormat 冲突，服务端操作优先
+        if (opB instanceof SetFormatOp) {
+            SetFormatOp formatOp = (SetFormatOp) opB;
+            if (opA instanceof SetFormatOp) {
+                SetFormatOp a = (SetFormatOp) opA;
+                if (a.getRow() == formatOp.getRow() && a.getCol() == formatOp.getCol()) {
+                    return null; // 服务端操作优先，客户端操作被丢弃
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setWrapText：同一单元格的 setWrapText 冲突，服务端操作优先
+        if (opB instanceof SetWrapTextOp) {
+            SetWrapTextOp wrapOp = (SetWrapTextOp) opB;
+            if (opA instanceof SetWrapTextOp) {
+                SetWrapTextOp a = (SetWrapTextOp) opA;
+                if (a.getRow() == wrapOp.getRow() && a.getCol() == wrapOp.getCol()) {
+                    return null;
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setRichText：同一单元格的 setRichText 冲突，服务端操作优先
+        if (opB instanceof SetRichTextOp) {
+            SetRichTextOp richOp = (SetRichTextOp) opB;
+            if (opA instanceof SetRichTextOp) {
+                SetRichTextOp a = (SetRichTextOp) opA;
+                if (a.getRow() == richOp.getRow() && a.getCol() == richOp.getCol()) {
+                    return null;
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setValidation：同一单元格的 setValidation 冲突，服务端操作优先
+        if (opB instanceof SetValidationOp) {
+            SetValidationOp valOp = (SetValidationOp) opB;
+            if (opA instanceof SetValidationOp) {
+                SetValidationOp a = (SetValidationOp) opA;
+                if (a.getRow() == valOp.getRow() && a.getCol() == valOp.getCol()) {
+                    return null;
+                }
+            }
             return cloneOp(opA);
         }
 

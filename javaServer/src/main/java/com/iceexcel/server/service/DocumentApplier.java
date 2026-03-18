@@ -58,6 +58,14 @@ public class DocumentApplier {
             applyFontAlign(cells, (FontAlignOp) op);
         } else if (op instanceof VerticalAlignOp) {
             applyVerticalAlign(cells, (VerticalAlignOp) op);
+        } else if (op instanceof SetFormatOp) {
+            applySetFormat(cells, (SetFormatOp) op);
+        } else if (op instanceof SetWrapTextOp) {
+            applySetWrapText(cells, (SetWrapTextOp) op);
+        } else if (op instanceof SetRichTextOp) {
+            applySetRichText(cells, (SetRichTextOp) op);
+        } else if (op instanceof SetValidationOp) {
+            applySetValidation(cells, (SetValidationOp) op);
         }
     }
 
@@ -262,6 +270,30 @@ public class DocumentApplier {
                     }
                 }
             }
+        }
+    }
+
+    private static void applySetFormat(List<List<Cell>> cells, SetFormatOp op) {
+        if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
+            cells.get(op.getRow()).get(op.getCol()).setFormat(op.getFormat());
+        }
+    }
+
+    private static void applySetWrapText(List<List<Cell>> cells, SetWrapTextOp op) {
+        if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
+            cells.get(op.getRow()).get(op.getCol()).setWrapText(op.isWrapText());
+        }
+    }
+
+    private static void applySetRichText(List<List<Cell>> cells, SetRichTextOp op) {
+        if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
+            cells.get(op.getRow()).get(op.getCol()).setRichText(op.getRichText());
+        }
+    }
+
+    private static void applySetValidation(List<List<Cell>> cells, SetValidationOp op) {
+        if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
+            cells.get(op.getRow()).get(op.getCol()).setValidation(op.getValidation());
         }
     }
 }

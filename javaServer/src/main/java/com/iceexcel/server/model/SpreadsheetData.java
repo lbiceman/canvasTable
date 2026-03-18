@@ -14,17 +14,20 @@ public class SpreadsheetData {
     private List<List<Cell>> cells;
     private List<Integer> rowHeights;
     private List<Integer> colWidths;
+    private List<ConditionalFormatRule> conditionalFormats;
 
     public SpreadsheetData() {
         this.cells = new ArrayList<>();
         this.rowHeights = new ArrayList<>();
         this.colWidths = new ArrayList<>();
+        this.conditionalFormats = new ArrayList<>();
     }
 
     public SpreadsheetData(List<List<Cell>> cells, List<Integer> rowHeights, List<Integer> colWidths) {
         this.cells = cells;
         this.rowHeights = rowHeights;
         this.colWidths = colWidths;
+        this.conditionalFormats = new ArrayList<>();
     }
 
     public List<List<Cell>> getCells() {
@@ -51,6 +54,14 @@ public class SpreadsheetData {
         this.colWidths = colWidths;
     }
 
+    public List<ConditionalFormatRule> getConditionalFormats() {
+        return conditionalFormats;
+    }
+
+    public void setConditionalFormats(List<ConditionalFormatRule> conditionalFormats) {
+        this.conditionalFormats = conditionalFormats;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -58,11 +69,12 @@ public class SpreadsheetData {
         SpreadsheetData that = (SpreadsheetData) o;
         return java.util.Objects.equals(cells, that.cells)
                 && java.util.Objects.equals(rowHeights, that.rowHeights)
-                && java.util.Objects.equals(colWidths, that.colWidths);
+                && java.util.Objects.equals(colWidths, that.colWidths)
+                && java.util.Objects.equals(conditionalFormats, that.conditionalFormats);
     }
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash(cells, rowHeights, colWidths);
+        return java.util.Objects.hash(cells, rowHeights, colWidths, conditionalFormats);
     }
 }

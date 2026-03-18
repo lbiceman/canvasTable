@@ -2,6 +2,7 @@ package com.iceexcel.server.model;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import java.util.List;
 
 /**
  * 单元格数据结构，与 TypeScript Cell 接口对应
@@ -22,6 +23,14 @@ public class Cell {
     private Boolean fontUnderline;
     private String fontAlign;
     private String verticalAlign;
+
+    // === 新增格式化相关字段 ===
+    private String dataType;
+    private Double rawValue;
+    private Boolean wrapText;
+    private CellFormat format;
+    private List<RichTextSegment> richText;
+    private ValidationRule validation;
 
     public Cell() {
         this.content = "";
@@ -144,6 +153,54 @@ public class Cell {
         this.verticalAlign = verticalAlign;
     }
 
+    public String getDataType() {
+        return dataType;
+    }
+
+    public void setDataType(String dataType) {
+        this.dataType = dataType;
+    }
+
+    public Double getRawValue() {
+        return rawValue;
+    }
+
+    public void setRawValue(Double rawValue) {
+        this.rawValue = rawValue;
+    }
+
+    public Boolean getWrapText() {
+        return wrapText;
+    }
+
+    public void setWrapText(Boolean wrapText) {
+        this.wrapText = wrapText;
+    }
+
+    public CellFormat getFormat() {
+        return format;
+    }
+
+    public void setFormat(CellFormat format) {
+        this.format = format;
+    }
+
+    public List<RichTextSegment> getRichText() {
+        return richText;
+    }
+
+    public void setRichText(List<RichTextSegment> richText) {
+        this.richText = richText;
+    }
+
+    public ValidationRule getValidation() {
+        return validation;
+    }
+
+    public void setValidation(ValidationRule validation) {
+        this.validation = validation;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -161,12 +218,19 @@ public class Cell {
                 && java.util.Objects.equals(fontItalic, cell.fontItalic)
                 && java.util.Objects.equals(fontUnderline, cell.fontUnderline)
                 && java.util.Objects.equals(fontAlign, cell.fontAlign)
-                && java.util.Objects.equals(verticalAlign, cell.verticalAlign);
+                && java.util.Objects.equals(verticalAlign, cell.verticalAlign)
+                && java.util.Objects.equals(dataType, cell.dataType)
+                && java.util.Objects.equals(rawValue, cell.rawValue)
+                && java.util.Objects.equals(wrapText, cell.wrapText)
+                && java.util.Objects.equals(format, cell.format)
+                && java.util.Objects.equals(richText, cell.richText)
+                && java.util.Objects.equals(validation, cell.validation);
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(content, rowSpan, colSpan, isMerged, mergeParent,
-                fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign);
+                fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign,
+                dataType, rawValue, wrapText, format, richText, validation);
     }
 }
