@@ -15,6 +15,9 @@ import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
 import { SheetManager } from './sheet-manager';
 import { SheetTabBar } from './sheet-tab-bar';
 import { SheetContextMenu } from './sheet-context-menu';
+import { FilterDropdown } from './sort-filter/filter-dropdown';
+import { ColumnHeaderIndicator } from './sort-filter/column-header-indicator';
+import type { SortDirection, ColumnFilter } from './sort-filter/types';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -83,6 +86,9 @@ export class SpreadsheetApp {
   private chartEngine: ChartEngine;
   private chartEditor: ChartEditor;
 
+  // 排序筛选下拉菜单
+  private filterDropdown: FilterDropdown;
+
   constructor(_containerId: string) {
     // 创建模型
     this.model = new SpreadsheetModel();
@@ -146,6 +152,20 @@ export class SpreadsheetApp {
     });
     // 将图表浮动层设置到渲染器
     this.renderer.setChartOverlay(this.chartOverlay);
+
+    // 初始化排序筛选模块
+    this.renderer.setSortFilterModel(this.model.sortFilterModel);
+    this.filterDropdown = new FilterDropdown(this.model.sortFilterModel, {
+      onApply: (colIndex: number, filter: ColumnFilter) => {
+        this.handleFilterApply(colIndex, filter);
+      },
+      onSort: (colIndex: number, direction: SortDirection) => {
+        this.handleSort(colIndex, direction);
+      },
+      onClear: (colIndex: number) => {
+        this.handleFilterClear(colIndex);
+      },
+    });
 
     // 初始化 Sheet 标签栏
     const tabBarEl = document.getElementById('sheet-tab-bar') as HTMLDivElement;
@@ -1119,8 +1139,13 @@ export class SpreadsheetApp {
 
     const { startRow, startCol } = this.currentSelection;
 
-    // 获取单元格信息
-    const cellInfo = this.model.getMergedCellInfo(startRow, startCol);
+    // 排序筛选激活时，将显示行映射到数据行
+    const sfModel = this.model.sortFilterModel;
+    const dataRow = sfModel.isActive() ? sfModel.getDataRowIndex(startRow) : startRow;
+    if (dataRow === -1) return;
+
+    // 获取单元格信息（使用数据行）
+    const cellInfo = this.model.getMergedCellInfo(dataRow, startCol);
     if (!cellInfo) {
       return;
     }
@@ -1167,6 +1192,11 @@ export class SpreadsheetApp {
             result.validationResult.errorTitle,
             result.validationResult.errorMessage
           );
+        }
+
+        // 编辑后重新计算排序筛选映射（编辑值可能不再满足筛选条件）
+        if (sfModel.isActive()) {
+          sfModel.recalculate();
         }
 
         // 协同模式下提交操作
@@ -1544,6 +1574,63 @@ export class SpreadsheetApp {
     }
   }
 
+  // ============================================================
+  // 排序筛选操作处理
+  // ============================================================
+
+  /** 处理排序操作 */
+  private handleSort(colIndex: number, direction: SortDirection): void {
+    const sfModel = this.model.sortFilterModel;
+    // 记录旧快照到撤销栈
+    const oldSnapshot = sfModel.getSnapshot();
+    sfModel.setSingleSort(colIndex, direction);
+    const newSnapshot = sfModel.getSnapshot();
+
+    this.model.getHistoryManager().record({
+      type: 'setSort',
+      data: newSnapshot,
+      undoData: oldSnapshot,
+    });
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
+  }
+
+  /** 处理筛选应用 */
+  private handleFilterApply(colIndex: number, filter: ColumnFilter): void {
+    const sfModel = this.model.sortFilterModel;
+    // 记录旧快照到撤销栈
+    const oldSnapshot = sfModel.getSnapshot();
+    sfModel.setColumnFilter(colIndex, filter);
+    const newSnapshot = sfModel.getSnapshot();
+
+    this.model.getHistoryManager().record({
+      type: 'setFilter',
+      data: newSnapshot,
+      undoData: oldSnapshot,
+    });
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
+  }
+
+  /** 处理清除筛选 */
+  private handleFilterClear(colIndex: number): void {
+    const sfModel = this.model.sortFilterModel;
+    const oldSnapshot = sfModel.getSnapshot();
+    sfModel.clearColumnFilter(colIndex);
+    const newSnapshot = sfModel.getSnapshot();
+
+    this.model.getHistoryManager().record({
+      type: 'setFilter',
+      data: newSnapshot,
+      undoData: oldSnapshot,
+    });
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
+  }
+
   // 处理搜索
   private handleSearch(keyword: string): SearchResult[] {
     const results: SearchResult[] = [];
@@ -1721,6 +1808,20 @@ export class SpreadsheetApp {
     // 检查是否点击了列号区域
     const clickedCol = this.renderer.getColHeaderAtPosition(x, y);
     if (clickedCol !== null) {
+      // 检查是否点击了筛选图标区域
+      const colX = this.renderer.getCellRect(0, clickedCol)?.x ?? 0;
+      const { headerHeight } = this.renderer.getConfig();
+      if (ColumnHeaderIndicator.hitTestFilterIcon(x, y, colX, 0, this.model.getColWidth(clickedCol), headerHeight)) {
+        // 点击了筛选图标，显示筛选下拉菜单
+        const canvasRect = this.canvas.getBoundingClientRect();
+        this.filterDropdown.show(
+          canvasRect.left + colX,
+          canvasRect.top + headerHeight,
+          clickedCol
+        );
+        return;
+      }
+
       // 高亮整列
       this.renderer.setHighlightedCol(clickedCol);
 

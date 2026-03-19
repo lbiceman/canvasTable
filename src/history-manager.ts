@@ -20,7 +20,9 @@ export type ActionType =
   | 'setWrapText'
   | 'setRichText'
   | 'setValidation'
-  | 'setConditionalFormat';
+  | 'setConditionalFormat'
+  | 'setSort'
+  | 'setFilter';
 
 
 // 历史记录项

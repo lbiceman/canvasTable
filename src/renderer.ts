@@ -7,6 +7,8 @@ import { SparklineRenderer } from './chart/sparkline-renderer';
 import type { ThemeColors } from './chart/types';
 import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
 import type { ChartOverlay } from './chart/chart-overlay';
+import type { SortFilterModel } from './sort-filter/sort-filter-model';
+import { ColumnHeaderIndicator } from './sort-filter/column-header-indicator';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -28,6 +30,9 @@ export class SpreadsheetRenderer {
 
   // 图表浮动层（图表模块初始化后设置）
   private chartOverlay: ChartOverlay | null = null;
+
+  // 排序筛选模型（排序筛选模块初始化后设置）
+  private sortFilterModel: SortFilterModel | null = null;
 
   // 主题颜色
   private themeColors: {
@@ -125,6 +130,11 @@ export class SpreadsheetRenderer {
   // 设置图表浮动层
   public setChartOverlay(chartOverlay: ChartOverlay | null): void {
     this.chartOverlay = chartOverlay;
+  }
+
+  // 设置排序筛选模型引用
+  public setSortFilterModel(model: SortFilterModel | null): void {
+    this.sortFilterModel = model;
   }
 
   // 滚动到指定位置
@@ -282,6 +292,11 @@ export class SpreadsheetRenderer {
 
     // 绘制左上角空白区域
     this.renderCorner();
+
+    // 排序筛选激活时，在状态栏显示筛选摘要
+    if (this.sortFilterModel && this.sortFilterModel.hasActiveFilters()) {
+      this.renderFilterStatusBar();
+    }
   }
 
   // 绘制高亮行背景
@@ -370,6 +385,23 @@ export class SpreadsheetRenderer {
     this.ctx.strokeRect(0, 0, headerWidth, headerHeight);
   }
 
+  // 筛选激活时在画布底部显示筛选摘要信息
+  private renderFilterStatusBar(): void {
+    if (!this.sortFilterModel) return;
+    const visible = this.sortFilterModel.getVisibleRowCount();
+    const total = this.sortFilterModel.getTotalRowCount();
+    const text = `显示 ${visible} / ${total} 行`;
+    const { fontFamily } = this.config;
+
+    this.ctx.save();
+    this.ctx.font = `12px ${fontFamily}`;
+    this.ctx.textAlign = 'right';
+    this.ctx.textBaseline = 'bottom';
+    this.ctx.fillStyle = this.themeColors.headerText;
+    this.ctx.fillText(text, this.canvasWidth - 10, this.canvasHeight - 4);
+    this.ctx.restore();
+  }
+
   // 绘制行标题
   private renderRowHeaders(): void {
     const { headerWidth, headerHeight, fontSize, fontFamily } = this.config;
@@ -383,11 +415,21 @@ export class SpreadsheetRenderer {
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
+    // 排序筛选是否激活
+    const sfActive = this.sortFilterModel && this.sortFilterModel.isActive();
+
     let currentY = headerHeight + offsetY;
 
     // 绘制行标题
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
-      const rowHeight = this.model.getRowHeight(row);
+      // 排序筛选激活时，映射到数据行
+      const dataRow = sfActive ? this.sortFilterModel!.getDataRowIndex(row) : row;
+      if (dataRow === -1) {
+        currentY += this.model.getRowHeight(row);
+        continue;
+      }
+
+      const rowHeight = this.model.getRowHeight(dataRow);
 
       // 只绘制可见部分
       if (currentY + rowHeight > headerHeight && currentY < this.canvasHeight) {
@@ -399,12 +441,12 @@ export class SpreadsheetRenderer {
         }
         this.ctx.fillRect(0, Math.max(headerHeight, currentY), headerWidth, rowHeight);
 
-        // 绘制行号
+        // 绘制行号：排序筛选激活时显示实际数据行号
         this.ctx.fillStyle = this.themeColors.headerText;
         const textY = Math.max(headerHeight + rowHeight / 2, currentY + rowHeight / 2);
         if (textY > headerHeight && textY < this.canvasHeight) {
           this.ctx.fillText(
-            (row + 1).toString(),
+            (dataRow + 1).toString(),
             headerWidth / 2,
             currentY + rowHeight / 2
           );
@@ -468,6 +510,26 @@ export class SpreadsheetRenderer {
             textX,
             headerHeight / 2
           );
+        }
+
+        // 排序筛选指示器：在列头绘制排序箭头和筛选图标
+        if (this.sortFilterModel) {
+          // 检查该列是否有排序规则
+          const sortRules = this.sortFilterModel.getSortRules();
+          const sortRule = sortRules.find((r) => r.colIndex === col);
+          if (sortRule) {
+            ColumnHeaderIndicator.renderSortArrow(
+              this.ctx, currentX, 0, colWidth, headerHeight, sortRule.direction
+            );
+          }
+
+          // 检查该列是否有筛选条件
+          const hasFilter = this.sortFilterModel.hasActiveFilter(col);
+          if (hasFilter || this.sortFilterModel.isActive()) {
+            ColumnHeaderIndicator.renderFilterIcon(
+              this.ctx, currentX, 0, colWidth, headerHeight, hasFilter
+            );
+          }
         }
 
         // 绘制边框
@@ -785,21 +847,50 @@ export class SpreadsheetRenderer {
     // 获取条件格式引擎（在循环外获取，避免重复调用）
     const cfEngine = this.model.getConditionalFormatEngine();
 
+    // 排序筛选激活时：检查是否所有行被筛选隐藏
+    const sfActive = this.sortFilterModel && this.sortFilterModel.isActive();
+    if (sfActive && this.sortFilterModel!.getVisibleRowCount() === 0 && this.sortFilterModel!.hasActiveFilters()) {
+      // 所有行被筛选隐藏，显示"无匹配结果"提示
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+      this.ctx.clip();
+      this.ctx.fillStyle = this.themeColors.cellText;
+      this.ctx.font = `14px ${fontFamily}`;
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(
+        '无匹配结果',
+        headerWidth + (this.canvasWidth - headerWidth) / 2,
+        headerHeight + (this.canvasHeight - headerHeight) / 2
+      );
+      this.ctx.restore();
+      return;
+    }
+
     let currentY = headerHeight + offsetY;
 
     // 遍历可见行
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
-      const rowHeight = this.model.getRowHeight(row);
+      // 排序筛选激活时，将显示行映射到数据行
+      const dataRow = sfActive ? this.sortFilterModel!.getDataRowIndex(row) : row;
+      if (dataRow === -1) {
+        // 超出可见行范围，跳过
+        currentY += this.model.getRowHeight(row);
+        continue;
+      }
+
+      const rowHeight = this.model.getRowHeight(dataRow);
       let currentX = headerWidth + offsetX;
 
       // 遍历可见列
       for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
         const colWidth = this.model.getColWidth(col);
 
-        // 获取单元格信息（考虑合并单元格）
-        const cellInfo = this.model.getMergedCellInfo(row, col);
+        // 获取单元格信息（考虑合并单元格），使用数据行索引
+        const cellInfo = this.model.getMergedCellInfo(dataRow, col);
 
-        if (cellInfo && (cellInfo.row === row && cellInfo.col === col)) {
+        if (cellInfo && (cellInfo.row === dataRow && cellInfo.col === col)) {
           // 计算合并单元格的总宽度和高度
           let totalWidth = 0;
           for (let c = 0; c < cellInfo.colSpan; c++) {

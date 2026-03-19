@@ -2267,3 +2267,206 @@ h1 {
 .sheet-color-picker-none:hover {
   background-color: var(--theme-highlight-bg);
 }
+
+/* ============================================================
+   筛选下拉菜单样式
+   ============================================================ */
+
+.filter-dropdown {
+  position: fixed;
+  z-index: 10000;
+  min-width: 240px;
+  max-width: 320px;
+  background: var(--theme-background, #ffffff);
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--theme-foreground, #333333);
+  padding: 8px 0;
+}
+
+/* 排序按钮区域 */
+.filter-dropdown-sort {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.filter-dropdown-sort-btn {
+  flex: 1;
+  padding: 6px 8px;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  background: var(--theme-button-bg, #ffffff);
+  color: var(--theme-foreground, #333333);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: center;
+}
+
+.filter-dropdown-sort-btn:hover {
+  background: var(--theme-button-hover-bg, #f5f5f5);
+}
+
+/* 搜索框 */
+.filter-dropdown-search {
+  display: block;
+  width: calc(100% - 16px);
+  margin: 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  background: var(--theme-input-bg, #ffffff);
+  color: var(--theme-foreground, #333333);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.filter-dropdown-search:focus {
+  border-color: #4285f4;
+}
+
+/* 值筛选区域 */
+.filter-dropdown-values {
+  padding: 0 8px;
+}
+
+.filter-dropdown-value-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.filter-dropdown-value-actions button {
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  color: #4285f4;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filter-dropdown-value-actions button:hover {
+  text-decoration: underline;
+}
+
+/* 复选框列表（可滚动） */
+.filter-dropdown-checkbox-list {
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  padding: 4px;
+}
+
+.filter-dropdown-value-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  cursor: pointer;
+  font-size: 12px;
+  border-radius: 2px;
+}
+
+.filter-dropdown-value-item:hover {
+  background: var(--theme-button-hover-bg, #f5f5f5);
+}
+
+.filter-dropdown-value-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.filter-dropdown-value-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 分隔线 */
+.filter-dropdown-divider {
+  height: 1px;
+  background: var(--theme-grid-line, #e0e0e0);
+  margin: 6px 0;
+}
+
+/* 条件筛选区域 */
+.filter-dropdown-condition {
+  padding: 0 8px;
+}
+
+.filter-dropdown-condition-title {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--theme-foreground, #333333);
+}
+
+.filter-dropdown-operator {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  background: var(--theme-input-bg, #ffffff);
+  color: var(--theme-foreground, #333333);
+  font-size: 12px;
+  margin-bottom: 4px;
+  outline: none;
+}
+
+.filter-dropdown-value-input {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  background: var(--theme-input-bg, #ffffff);
+  color: var(--theme-foreground, #333333);
+  font-size: 12px;
+  margin-bottom: 4px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.filter-dropdown-value-input:focus {
+  border-color: #4285f4;
+}
+
+/* 操作按钮区域 */
+.filter-dropdown-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 8px 0;
+}
+
+.filter-dropdown-apply-btn {
+  padding: 5px 16px;
+  border: none;
+  border-radius: 3px;
+  background: #4285f4;
+  color: #ffffff;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filter-dropdown-apply-btn:hover {
+  background: #3367d6;
+}
+
+.filter-dropdown-cancel-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--theme-grid-line, #e0e0e0);
+  border-radius: 3px;
+  background: var(--theme-button-bg, #ffffff);
+  color: var(--theme-foreground, #333333);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filter-dropdown-cancel-btn:hover {
+  background: var(--theme-button-hover-bg, #f5f5f5);
+}

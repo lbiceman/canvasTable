@@ -6,6 +6,7 @@ import { NumberFormatter, DateFormatter } from './format-engine';
 import { ValidationEngine } from './validation';
 import { ConditionalFormatEngine } from './conditional-format';
 import { ChartModel } from './chart/chart-model';
+import { SortFilterModel } from './sort-filter/sort-filter-model';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -36,6 +37,9 @@ export class SpreadsheetModel {
   // 图表数据模型
   public readonly chartModel: ChartModel;
 
+  // 排序筛选数据模型
+  public readonly sortFilterModel: SortFilterModel;
+
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
     this.historyManager = new HistoryManager();
@@ -45,6 +49,12 @@ export class SpreadsheetModel {
 
     // 初始化图表数据模型
     this.chartModel = new ChartModel(this);
+
+    // 初始化排序筛选数据模型
+    this.sortFilterModel = new SortFilterModel({
+      getCell: (r: number, c: number) => this.getCell(r, c),
+      getRowCount: () => this.getRowCount(),
+    });
 
     // 初始化公式引擎
     this.formulaEngine = FormulaEngine.getInstance();
@@ -86,6 +96,13 @@ export class SpreadsheetModel {
       return this.data.cells[row][col];
     }
     return null;
+  }
+
+  // 通过显示行号获取单元格（经过排序筛选映射）
+  public getCellByDisplayRow(displayRow: number, col: number): Cell | null {
+    const dataRow = this.sortFilterModel.getDataRowIndex(displayRow);
+    if (dataRow === -1) return null;
+    return this.getCell(dataRow, col);
   }
 
   // 获取单元格的计算值（公式计算后的值）
@@ -3042,6 +3059,11 @@ export class SpreadsheetModel {
           this.conditionalFormats = this.conditionalFormats.filter((r) => r.id !== data.ruleId);
           this.conditionalFormatEngine.removeRule(data.ruleId);
         }
+        break;
+      case 'setSort':
+      case 'setFilter':
+        // 排序/筛选的撤销/重做：恢复快照
+        this.sortFilterModel.restoreSnapshot(data);
         break;
     }
     this.isDirty = true;
