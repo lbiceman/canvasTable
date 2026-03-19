@@ -12,6 +12,9 @@ import { ChartEngine } from './chart/chart-engine';
 import { ChartEditor } from './chart/chart-editor';
 import type { SparklineType, DataRange, ThemeColors } from './chart/types';
 import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
+import { SheetManager } from './sheet-manager';
+import { SheetTabBar } from './sheet-tab-bar';
+import { SheetContextMenu } from './sheet-context-menu';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -25,6 +28,11 @@ export class SpreadsheetApp {
 
   // 协同引擎（协同模式下设置）
   private collaborationEngine: CollaborationEngine | null = null;
+
+  // 多工作表管理
+  private sheetManager: SheetManager;
+  private sheetTabBar!: SheetTabBar;
+  private sheetContextMenu!: SheetContextMenu;
 
   // 滚动条元素
   private vScrollbar: HTMLDivElement | null = null;
@@ -84,6 +92,18 @@ export class SpreadsheetApp {
       this.showFormulaError(error);
     });
 
+    // 初始化多工作表管理器（默认创建 Sheet1，使用当前 model）
+    this.sheetManager = new SheetManager();
+
+    // 设置工作表切换回调（统一处理所有切换场景：标签点击、隐藏、删除等）
+    this.sheetManager.setOnSwitchCallback((sheetId: string) => {
+      this.handleSheetSwitch(sheetId);
+      // 同步刷新标签栏
+      if (this.sheetTabBar) {
+        this.sheetTabBar.render();
+      }
+    });
+
     // 获取Canvas元素
     this.canvas = document.getElementById('excel-canvas') as HTMLCanvasElement;
 
@@ -92,6 +112,7 @@ export class SpreadsheetApp {
 
     // 创建数据管理器
     this.dataManager = new DataManager(this.model);
+    this.dataManager.setSheetManager(this.sheetManager);
 
     // 创建搜索对话框
     this.searchDialog = new SearchDialog();
@@ -125,6 +146,17 @@ export class SpreadsheetApp {
     });
     // 将图表浮动层设置到渲染器
     this.renderer.setChartOverlay(this.chartOverlay);
+
+    // 初始化 Sheet 标签栏
+    const tabBarEl = document.getElementById('sheet-tab-bar') as HTMLDivElement;
+    this.sheetTabBar = new SheetTabBar(tabBarEl, this.sheetManager, {
+      onContextMenu: (e: MouseEvent, sheetId: string) => {
+        this.sheetContextMenu.show(e.clientX, e.clientY, sheetId);
+      },
+    });
+
+    // 初始化 Sheet 右键菜单
+    this.sheetContextMenu = new SheetContextMenu(this.sheetManager, this.sheetTabBar);
 
     // 创建滚动条
     this.createScrollbars();
@@ -3912,8 +3944,18 @@ export class SpreadsheetApp {
     this.collaborationEngine = engine;
     if (engine) {
       this.renderer.setCursorAwareness(engine.getCursorAwareness());
+      // 注入协同回调到 SheetManager，使 Sheet 级操作自动提交
+      this.sheetManager.setCollabCallback((op: Record<string, unknown>) => {
+        if (this.collaborationEngine && this.collaborationEngine.isInitialized()) {
+          this.collaborationEngine.submitOperation({
+            ...this.createBaseOp(),
+            ...op,
+          } as CollabOperation);
+        }
+      });
     } else {
       this.renderer.setCursorAwareness(null);
+      this.sheetManager.setCollabCallback(null);
     }
   }
 
@@ -3950,12 +3992,92 @@ export class SpreadsheetApp {
 
   /**
    * 创建基础操作对象（内部辅助方法）
+   * 自动附加当前活动工作表的 sheetId
    */
-  private createBaseOp(): { userId: string; timestamp: number; revision: number } {
+  private createBaseOp(): { userId: string; timestamp: number; revision: number; sheetId: string } {
     return {
       userId: this.collaborationEngine?.getUserId() ?? '',
       timestamp: Date.now(),
       revision: 0,
+      sheetId: this.sheetManager.getActiveSheet().id,
     };
+  }
+
+  // ============================================================
+  // 多工作表切换
+  // ============================================================
+
+  /**
+   * 处理工作表切换
+   * 由 SheetManager.switchSheet 的 onSwitchCallback 触发
+   */
+  private handleSheetSwitch(sheetId: string): void {
+    // 保存当前视口状态
+    const viewport = this.renderer.getViewport();
+    this.sheetManager.saveViewportState({
+      scrollX: viewport.scrollX,
+      scrollY: viewport.scrollY,
+      selection: this.currentSelection,
+      activeCell: this.currentSelection
+        ? { row: this.currentSelection.startRow, col: this.currentSelection.startCol }
+        : null,
+    });
+
+    // 更新 app 的 model 引用
+    this.model = this.sheetManager.getActiveModel();
+
+    // 切换渲染器数据源
+    this.renderer.setModel(this.model);
+
+    // 恢复目标工作表的视口状态
+    const savedState = this.sheetManager.getViewportState(sheetId);
+    if (savedState) {
+      this.renderer.scrollTo(savedState.scrollX, savedState.scrollY);
+      this.currentSelection = savedState.selection;
+      if (savedState.selection) {
+        this.renderer.setSelection(
+          savedState.selection.startRow,
+          savedState.selection.startCol,
+          savedState.selection.endRow,
+          savedState.selection.endCol
+        );
+      } else {
+        this.renderer.clearSelection();
+      }
+    } else {
+      this.renderer.scrollTo(0, 0);
+      this.currentSelection = null;
+      this.renderer.clearSelection();
+    }
+
+    // 更新数据管理器的 model 引用
+    this.dataManager = new DataManager(this.model);
+    this.dataManager.setSheetManager(this.sheetManager);
+
+    // 刷新 UI
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateSelectedCellInfo();
+    this.updateUndoRedoButtons();
+    this.updateStatusBar();
+  }
+
+  // ============================================================
+  // 公共 getter 方法
+  // ============================================================
+
+  /** 获取 SheetManager */
+  public getSheetManager(): SheetManager {
+    return this.sheetManager;
+  }
+
+  /** 获取 SheetTabBar */
+  public getSheetTabBar(): SheetTabBar {
+    return this.sheetTabBar;
+  }
+
+  /** 获取 SheetContextMenu */
+  public getSheetContextMenu(): SheetContextMenu {
+    return this.sheetContextMenu;
   }
 }

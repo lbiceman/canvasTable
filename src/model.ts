@@ -3062,6 +3062,16 @@ export class SpreadsheetModel {
     return this.historyManager;
   }
 
+  // 设置关联的 HistoryManager（供 SheetManager 切换工作表时使用）
+  public setHistoryManager(hm: HistoryManager): void {
+    this.historyManager = hm;
+  }
+
+  // 获取内部 SpreadsheetData 引用（供 SheetManager 保存/恢复数据）
+  public getData(): SpreadsheetData {
+    return this.data;
+  }
+
   // ============================================================
   // 格式设置方法
   // ============================================================

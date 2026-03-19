@@ -215,3 +215,46 @@ export type {
   MessageType,
   WebSocketMessage,
 } from './collaboration/types';
+
+// ============================================================
+// 多工作表（Multi-Sheet）相关类型定义
+// ============================================================
+
+/** 工作表元数据 */
+export interface SheetMeta {
+  id: string;              // 唯一标识符（UUID）
+  name: string;            // 工作表名称，如 "Sheet1"
+  visible: boolean;        // 是否可见
+  tabColor: string | null; // 标签颜色，null 表示无颜色
+  order: number;           // 排序序号
+}
+
+/** 视口状态快照 */
+export interface ViewportState {
+  scrollX: number;
+  scrollY: number;
+  selection: Selection | null;
+  activeCell: CellPosition | null;
+}
+
+/** 重命名结果 */
+export interface RenameResult {
+  success: boolean;
+  error?: 'empty' | 'duplicate' | 'invalid';
+  message?: string;
+}
+
+/** 工作簿中的单个工作表条目 */
+export interface WorkbookSheetEntry {
+  meta: SheetMeta;
+  data: Record<string, unknown>;      // 现有 exportToJSON 的 data 部分
+  metadata: Record<string, unknown>;   // 现有 exportToJSON 的 metadata 部分
+}
+
+/** 工作簿序列化格式 */
+export interface WorkbookData {
+  version: "2.0";
+  timestamp: string;
+  activeSheetId: string;
+  sheets: Array<WorkbookSheetEntry>;
+}

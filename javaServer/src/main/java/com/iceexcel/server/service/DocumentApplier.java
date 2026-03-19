@@ -17,7 +17,51 @@ public class DocumentApplier {
     private static final int DEFAULT_COLS = 26;
 
     /**
-     * 将操作应用到文档快照
+     * 将操作应用到工作簿
+     * 根据操作类型路由：Sheet 级操作直接修改 WorkbookData，
+     * 单元格级操作根据 sheetId 找到对应 SpreadsheetData 后应用
+     */
+    public static void apply(WorkbookData workbook, CollabOperation op) {
+        // Sheet 级操作
+        if (op instanceof SheetAddOp) {
+            applySheetAdd(workbook, (SheetAddOp) op);
+        } else if (op instanceof SheetDeleteOp) {
+            applySheetDelete(workbook, (SheetDeleteOp) op);
+        } else if (op instanceof SheetRenameOp) {
+            applySheetRename(workbook, (SheetRenameOp) op);
+        } else if (op instanceof SheetReorderOp) {
+            applySheetReorder(workbook, (SheetReorderOp) op);
+        } else if (op instanceof SheetDuplicateOp) {
+            applySheetDuplicate(workbook, (SheetDuplicateOp) op);
+        } else if (op instanceof SheetVisibilityOp) {
+            applySheetVisibility(workbook, (SheetVisibilityOp) op);
+        } else if (op instanceof SheetTabColorOp) {
+            applySheetTabColor(workbook, (SheetTabColorOp) op);
+        } else {
+            // 单元格级操作：根据 sheetId 路由到对应工作表
+            String sheetId = op.getSheetId();
+            if (sheetId != null && workbook.getSheets() != null) {
+                for (SheetEntry entry : workbook.getSheets()) {
+                    if (entry.getMeta() != null && sheetId.equals(entry.getMeta().getId())) {
+                        Object data = entry.getData();
+                        if (data instanceof SpreadsheetData) {
+                            apply((SpreadsheetData) data, op);
+                        }
+                        break;
+                    }
+                }
+            } else if (workbook.getSheets() != null && !workbook.getSheets().isEmpty()) {
+                // 兼容：无 sheetId 时应用到第一个工作表
+                Object data = workbook.getSheets().get(0).getData();
+                if (data instanceof SpreadsheetData) {
+                    apply((SpreadsheetData) data, op);
+                }
+            }
+        }
+    }
+
+    /**
+     * 将操作应用到文档快照（单工作表级别）
      */
     public static void apply(SpreadsheetData document, CollabOperation op) {
         List<List<Cell>> cells = document.getCells();
@@ -372,5 +416,100 @@ public class DocumentApplier {
         }
         // 设置或清除迷你图
         row.get(op.getCol()).setSparkline(op.getSparkline());
+    }
+
+    // ============================================================
+    // Sheet 级操作应用逻辑
+    // ============================================================
+
+    private static void applySheetAdd(WorkbookData workbook, SheetAddOp op) {
+        SheetMeta meta = new SheetMeta(op.getSheetId(), op.getSheetName(), true, null, op.getInsertIndex());
+        SheetEntry entry = new SheetEntry();
+        entry.setMeta(meta);
+        entry.setData(new SpreadsheetData());
+
+        List<SheetEntry> sheets = workbook.getSheets();
+        int index = Math.min(op.getInsertIndex(), sheets.size());
+        sheets.add(index, entry);
+
+        // 更新 order
+        for (int i = 0; i < sheets.size(); i++) {
+            sheets.get(i).getMeta().setOrder(i);
+        }
+    }
+
+    private static void applySheetDelete(WorkbookData workbook, SheetDeleteOp op) {
+        List<SheetEntry> sheets = workbook.getSheets();
+        if (sheets.size() <= 1) return;
+        sheets.removeIf(e -> e.getMeta() != null && op.getSheetId().equals(e.getMeta().getId()));
+
+        // 更新 order
+        for (int i = 0; i < sheets.size(); i++) {
+            sheets.get(i).getMeta().setOrder(i);
+        }
+    }
+
+    private static void applySheetRename(WorkbookData workbook, SheetRenameOp op) {
+        SheetEntry entry = workbook.getSheetEntry(op.getSheetId());
+        if (entry != null && entry.getMeta() != null) {
+            entry.getMeta().setName(op.getNewName());
+        }
+    }
+
+    private static void applySheetReorder(WorkbookData workbook, SheetReorderOp op) {
+        List<SheetEntry> sheets = workbook.getSheets();
+        int currentIndex = -1;
+        for (int i = 0; i < sheets.size(); i++) {
+            if (sheets.get(i).getMeta() != null && op.getSheetId().equals(sheets.get(i).getMeta().getId())) {
+                currentIndex = i;
+                break;
+            }
+        }
+        if (currentIndex == -1) return;
+
+        SheetEntry entry = sheets.remove(currentIndex);
+        int newIndex = Math.max(0, Math.min(op.getNewIndex(), sheets.size()));
+        sheets.add(newIndex, entry);
+
+        // 更新 order
+        for (int i = 0; i < sheets.size(); i++) {
+            sheets.get(i).getMeta().setOrder(i);
+        }
+    }
+
+    private static void applySheetDuplicate(WorkbookData workbook, SheetDuplicateOp op) {
+        SheetEntry source = workbook.getSheetEntry(op.getSourceSheetId());
+        if (source == null) return;
+
+        SheetMeta newMeta = new SheetMeta(op.getNewSheetId(), op.getNewSheetName(), true, null, 0);
+        SheetEntry newEntry = new SheetEntry();
+        newEntry.setMeta(newMeta);
+        // 深拷贝数据（简单引用，后端不直接操作数据内容）
+        newEntry.setData(source.getData());
+        newEntry.setMetadata(source.getMetadata());
+
+        // 插入到源工作表右侧
+        List<SheetEntry> sheets = workbook.getSheets();
+        int sourceIndex = sheets.indexOf(source);
+        sheets.add(sourceIndex + 1, newEntry);
+
+        // 更新 order
+        for (int i = 0; i < sheets.size(); i++) {
+            sheets.get(i).getMeta().setOrder(i);
+        }
+    }
+
+    private static void applySheetVisibility(WorkbookData workbook, SheetVisibilityOp op) {
+        SheetEntry entry = workbook.getSheetEntry(op.getSheetId());
+        if (entry != null && entry.getMeta() != null) {
+            entry.getMeta().setVisible(op.isVisible());
+        }
+    }
+
+    private static void applySheetTabColor(WorkbookData workbook, SheetTabColorOp op) {
+        SheetEntry entry = workbook.getSheetEntry(op.getSheetId());
+        if (entry != null && entry.getMeta() != null) {
+            entry.getMeta().setTabColor(op.getTabColor());
+        }
     }
 }

@@ -37,8 +37,8 @@ export interface CollaborationCallbacks {
   onUserJoin?: (user: RemoteUser) => void;
   // 用户离开回调
   onUserLeave?: (userId: string) => void;
-  // 文档状态同步完成回调
-  onDocumentSync?: (data: SpreadsheetData) => void;
+  // 文档状态同步完成回调（接收 WorkbookData 或旧版 SpreadsheetData）
+  onDocumentSync?: (data: SpreadsheetData | Record<string, unknown>) => void;
   // 同步状态变化回调（有无未确认操作）
   onSyncStatusChange?: (pendingCount: number) => void;
   // 远程光标更新回调（用于触发重绘）
@@ -412,8 +412,11 @@ export class CollaborationEngine {
       }
     }
 
-    // 通知文档同步完成
-    this.callbacks.onDocumentSync?.(payload.document);
+    // 通知文档同步完成（优先使用 workbook 格式，回退到 document）
+    const syncData = payload.workbook ?? payload.document;
+    if (syncData) {
+      this.callbacks.onDocumentSync?.(syncData as SpreadsheetData | Record<string, unknown>);
+    }
     this.callbacks.onConnectionStatusChange?.('connected');
   }
 

@@ -1564,5 +1564,11 @@ export const invertOperation = (
         timestamp: Date.now(),
       };
     }
+
+    default: {
+      // Sheet 级操作（sheetAdd/sheetDelete 等）和其他未处理的操作类型
+      // 返回原操作本身（Sheet 级操作不支持撤销）
+      return op;
+    }
   }
 };

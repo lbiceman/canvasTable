@@ -1,16 +1,27 @@
 import { SpreadsheetModel } from './model';
+import { Modal } from './modal';
+import type { SheetManager } from './sheet-manager';
 
 // Hook测试 - 2026-02-06
 export class DataManager {
   private model: SpreadsheetModel;
+  private sheetManager: SheetManager | null = null;
 
   constructor(model: SpreadsheetModel) {
     this.model = model;
   }
 
+  /** 设置 SheetManager 引用（多工作表模式下使用） */
+  public setSheetManager(sheetManager: SheetManager): void {
+    this.sheetManager = sheetManager;
+  }
+
   // 导出数据到文件
   public exportToFile(filename?: string): void {
-    const jsonData = this.model.exportToJSON();
+    // 多工作表模式：导出 WorkbookData 格式
+    const jsonData = this.sheetManager
+      ? JSON.stringify(this.sheetManager.serializeWorkbook(), null, 2)
+      : this.model.exportToJSON();
     const blob = new Blob([jsonData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -65,7 +76,7 @@ export class DataManager {
         }
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           try {
             const jsonData = e.target?.result as string;
 
@@ -73,14 +84,14 @@ export class DataManager {
 
             if (!validation.valid) {
               if (showValidation) {
-                this.showValidationErrors(validation.errors, validation.warnings);
+                await this.showValidationErrors(validation.errors, validation.warnings);
               }
               resolve({ success: false, errors: validation.errors, warnings: validation.warnings });
               return;
             }
 
             if (showValidation && validation.warnings.length > 0) {
-              this.showValidationErrors(validation.errors, validation.warnings);
+              await this.showValidationErrors(validation.errors, validation.warnings);
             }
 
             const success = this.model.importFromJSON(jsonData);
@@ -118,7 +129,7 @@ export class DataManager {
         }
 
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
           try {
             const jsonData = e.target?.result as string;
 
@@ -126,14 +137,14 @@ export class DataManager {
 
             if (!validation.valid) {
               if (showValidation) {
-                this.showValidationErrors(validation.errors, validation.warnings);
+                await this.showValidationErrors(validation.errors, validation.warnings);
               }
               resolve({ success: false, errors: validation.errors, warnings: validation.warnings });
               return;
             }
 
             if (showValidation && validation.warnings.length > 0) {
-              this.showValidationErrors(validation.errors, validation.warnings);
+              await this.showValidationErrors(validation.errors, validation.warnings);
             }
 
             const success = this.model.importFromSimpleJSON(jsonData);
@@ -157,7 +168,7 @@ export class DataManager {
   }
 
   // 显示验证错误
-  private showValidationErrors(errors: string[], warnings: string[]): void {
+  private async showValidationErrors(errors: string[], warnings: string[]): Promise<void> {
     let message = '';
 
     if (errors.length > 0) {
@@ -170,7 +181,7 @@ export class DataManager {
     }
 
     if (errors.length > 0) {
-      alert(message);
+      await Modal.alert(message);
     } else {
       console.warn('导入警告：', warnings);
     }
@@ -190,13 +201,13 @@ export class DataManager {
 
       if (!validation.valid) {
         if (showValidation) {
-          this.showValidationErrors(validation.errors, validation.warnings);
+          await this.showValidationErrors(validation.errors, validation.warnings);
         }
         return { success: false, errors: validation.errors, warnings: validation.warnings };
       }
 
       if (showValidation && validation.warnings.length > 0) {
-        this.showValidationErrors(validation.errors, validation.warnings);
+        await this.showValidationErrors(validation.errors, validation.warnings);
       }
 
       const success = this.model.importFromJSON(jsonData);
@@ -210,7 +221,10 @@ export class DataManager {
   // 保存到本地存储
   public saveToLocalStorage(key: string = 'spreadsheet-data'): boolean {
     try {
-      const jsonData = this.model.exportToJSON();
+      // 多工作表模式：保存 WorkbookData 格式
+      const jsonData = this.sheetManager
+        ? JSON.stringify(this.sheetManager.serializeWorkbook())
+        : this.model.exportToJSON();
       localStorage.setItem(key, jsonData);
       return true;
     } catch (error) {
@@ -225,6 +239,21 @@ export class DataManager {
       const jsonData = localStorage.getItem(key);
       if (!jsonData) {
         return false;
+      }
+
+      // 检测数据格式
+      if (this.sheetManager) {
+        try {
+          const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+          if (parsed.version === '2.0' && Array.isArray(parsed.sheets)) {
+            // WorkbookData 格式
+            return this.sheetManager.deserializeWorkbook(jsonData);
+          }
+          // 旧版格式，尝试迁移
+          return this.sheetManager.migrateFromLegacy(jsonData);
+        } catch {
+          return this.model.importFromJSON(jsonData);
+        }
       }
 
       return this.model.importFromJSON(jsonData);

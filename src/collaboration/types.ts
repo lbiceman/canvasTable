@@ -1,4 +1,4 @@
-import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule } from '../types';
+import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule, WorkbookData } from '../types';
 
 // ============================================================
 // 操作类型定义
@@ -26,7 +26,14 @@ export type OperationType =
   | 'setFormat'
   | 'setWrapText'
   | 'setRichText'
-  | 'setValidation';
+  | 'setValidation'
+  | 'sheetAdd'
+  | 'sheetDelete'
+  | 'sheetRename'
+  | 'sheetReorder'
+  | 'sheetDuplicate'
+  | 'sheetVisibility'
+  | 'sheetTabColor';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -34,6 +41,8 @@ export interface BaseOperation {
   userId: string;
   timestamp: number;
   revision: number;
+  /** 操作所属的工作表 ID（Sheet 级操作和单元格级操作均携带） */
+  sheetId?: string;
 }
 
 // 单元格编辑操作
@@ -223,7 +232,70 @@ export type CollabOperation =
   | SetFormatOp
   | SetWrapTextOp
   | SetRichTextOp
-  | SetValidationOp;
+  | SetValidationOp
+  | SheetAddOp
+  | SheetDeleteOp
+  | SheetRenameOp
+  | SheetReorderOp
+  | SheetDuplicateOp
+  | SheetVisibilityOp
+  | SheetTabColorOp;
+
+// ============================================================
+// Sheet 级操作类型
+// ============================================================
+
+// 新增工作表操作
+export interface SheetAddOp extends BaseOperation {
+  type: 'sheetAdd';
+  sheetId: string;
+  sheetName: string;
+  insertIndex: number;
+}
+
+// 删除工作表操作
+export interface SheetDeleteOp extends BaseOperation {
+  type: 'sheetDelete';
+  sheetId: string;
+}
+
+// 重命名工作表操作
+export interface SheetRenameOp extends BaseOperation {
+  type: 'sheetRename';
+  sheetId: string;
+  oldName: string;
+  newName: string;
+}
+
+// 排序工作表操作
+export interface SheetReorderOp extends BaseOperation {
+  type: 'sheetReorder';
+  sheetId: string;
+  oldIndex: number;
+  newIndex: number;
+}
+
+// 复制工作表操作
+export interface SheetDuplicateOp extends BaseOperation {
+  type: 'sheetDuplicate';
+  sourceSheetId: string;
+  newSheetId: string;
+  newSheetName: string;
+}
+
+// 隐藏/显示工作表操作
+export interface SheetVisibilityOp extends BaseOperation {
+  type: 'sheetVisibility';
+  sheetId: string;
+  visible: boolean;
+}
+
+// 设置标签颜色操作
+export interface SheetTabColorOp extends BaseOperation {
+  type: 'sheetTabColor';
+  sheetId: string;
+  tabColor: string | null;
+}
 
 // ============================================================
 // 远程用户与光标感知
@@ -278,11 +350,14 @@ export interface JoinMessage {
   };
 }
 
-// 文档状态响应
+// 文档状态响应（支持旧版 document 和新版 workbook 格式）
 export interface StateMessage {
   type: 'state';
   payload: {
-    document: SpreadsheetData;
+    /** 旧版单工作表格式（向后兼容） */
+    document?: SpreadsheetData;
+    /** 新版多工作表格式 */
+    workbook?: WorkbookData;
     revision: number;
     users: RemoteUser[];
   };

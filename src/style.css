@@ -32,6 +32,15 @@
   --header-width: 40px;
   --toolbar-height: 44px;
   --status-height: 24px;
+  --sheet-tab-height: 32px;
+
+  /* Sheet 标签栏主题变量 - 默认浅色主题 */
+  --sheet-tab-bg: #f0f0f0;
+  --sheet-tab-active-bg: #ffffff;
+  --sheet-tab-text: #333333;
+  --sheet-tab-active-text: #000000;
+  --sheet-tab-border: #d0d0d0;
+  --sheet-tab-hover-bg: #e8e8e8;
 }
 
 * {
@@ -1828,4 +1837,433 @@ h1 {
 
 .cf-add-btn:hover {
   background: #0056b3;
+}
+
+
+/* ============================================================
+   通用 Modal 弹窗组件样式
+   适配亮色/暗色主题，使用 CSS 变量
+   ============================================================ */
+
+/* 半透明遮罩层 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+/* 关闭动画 */
+.modal-overlay.modal-closing {
+  opacity: 0;
+}
+
+.modal-overlay.modal-closing .modal-dialog {
+  transform: scale(0.95);
+  opacity: 0;
+}
+
+/* 对话框容器 */
+.modal-dialog {
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  min-width: 320px;
+  max-width: 480px;
+  padding: 20px;
+  transform: scale(1);
+  opacity: 1;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+/* 标题 */
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--theme-foreground);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid #007bff;
+}
+
+/* 内容区域 */
+.modal-body {
+  margin-bottom: 16px;
+}
+
+/* 文本消息 */
+.modal-message {
+  font-size: 14px;
+  color: var(--theme-foreground);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+/* 输入框（prompt 模式） */
+.modal-input {
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 10px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-family: var(--font-sans);
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.modal-input:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.15);
+}
+
+.modal-input::placeholder {
+  color: var(--theme-status-text);
+}
+
+/* 按钮区域 */
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 按钮基础样式 */
+.modal-btn {
+  padding: 6px 16px;
+  height: 32px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 确认按钮 */
+.modal-confirm-btn {
+  background: #007bff;
+  color: #fff;
+  border: 1px solid #007bff;
+}
+
+.modal-confirm-btn:hover {
+  background: #0056b3;
+  border-color: #0056b3;
+}
+
+.modal-confirm-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--theme-background), 0 0 0 3px #007bff;
+}
+
+/* 取消按钮 */
+.modal-cancel-btn {
+  background: var(--theme-button-bg);
+  color: var(--theme-button-text);
+  border: 1px solid var(--theme-button-border);
+}
+
+.modal-cancel-btn:hover {
+  background: var(--theme-button-hover-bg);
+}
+
+.modal-cancel-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--theme-background), 0 0 0 3px var(--theme-button-border);
+}
+
+/* ============================================================
+   Sheet 标签栏样式
+   ============================================================ */
+
+/* Sheet 标签栏容器 - 底部标签栏 */
+.sheet-tab-bar {
+  display: flex;
+  align-items: center;
+  height: var(--sheet-tab-height);
+  background-color: var(--sheet-tab-bg);
+  border-top: 1px solid var(--sheet-tab-border);
+  padding: 0 4px;
+  user-select: none;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* 新增工作表按钮 "+" */
+.sheet-tab-add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--sheet-tab-text);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+  margin-right: 4px;
+}
+
+.sheet-tab-add-btn:hover {
+  background-color: var(--sheet-tab-hover-bg);
+  border-color: var(--sheet-tab-border);
+}
+
+/* 标签列表滚动容器 */
+.sheet-tab-list {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  overflow: hidden;
+  gap: 2px;
+  scroll-behavior: smooth;
+}
+
+/* 单个工作表标签 */
+.sheet-tab {
+  display: flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background-color: transparent;
+  color: var(--sheet-tab-text);
+  font-size: 12px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sheet-tab:hover {
+  background-color: var(--sheet-tab-hover-bg);
+}
+
+/* 活动标签 - 当前工作表高亮 */
+.sheet-tab.active {
+  background-color: var(--sheet-tab-active-bg);
+  color: var(--sheet-tab-active-text);
+  font-weight: 500;
+  border-color: var(--sheet-tab-border);
+  border-bottom: 1px solid var(--sheet-tab-active-bg);
+}
+
+/* 标签名称文本 */
+.sheet-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+  pointer-events: none;
+}
+
+/* 颜色指示条 - 标签底部彩色条（3px 高度） */
+.sheet-tab-color-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  pointer-events: none;
+}
+
+/* 拖拽中的标签样式 */
+.sheet-tab.dragging {
+  opacity: 0.5;
+}
+
+/* 拖拽指示线 - 拖拽排序时的插入位置指示 */
+.sheet-tab-drop-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 2px;
+  background-color: #007bff;
+  border-radius: 1px;
+  z-index: 10;
+  pointer-events: none;
+  transition: left 0.1s ease;
+}
+
+/* 滚动箭头 - 标签溢出时的滚动按钮 */
+.sheet-tab-scroll-left,
+.sheet-tab-scroll-right {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--sheet-tab-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.sheet-tab-scroll-left:hover,
+.sheet-tab-scroll-right:hover {
+  background-color: var(--sheet-tab-hover-bg);
+  border-color: var(--sheet-tab-border);
+}
+
+/* 滚动箭头可见状态 */
+.sheet-tab-scroll-left.visible,
+.sheet-tab-scroll-right.visible {
+  display: flex;
+}
+
+/* ============================================================
+   Sheet 右键菜单样式
+   ============================================================ */
+
+/* 右键上下文菜单 */
+.sheet-context-menu {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--sheet-tab-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 160px;
+  padding: 4px 0;
+}
+
+.sheet-context-menu-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--theme-foreground);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.sheet-context-menu-item:hover {
+  background-color: var(--theme-highlight-bg);
+}
+
+/* 禁用状态的菜单项 */
+.sheet-context-menu-item.disabled {
+  color: var(--theme-status-text);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sheet-context-menu-item.disabled:hover {
+  background-color: transparent;
+}
+
+/* 菜单分隔线 */
+.sheet-context-menu-separator {
+  height: 1px;
+  background-color: var(--sheet-tab-border);
+  margin: 4px 0;
+}
+
+/* 菜单项图标 */
+.sheet-context-menu-icon {
+  font-size: 14px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ============================================================
+   Sheet 标签颜色选择面板样式
+   ============================================================ */
+
+/* 颜色选择面板 */
+.sheet-color-picker {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--sheet-tab-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2001;
+  padding: 8px;
+  min-width: 140px;
+}
+
+/* 颜色选择面板标题 */
+.sheet-color-picker-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--theme-status-text);
+  margin-bottom: 8px;
+  padding: 0 2px;
+}
+
+/* 颜色网格 */
+.sheet-color-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+/* 单个颜色选项 */
+.sheet-color-picker-item {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sheet-color-picker-item:hover {
+  transform: scale(1.15);
+  border-color: var(--theme-foreground);
+}
+
+/* 当前选中的颜色 */
+.sheet-color-picker-item.selected {
+  border-color: var(--theme-foreground);
+  box-shadow: 0 0 0 1px var(--theme-background);
+}
+
+/* 无颜色选项 */
+.sheet-color-picker-none {
+  width: 100%;
+  padding: 6px 0;
+  margin-top: 6px;
+  border: none;
+  border-top: 1px solid var(--sheet-tab-border);
+  background: transparent;
+  color: var(--theme-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 0.15s ease;
+}
+
+.sheet-color-picker-none:hover {
+  background-color: var(--theme-highlight-bg);
 }

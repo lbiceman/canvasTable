@@ -85,6 +85,28 @@ public class RoomManager {
     }
 
     /**
+     * 创建空白工作簿（包含默认 Sheet1）
+     */
+    private WorkbookData createEmptyWorkbook() {
+        WorkbookData workbook = new WorkbookData();
+        workbook.setVersion("2.0");
+
+        String sheetId = java.util.UUID.randomUUID().toString();
+        workbook.setActiveSheetId(sheetId);
+
+        SheetMeta meta = new SheetMeta(sheetId, "Sheet1", true, null, 0);
+        SheetEntry entry = new SheetEntry();
+        entry.setMeta(meta);
+        entry.setData(createEmptyDocument());
+
+        List<SheetEntry> sheets = new ArrayList<>();
+        sheets.add(entry);
+        workbook.setSheets(sheets);
+
+        return workbook;
+    }
+
+    /**
      * 获取或创建房间
      * 优先从数据库加载已有数据，不存在则创建空白文档
      */
@@ -95,8 +117,20 @@ public class RoomManager {
             if (entityOpt.isPresent()) {
                 RoomEntity entity = entityOpt.get();
                 try {
-                    SpreadsheetData document = objectMapper.readValue(
-                            entity.getDocumentJson(), SpreadsheetData.class);
+                    // 检测数据格式：尝试解析为 WorkbookData
+                    WorkbookData workbook;
+                    String docJson = entity.getDocumentJson();
+                    com.fasterxml.jackson.databind.JsonNode rootNode = objectMapper.readTree(docJson);
+
+                    if (rootNode.has("sheets") && rootNode.get("sheets").isArray()) {
+                        // v2.0 格式：直接反序列化为 WorkbookData
+                        workbook = objectMapper.readValue(docJson, WorkbookData.class);
+                    } else {
+                        // 旧版格式：先解析为 SpreadsheetData，再迁移
+                        SpreadsheetData legacy = objectMapper.readValue(docJson, SpreadsheetData.class);
+                        workbook = WorkbookData.migrateFromLegacy(legacy);
+                        log.info("房间 {} 旧版数据已迁移为 WorkbookData 格式", id);
+                    }
 
                     // 加载操作历史
                     List<OperationEntity> opEntities =
@@ -112,7 +146,7 @@ public class RoomManager {
                     OTServer otServer = new OTServer(operations, entity.getRevision());
                     otStates.put(id, otServer);
 
-                    Room room = new Room(id, document);
+                    Room room = new Room(id, workbook);
                     room.setOperations(operations);
                     room.setRevision(entity.getRevision());
                     log.info("从数据库恢复房间 {}，修订号: {}", id, entity.getRevision());
@@ -124,7 +158,7 @@ public class RoomManager {
 
             // 数据库中不存在，创建空白房间
             otStates.put(id, new OTServer());
-            return new Room(id, createEmptyDocument());
+            return new Room(id, createEmptyWorkbook());
         });
     }
 
@@ -192,8 +226,8 @@ public class RoomManager {
             if (room != null) {
                 room.setRevision(result.getRevision());
                 room.getOperations().add(result.getTransformedOp());
-                // 将操作应用到文档快照，保持文档状态最新
-                DocumentApplier.apply(room.getDocument(), result.getTransformedOp());
+                // 将操作应用到工作簿快照，保持文档状态最新
+                DocumentApplier.apply(room.getWorkbook(), result.getTransformedOp());
             }
             // 防抖保存到数据库
             scheduleSave(roomId);
@@ -219,11 +253,11 @@ public class RoomManager {
     }
 
     /**
-     * 获取房间的文档状态
+     * 获取房间的工作簿状态
      */
-    public SpreadsheetData getDocument(String roomId) {
+    public WorkbookData getWorkbook(String roomId) {
         Room room = rooms.get(roomId);
-        return room != null ? room.getDocument() : null;
+        return room != null ? room.getWorkbook() : null;
     }
 
     /**
@@ -315,7 +349,7 @@ public class RoomManager {
         if (room == null || otServer == null) return;
 
         try {
-            String documentJson = objectMapper.writeValueAsString(room.getDocument());
+            String documentJson = objectMapper.writeValueAsString(room.getWorkbook());
             int revision = otServer.getRevision();
 
             // 保存房间文档快照

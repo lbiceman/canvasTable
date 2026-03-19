@@ -1,5 +1,6 @@
 import { SpreadsheetApp } from './app';
 import themes from './themes.json';
+import { Modal } from './modal';
 
 export type ThemeType = 'light' | 'dark';
 
@@ -210,6 +211,16 @@ export class UIControls {
 
     // 通知渲染器更新主题
     this.app.setTheme(colors);
+
+    // 同步更新 Sheet 标签栏和右键菜单的主题
+    const sheetTabBar = this.app.getSheetTabBar();
+    const sheetContextMenu = this.app.getSheetContextMenu();
+    if (sheetTabBar) {
+      sheetTabBar.applyTheme(colors);
+    }
+    if (sheetContextMenu) {
+      sheetContextMenu.applyTheme(colors);
+    }
   }
 
   public getCurrentTheme(): ThemeType {
@@ -325,7 +336,7 @@ export class UIControls {
     }
   }
 
-  private showStatistics(): void {
+  private async showStatistics(): Promise<void> {
     const stats = this.app.getStatistics();
     const message = `
       表格统计信息：
@@ -334,11 +345,11 @@ export class UIControls {
       • 合并单元格：${stats.mergedCells}
       • 数据大小：${stats.dataSize}
     `;
-    alert(message);
+    await Modal.alert(message);
   }
 
-  private handleClearData(): void {
-    if (confirm('确定要清空所有数据吗？此操作不可撤销。')) {
+  private async handleClearData(): Promise<void> {
+    if (await Modal.confirm('确定要清空所有数据吗？此操作不可撤销。')) {
       this.app.clearAllData();
       this.showMessage('所有数据已清空！', 'success');
     }

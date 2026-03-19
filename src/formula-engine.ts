@@ -1,6 +1,7 @@
 export interface CellReference {
   row: number;
   col: number;
+  sheetName?: string;  // 跨 Sheet 引用时的工作表名称
 }
 
 export interface RangeReference {
@@ -8,6 +9,7 @@ export interface RangeReference {
   startCol: number;
   endRow: number;
   endCol: number;
+  sheetName?: string;  // 跨 Sheet 引用时的工作表名称
 }
 
 export type Reference = CellReference | RangeReference;
@@ -26,6 +28,8 @@ export interface Dependency {
 export class FormulaEngine {
   private static instance: FormulaEngine | null = null;
   private cellGetter: ((row: number, col: number) => { content: string } | null) | null = null;
+  /** 跨 Sheet 单元格获取器 */
+  private sheetCellGetter: ((sheetName: string, row: number, col: number) => { content: string } | null) | null = null;
   private formulaCache: Map<string, { formula: string; result: FormulaResult }> = new Map();
   private dependencyGraph: Map<string, Set<string>> = new Map();
   private dependentsGraph: Map<string, Set<string>> = new Map();
@@ -41,6 +45,11 @@ export class FormulaEngine {
 
   public setCellGetter(getter: (row: number, col: number) => { content: string } | null): void {
     this.cellGetter = getter;
+  }
+
+  /** 设置跨 Sheet 单元格获取器 */
+  public setSheetCellGetter(getter: (sheetName: string, row: number, col: number) => { content: string } | null): void {
+    this.sheetCellGetter = getter;
   }
 
   public clearCache(): void {
@@ -66,31 +75,54 @@ export class FormulaEngine {
     return col - 1;
   }
 
+  /**
+   * 解析跨 Sheet 引用前缀
+   * 支持 SheetName!CellRef 和 'Sheet Name'!CellRef 格式
+   * @returns [sheetName, cellPart] 或 null（无跨 Sheet 前缀时 sheetName 为 undefined）
+   */
+  private parseSheetPrefix(ref: string): { sheetName?: string; cellPart: string } {
+    const crossSheetMatch = ref.match(/^(?:'([^']+)'|([A-Za-z0-9_\u4e00-\u9fff]+))!(.+)$/i);
+    if (crossSheetMatch) {
+      const sheetName = crossSheetMatch[1] || crossSheetMatch[2];
+      const cellPart = crossSheetMatch[3];
+      return { sheetName, cellPart };
+    }
+    return { cellPart: ref };
+  }
+
   private parseCellReference(ref: string): CellReference | null {
-    const match = ref.match(/^([A-Z]+)(\d+)$/i);
+    const { sheetName, cellPart } = this.parseSheetPrefix(ref);
+    const match = cellPart.match(/^([A-Z]+)(\d+)$/i);
     if (!match) return null;
 
     const colStr = match[1].toUpperCase();
     const row = parseInt(match[2], 10) - 1;
     const col = this.colToIndex(colStr);
 
-    return { row, col };
+    return { row, col, sheetName };
   }
 
   private parseRangeReference(ref: string): RangeReference | null {
-    const parts = ref.split(':');
+    const { sheetName, cellPart } = this.parseSheetPrefix(ref);
+    const parts = cellPart.split(':');
     if (parts.length !== 2) return null;
 
-    const startRef = this.parseCellReference(parts[0].trim());
-    const endRef = this.parseCellReference(parts[1].trim());
+    // 解析范围时不再递归处理 Sheet 前缀
+    const startMatch = parts[0].trim().match(/^([A-Z]+)(\d+)$/i);
+    const endMatch = parts[1].trim().match(/^([A-Z]+)(\d+)$/i);
+    if (!startMatch || !endMatch) return null;
 
-    if (!startRef || !endRef) return null;
+    const startRow = parseInt(startMatch[2], 10) - 1;
+    const startCol = this.colToIndex(startMatch[1].toUpperCase());
+    const endRow = parseInt(endMatch[2], 10) - 1;
+    const endCol = this.colToIndex(endMatch[1].toUpperCase());
 
     return {
-      startRow: Math.min(startRef.row, endRef.row),
-      startCol: Math.min(startRef.col, endRef.col),
-      endRow: Math.max(startRef.row, endRef.row),
-      endCol: Math.max(startRef.col, endRef.col),
+      startRow: Math.min(startRow, endRow),
+      startCol: Math.min(startCol, endCol),
+      endRow: Math.max(startRow, endRow),
+      endCol: Math.max(startCol, endCol),
+      sheetName,
     };
   }
 
@@ -240,6 +272,25 @@ export class FormulaEngine {
     return num;
   }
 
+  /**
+   * 获取单元格内容（支持跨 Sheet 引用）
+   * 如果指定了 sheetName，使用 sheetCellGetter；否则使用 cellGetter
+   */
+  private getCellContent(row: number, col: number, sheetName?: string): string {
+    if (sheetName) {
+      if (!this.sheetCellGetter) {
+        return '#REF!';
+      }
+      const cell = this.sheetCellGetter(sheetName, row, col);
+      if (cell === null) {
+        return '#REF!';
+      }
+      return cell.content ?? '';
+    }
+    const cell = this.cellGetter?.(row, col);
+    return cell?.content ?? '';
+  }
+
   public calculateSum(args: string[]): FormulaResult {
     let sum = 0;
     let hasValidNumber = false;
@@ -262,8 +313,10 @@ export class FormulaEngine {
       if ('startRow' in ref) {
         for (let row = ref.startRow; row <= ref.endRow; row++) {
           for (let col = ref.startCol; col <= ref.endCol; col++) {
-            const cell = this.cellGetter?.(row, col);
-            const content = cell?.content ?? '';
+            const content = this.getCellContent(row, col, ref.sheetName);
+            if (content === '#REF!') {
+              return { value: '#REF!', isError: true, errorMessage: '引用的工作表不存在' };
+            }
             const num = this.parseNumber(content);
 
             if (num !== null) {
@@ -273,8 +326,10 @@ export class FormulaEngine {
           }
         }
       } else {
-        const cell = this.cellGetter?.(ref.row, ref.col);
-        const content = cell?.content ?? '';
+        const content = this.getCellContent(ref.row, ref.col, ref.sheetName);
+        if (content === '#REF!') {
+          return { value: '#REF!', isError: true, errorMessage: '引用的工作表不存在' };
+        }
         const num = this.parseNumber(content);
 
         if (num !== null) {
@@ -315,8 +370,11 @@ export class FormulaEngine {
       if ('startRow' in ref) {
         for (let row = ref.startRow; row <= ref.endRow; row++) {
           for (let col = ref.startCol; col <= ref.endCol; col++) {
-            const cell = this.cellGetter?.(row, col);
-            const content = cell?.content ?? '';
+            const content = this.getCellContent(row, col, ref.sheetName);
+            if (content === '#REF!') {
+              errors.push('引用的工作表不存在');
+              continue;
+            }
             const num = this.parseNumber(content);
             if (num !== null) {
               numbers.push(num);
@@ -324,8 +382,11 @@ export class FormulaEngine {
           }
         }
       } else {
-        const cell = this.cellGetter?.(ref.row, ref.col);
-        const content = cell?.content ?? '';
+        const content = this.getCellContent(ref.row, ref.col, ref.sheetName);
+        if (content === '#REF!') {
+          errors.push('引用的工作表不存在');
+          continue;
+        }
         const num = this.parseNumber(content);
         if (num !== null) {
           numbers.push(num);

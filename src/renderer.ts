@@ -1442,6 +1442,16 @@ export class SpreadsheetRenderer {
   }
 
   // 调整画布大小
+  /**
+   * 切换绑定的 SpreadsheetModel 数据源
+   * 工作表切换时由 SheetManager 调用
+   */
+  public setModel(model: SpreadsheetModel): void {
+    this.model = model;
+    this.updateViewport();
+    this.render();
+  }
+
   public resize(width: number, height: number): void {
     this.canvasWidth = width;
     this.canvasHeight = height;

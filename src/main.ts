@@ -2,8 +2,9 @@ import './style.css';
 import { SpreadsheetApp } from './app';
 import { UIControls } from './ui-controls';
 import { CollaborationEngine, CollaborationCallbacks } from './collaboration/collaboration-engine';
-import { CollabOperation } from './collaboration/types';
+import { CollabOperation, SheetAddOp, SheetDeleteOp, SheetRenameOp, SheetReorderOp, SheetDuplicateOp, SheetVisibilityOp, SheetTabColorOp } from './collaboration/types';
 import { SpreadsheetModel } from './model';
+import { SpreadsheetData } from './types';
 import { ConnectionStatus } from './collaboration/websocket-client';
 
 // ============================================================
@@ -113,55 +114,138 @@ const showCollabNotification = (message: string, type: 'join' | 'leave'): void =
 
 /**
  * 将协同操作应用到本地模型
+ * 根据操作的 sheetId 路由到对应工作表的 Model
+ * Sheet 级操作直接修改 SheetManager 状态
  */
 const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): void => {
+  // 获取 app 实例
+  const appInstance = (window as unknown as Record<string, unknown>).app as SpreadsheetApp | undefined;
+
+  // Sheet 级操作：直接修改 SheetManager 状态
+  if (appInstance && isSheetLevelOp(op)) {
+    applySheetOperation(op, appInstance);
+    return;
+  }
+
+  // 单元格级操作：根据 sheetId 路由到对应工作表的 Model
+  let targetModel = model;
+
+  if (op.sheetId && appInstance) {
+    const sheetModel = appInstance.getSheetManager().getModelBySheetId(op.sheetId);
+    if (sheetModel) {
+      targetModel = sheetModel;
+    }
+  }
+
   switch (op.type) {
     case 'cellEdit':
-      model.setCellContentNoHistory(op.row, op.col, op.content);
+      targetModel.setCellContentNoHistory(op.row, op.col, op.content);
       break;
     case 'cellMerge':
-      model.mergeCells(op.startRow, op.startCol, op.endRow, op.endCol);
+      targetModel.mergeCells(op.startRow, op.startCol, op.endRow, op.endCol);
       break;
     case 'cellSplit':
-      model.splitCell(op.row, op.col);
+      targetModel.splitCell(op.row, op.col);
       break;
     case 'rowInsert':
-      model.insertRows(op.rowIndex, op.count);
+      targetModel.insertRows(op.rowIndex, op.count);
       break;
     case 'rowDelete':
-      model.deleteRows(op.rowIndex, op.count);
+      targetModel.deleteRows(op.rowIndex, op.count);
       break;
     case 'rowResize':
-      model.setRowHeight(op.rowIndex, op.height);
+      targetModel.setRowHeight(op.rowIndex, op.height);
       break;
     case 'colResize':
-      model.setColWidth(op.colIndex, op.width);
+      targetModel.setColWidth(op.colIndex, op.width);
       break;
     case 'fontColor':
-      model.setCellFontColor(op.row, op.col, op.color);
+      targetModel.setCellFontColor(op.row, op.col, op.color);
       break;
     case 'bgColor':
-      model.setCellBgColor(op.row, op.col, op.color);
+      targetModel.setCellBgColor(op.row, op.col, op.color);
       break;
     case 'fontSize':
-      model.setCellFontSize(op.row, op.col, op.size);
+      targetModel.setCellFontSize(op.row, op.col, op.size);
       break;
     case 'fontBold':
-      model.setCellFontBold(op.row, op.col, op.bold);
+      targetModel.setCellFontBold(op.row, op.col, op.bold);
       break;
     case 'fontItalic':
-      model.setCellFontItalic(op.row, op.col, op.italic);
+      targetModel.setCellFontItalic(op.row, op.col, op.italic);
       break;
     case 'fontUnderline':
-      model.setCellFontUnderline(op.row, op.col, op.underline);
+      targetModel.setCellFontUnderline(op.row, op.col, op.underline);
       break;
     case 'fontAlign':
-      model.setCellFontAlign(op.row, op.col, op.align);
+      targetModel.setCellFontAlign(op.row, op.col, op.align);
       break;
     case 'verticalAlign':
-      model.setCellVerticalAlign(op.row, op.col, op.align);
+      targetModel.setCellVerticalAlign(op.row, op.col, op.align);
       break;
   }
+};
+
+/**
+ * 判断是否为 Sheet 级操作
+ */
+const isSheetLevelOp = (op: CollabOperation): boolean => {
+  return op.type.startsWith('sheet');
+};
+
+/**
+ * 将远程 Sheet 级操作应用到本地 SheetManager
+ * 更新本地状态并刷新 SheetTabBar
+ */
+const applySheetOperation = (op: CollabOperation, app: SpreadsheetApp): void => {
+  const sheetManager = app.getSheetManager();
+  const sheetTabBar = app.getSheetTabBar();
+
+  switch (op.type) {
+    case 'sheetAdd': {
+      const addOp = op as SheetAddOp;
+      // 远程新增工作表：使用 addSheet 但不触发切换
+      sheetManager.addSheetFromRemote(addOp.sheetId, addOp.sheetName, addOp.insertIndex);
+      break;
+    }
+    case 'sheetDelete': {
+      const deleteOp = op as SheetDeleteOp;
+      sheetManager.deleteSheetFromRemote(deleteOp.sheetId);
+      break;
+    }
+    case 'sheetRename': {
+      const renameOp = op as SheetRenameOp;
+      sheetManager.renameSheet(renameOp.sheetId, renameOp.newName);
+      break;
+    }
+    case 'sheetReorder': {
+      const reorderOp = op as SheetReorderOp;
+      sheetManager.reorderSheet(reorderOp.sheetId, reorderOp.newIndex);
+      break;
+    }
+    case 'sheetDuplicate': {
+      const dupOp = op as SheetDuplicateOp;
+      sheetManager.duplicateSheetFromRemote(dupOp.sourceSheetId, dupOp.newSheetId, dupOp.newSheetName);
+      break;
+    }
+    case 'sheetVisibility': {
+      const visOp = op as SheetVisibilityOp;
+      if (visOp.visible) {
+        sheetManager.showSheet(visOp.sheetId);
+      } else {
+        sheetManager.hideSheet(visOp.sheetId);
+      }
+      break;
+    }
+    case 'sheetTabColor': {
+      const colorOp = op as SheetTabColorOp;
+      sheetManager.setTabColor(colorOp.sheetId, colorOp.tabColor);
+      break;
+    }
+  }
+
+  // 刷新标签栏 UI
+  sheetTabBar.render();
 };
 
 // ============================================================
@@ -219,7 +303,22 @@ const initCollaboration = (app: SpreadsheetApp): void => {
     },
     onDocumentSync: (data) => {
       // 用服务器文档状态替换本地数据
-      model.loadFromData(data);
+      // 检测是否为 WorkbookData 格式（包含 version 和 sheets 字段）
+      const dataObj = data as unknown as Record<string, unknown>;
+      if (dataObj.version === '2.0' && Array.isArray(dataObj.sheets)) {
+        // WorkbookData 格式：通过 SheetManager 恢复所有工作表
+        const sheetManager = app.getSheetManager();
+        const success = sheetManager.deserializeWorkbook(JSON.stringify(data));
+        if (success) {
+          // 更新 app 的 model 引用为当前活动工作表
+          const activeModel = sheetManager.getActiveModel();
+          app.getRenderer().setModel(activeModel);
+          app.getSheetTabBar().render();
+        }
+      } else {
+        // 旧版单工作表格式
+        model.loadFromData(data as SpreadsheetData);
+      }
       app.resetAndRender();
       updateConnectionUI('connected');
       // 同步完成后更新在线用户数（+1 算上自己）

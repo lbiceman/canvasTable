@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { transform } from '../ot';
-import { CollabOperation, CellSplitOp, CellEditOp, CellMergeOp } from '../types';
+import { CollabOperation as _CollabOperation, CellSplitOp, CellEditOp, CellMergeOp } from '../types';
 
 describe('PBT - CellSplit OT 对称性', () => {
   it('CellSplit 和 CellEdit 转换不抛异常，类型保持不变', () => {

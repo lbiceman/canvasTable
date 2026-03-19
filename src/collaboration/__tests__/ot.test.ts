@@ -138,10 +138,6 @@ import {
   ColResizeOp,
   FontBoldOp,
   FontAlignOp,
-  FontSizeOp,
-  FontItalicOp,
-  FontUnderlineOp,
-  VerticalAlignOp,
 } from '../types';
 
 // 模拟 ModelReader

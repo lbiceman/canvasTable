@@ -114,7 +114,7 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
 
         // 发送当前文档状态给新加入的客户端
         ObjectNode statePayload = objectMapper.createObjectNode();
-        statePayload.set("document", objectMapper.valueToTree(room.getDocument()));
+        statePayload.set("workbook", objectMapper.valueToTree(room.getWorkbook()));
         statePayload.put("revision", roomManager.getRevision(roomId));
         statePayload.set("users", objectMapper.valueToTree(roomManager.getAllUsers(roomId)));
         sendMessage(session, "state", statePayload);
@@ -185,9 +185,9 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
 
         // 如果差距超过阈值，发送完整文档快照
         if (currentRevision - sinceRevision > SYNC_SNAPSHOT_THRESHOLD) {
-            SpreadsheetData document = roomManager.getDocument(roomId);
+            WorkbookData workbook = roomManager.getWorkbook(roomId);
             ObjectNode statePayload = objectMapper.createObjectNode();
-            statePayload.set("document", objectMapper.valueToTree(document));
+            statePayload.set("workbook", objectMapper.valueToTree(workbook));
             statePayload.put("revision", currentRevision);
             statePayload.set("users", objectMapper.valueToTree(roomManager.getAllUsers(roomId)));
             sendMessage(session, "state", statePayload);

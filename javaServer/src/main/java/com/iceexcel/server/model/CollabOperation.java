@@ -33,13 +33,22 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = ChartCreateOp.class, name = "chartCreate"),
         @JsonSubTypes.Type(value = ChartUpdateOp.class, name = "chartUpdate"),
         @JsonSubTypes.Type(value = ChartDeleteOp.class, name = "chartDelete"),
-        @JsonSubTypes.Type(value = SetSparklineOp.class, name = "setSparkline")
+        @JsonSubTypes.Type(value = SetSparklineOp.class, name = "setSparkline"),
+        @JsonSubTypes.Type(value = SheetAddOp.class, name = "sheetAdd"),
+        @JsonSubTypes.Type(value = SheetDeleteOp.class, name = "sheetDelete"),
+        @JsonSubTypes.Type(value = SheetRenameOp.class, name = "sheetRename"),
+        @JsonSubTypes.Type(value = SheetReorderOp.class, name = "sheetReorder"),
+        @JsonSubTypes.Type(value = SheetDuplicateOp.class, name = "sheetDuplicate"),
+        @JsonSubTypes.Type(value = SheetVisibilityOp.class, name = "sheetVisibility"),
+        @JsonSubTypes.Type(value = SheetTabColorOp.class, name = "sheetTabColor")
 })
 public abstract class CollabOperation {
 
     private String userId;
     private long timestamp;
     private int revision;
+    /** 操作所属的工作表 ID（Sheet 级操作可为 null） */
+    private String sheetId;
 
     public CollabOperation() {
     }
@@ -77,5 +86,13 @@ public abstract class CollabOperation {
 
     public void setRevision(int revision) {
         this.revision = revision;
+    }
+
+    public String getSheetId() {
+        return sheetId;
+    }
+
+    public void setSheetId(String sheetId) {
+        this.sheetId = sheetId;
     }
 }

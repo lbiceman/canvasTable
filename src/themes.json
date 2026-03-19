@@ -26,7 +26,13 @@
       "buttonBackground": "#ffffff",
       "buttonText": "#333333",
       "buttonBorder": "#666666",
-      "buttonHoverBackground": "#f5f5f5"
+      "buttonHoverBackground": "#f5f5f5",
+      "sheetTabBackground": "#f0f0f0",
+      "sheetTabActiveBackground": "#ffffff",
+      "sheetTabText": "#333333",
+      "sheetTabActiveText": "#000000",
+      "sheetTabBorder": "#d0d0d0",
+      "sheetTabHoverBackground": "#e8e8e8"
     }
   },
   "dark": {
@@ -56,7 +62,13 @@
       "buttonBackground": "#2d2d2d",
       "buttonText": "#fff",
       "buttonBorder": "#888",
-      "buttonHoverBackground": "#444"
+      "buttonHoverBackground": "#444",
+      "sheetTabBackground": "#2d2d2d",
+      "sheetTabActiveBackground": "#1e1e1e",
+      "sheetTabText": "#999999",
+      "sheetTabActiveText": "#e0e0e0",
+      "sheetTabBorder": "#3d3d3d",
+      "sheetTabHoverBackground": "#3a3a3a"
     }
   }
 }

@@ -10,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Room {
 
     private String roomId;
-    private SpreadsheetData document;
+    private WorkbookData workbook;
     private List<CollabOperation> operations;
     private int revision;
     private ConcurrentHashMap<String, ClientConnection> clients;
@@ -21,9 +21,9 @@ public class Room {
         this.clients = new ConcurrentHashMap<>();
     }
 
-    public Room(String roomId, SpreadsheetData document) {
+    public Room(String roomId, WorkbookData workbook) {
         this.roomId = roomId;
-        this.document = document;
+        this.workbook = workbook;
         this.operations = new ArrayList<>();
         this.revision = 0;
         this.clients = new ConcurrentHashMap<>();
@@ -32,8 +32,8 @@ public class Room {
     public String getRoomId() { return roomId; }
     public void setRoomId(String roomId) { this.roomId = roomId; }
 
-    public SpreadsheetData getDocument() { return document; }
-    public void setDocument(SpreadsheetData document) { this.document = document; }
+    public WorkbookData getWorkbook() { return workbook; }
+    public void setWorkbook(WorkbookData workbook) { this.workbook = workbook; }
 
     public List<CollabOperation> getOperations() { return operations; }
     public void setOperations(List<CollabOperation> operations) { this.operations = operations; }

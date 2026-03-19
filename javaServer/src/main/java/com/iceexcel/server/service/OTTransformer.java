@@ -1064,6 +1064,48 @@ public class OTTransformer {
      * 对两个操作执行单向转换：将 opA 相对于 opB 进行转换
      */
     private static CollabOperation transformSingle(CollabOperation opA, CollabOperation opB) {
+        // Sheet 级操作的 OT 转换规则
+        // 不同 sheetId 的操作之间无需转换（天然隔离）
+        if (opA.getSheetId() != null && opB.getSheetId() != null
+                && !opA.getSheetId().equals(opB.getSheetId())) {
+            return cloneOp(opA);
+        }
+
+        // SheetDeleteOp 消除同 Sheet 的所有后续操作
+        if (opB instanceof SheetDeleteOp) {
+            String deletedId = ((SheetDeleteOp) opB).getSheetId();
+            if (deletedId != null && deletedId.equals(opA.getSheetId())) {
+                return null; // 操作被消除
+            }
+            return cloneOp(opA);
+        }
+
+        // Sheet 级操作之间：同 Sheet 的 SheetRenameOp 后者覆盖前者
+        if (opA instanceof SheetRenameOp && opB instanceof SheetRenameOp) {
+            SheetRenameOp renameA = (SheetRenameOp) opA;
+            SheetRenameOp renameB = (SheetRenameOp) opB;
+            if (renameA.getSheetId() != null && renameA.getSheetId().equals(renameB.getSheetId())) {
+                // 后者覆盖前者：更新 opA 的 oldName 为 opB 的 newName
+                SheetRenameOp result = cloneOp(renameA);
+                result.setOldName(renameB.getNewName());
+                return result;
+            }
+            return cloneOp(opA);
+        }
+
+        // 其他 Sheet 级操作之间无冲突
+        if (opA instanceof SheetAddOp || opA instanceof SheetDeleteOp
+                || opA instanceof SheetRenameOp || opA instanceof SheetReorderOp
+                || opA instanceof SheetDuplicateOp || opA instanceof SheetVisibilityOp
+                || opA instanceof SheetTabColorOp) {
+            return cloneOp(opA);
+        }
+        if (opB instanceof SheetAddOp || opB instanceof SheetRenameOp
+                || opB instanceof SheetReorderOp || opB instanceof SheetDuplicateOp
+                || opB instanceof SheetVisibilityOp || opB instanceof SheetTabColorOp) {
+            return cloneOp(opA);
+        }
+
         // opB 是 colInsert
         if (opB instanceof ColInsertOp) {
             ColInsertOp insertOp = (ColInsertOp) opB;
