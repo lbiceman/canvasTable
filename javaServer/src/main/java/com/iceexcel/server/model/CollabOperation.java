@@ -29,7 +29,11 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = SetFormatOp.class, name = "setFormat"),
         @JsonSubTypes.Type(value = SetWrapTextOp.class, name = "setWrapText"),
         @JsonSubTypes.Type(value = SetRichTextOp.class, name = "setRichText"),
-        @JsonSubTypes.Type(value = SetValidationOp.class, name = "setValidation")
+        @JsonSubTypes.Type(value = SetValidationOp.class, name = "setValidation"),
+        @JsonSubTypes.Type(value = ChartCreateOp.class, name = "chartCreate"),
+        @JsonSubTypes.Type(value = ChartUpdateOp.class, name = "chartUpdate"),
+        @JsonSubTypes.Type(value = ChartDeleteOp.class, name = "chartDelete"),
+        @JsonSubTypes.Type(value = SetSparklineOp.class, name = "setSparkline")
 })
 public abstract class CollabOperation {
 

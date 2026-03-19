@@ -3,6 +3,10 @@ import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, Data
 import { CursorAwareness } from './collaboration/cursor-awareness';
 import { NumberFormatter, DateFormatter } from './format-engine';
 import { ConditionalFormatEngine } from './conditional-format';
+import { SparklineRenderer } from './chart/sparkline-renderer';
+import type { ThemeColors } from './chart/types';
+import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
+import type { ChartOverlay } from './chart/chart-overlay';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -21,6 +25,9 @@ export class SpreadsheetRenderer {
 
   // 光标感知模块（协同编辑时设置）
   private cursorAwareness: CursorAwareness | null = null;
+
+  // 图表浮动层（图表模块初始化后设置）
+  private chartOverlay: ChartOverlay | null = null;
 
   // 主题颜色
   private themeColors: {
@@ -113,6 +120,11 @@ export class SpreadsheetRenderer {
   // 设置光标感知模块
   public setCursorAwareness(cursorAwareness: CursorAwareness | null): void {
     this.cursorAwareness = cursorAwareness;
+  }
+
+  // 设置图表浮动层
+  public setChartOverlay(chartOverlay: ChartOverlay | null): void {
+    this.chartOverlay = chartOverlay;
   }
 
   // 滚动到指定位置
@@ -249,6 +261,17 @@ export class SpreadsheetRenderer {
     // 绘制远程用户光标（协同编辑）
     if (this.cursorAwareness) {
       this.cursorAwareness.renderCursors(this.ctx, this.viewport, this.model, this.config);
+    }
+
+    // 绘制图表浮动层（在选区之后、行列标题之前）
+    if (this.chartOverlay) {
+      const { headerWidth, headerHeight } = this.config;
+      this.chartOverlay.renderAll(
+        this.ctx,
+        this.viewport,
+        this.viewport.scrollX - headerWidth,
+        this.viewport.scrollY - headerHeight
+      );
     }
 
     // 绘制行标题（在单元格之上）
@@ -987,6 +1010,22 @@ export class SpreadsheetRenderer {
             this.renderDropdownArrow(currentX, currentY, totalWidth, totalHeight);
           }
 
+          // 【迷你图】检查单元格是否有 sparkline 配置，有则绘制迷你图
+          if (cellInfo.sparkline) {
+            const sparklineData = this.resolveSparklineData(cellInfo.sparkline.dataRange);
+            if (sparklineData.length > 0) {
+              const sparklineTheme = this.getSparklineThemeColors();
+              SparklineRenderer.render(
+                this.ctx,
+                cellInfo.sparkline,
+                sparklineData,
+                currentX, currentY,
+                totalWidth, totalHeight,
+                sparklineTheme
+              );
+            }
+          }
+
           this.ctx.restore();
         }
 
@@ -1040,6 +1079,48 @@ export class SpreadsheetRenderer {
     }
 
     return { dataBar, icon };
+  }
+
+  /**
+   * 从模型中读取迷你图数据范围内的数值
+   * 遍历 dataRange 内的所有单元格，提取数值数据
+   */
+  private resolveSparklineData(dataRange: { startRow: number; startCol: number; endRow: number; endCol: number }): number[] {
+    const data: number[] = [];
+    const { startRow, startCol, endRow, endCol } = dataRange;
+
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        const cell = this.model.getCell(r, c);
+        if (cell) {
+          // 优先使用 rawValue，否则尝试解析 content
+          if (cell.rawValue !== undefined) {
+            data.push(cell.rawValue);
+          } else {
+            const num = parseFloat(cell.content);
+            if (!isNaN(num)) {
+              data.push(num);
+            }
+          }
+        }
+      }
+    }
+
+    return data;
+  }
+
+  /**
+   * 获取迷你图使用的主题颜色配置
+   * 从当前渲染器主题颜色构建 ThemeColors 对象
+   */
+  private getSparklineThemeColors(): ThemeColors {
+    const isDark = this.themeColors.background !== '#ffffff';
+    return {
+      background: this.themeColors.background,
+      foreground: this.themeColors.foreground,
+      gridLine: this.themeColors.gridLine,
+      chartColors: isDark ? CHART_COLORS_DARK : CHART_COLORS_LIGHT,
+    };
   }
 
   /**

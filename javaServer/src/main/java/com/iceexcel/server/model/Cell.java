@@ -32,6 +32,9 @@ public class Cell {
     private List<RichTextSegment> richText;
     private ValidationRule validation;
 
+    // === 迷你图配置字段 ===
+    private SparklineConfigData sparkline;
+
     public Cell() {
         this.content = "";
         this.rowSpan = 1;
@@ -201,6 +204,14 @@ public class Cell {
         this.validation = validation;
     }
 
+    public SparklineConfigData getSparkline() {
+        return sparkline;
+    }
+
+    public void setSparkline(SparklineConfigData sparkline) {
+        this.sparkline = sparkline;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -224,13 +235,14 @@ public class Cell {
                 && java.util.Objects.equals(wrapText, cell.wrapText)
                 && java.util.Objects.equals(format, cell.format)
                 && java.util.Objects.equals(richText, cell.richText)
-                && java.util.Objects.equals(validation, cell.validation);
+                && java.util.Objects.equals(validation, cell.validation)
+                && java.util.Objects.equals(sparkline, cell.sparkline);
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(content, rowSpan, colSpan, isMerged, mergeParent,
                 fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign,
-                dataType, rawValue, wrapText, format, richText, validation);
+                dataType, rawValue, wrapText, format, richText, validation, sparkline);
     }
 }

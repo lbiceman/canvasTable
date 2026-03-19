@@ -1,10 +1,11 @@
-import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule } from './types';
+import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule, SparklineConfig } from './types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
 import { DataTypeDetector } from './type-detector';
 import { NumberFormatter, DateFormatter } from './format-engine';
 import { ValidationEngine } from './validation';
 import { ConditionalFormatEngine } from './conditional-format';
+import { ChartModel } from './chart/chart-model';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -32,12 +33,18 @@ export class SpreadsheetModel {
   private conditionalFormats: ConditionalFormatRule[] = []; // 条件格式规则列表
   private conditionalFormatEngine: ConditionalFormatEngine; // 条件格式引擎
 
+  // 图表数据模型
+  public readonly chartModel: ChartModel;
+
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
     this.historyManager = new HistoryManager();
 
     // 初始化条件格式引擎
     this.conditionalFormatEngine = new ConditionalFormatEngine();
+
+    // 初始化图表数据模型
+    this.chartModel = new ChartModel(this);
 
     // 初始化公式引擎
     this.formulaEngine = FormulaEngine.getInstance();
@@ -106,6 +113,9 @@ export class SpreadsheetModel {
       cell.content = result.value.toString();
 
       this.notifyFormulaChange(row, col, result.value.toString());
+
+      // 公式重算完成后通知图表更新
+      this.notifyChartDataChange(row, col);
     }
 
     const dependents = this.formulaEngine.getDependents(row, col);
@@ -156,6 +166,22 @@ export class SpreadsheetModel {
   private notifyFormulaError(error: string): void {
     for (const callback of this.formulaErrorCallbacks) {
       callback(error);
+    }
+  }
+
+  /**
+   * 通知图表模型：指定单元格数据已变更
+   *
+   * 遍历所有图表，检查变更的单元格是否在图表数据范围内，
+   * 如果是则更新图表状态。
+   */
+  private notifyChartDataChange(row: number, col: number): void {
+    const allCharts = this.chartModel.getAllCharts();
+    for (const chart of allCharts) {
+      const { startRow, startCol, endRow, endCol } = chart.dataRange;
+      if (row >= startRow && row <= endRow && col >= startCol && col <= endCol) {
+        this.chartModel.checkChartStatus(chart.id);
+      }
     }
   }
 
@@ -330,16 +356,22 @@ export class SpreadsheetModel {
         this.contentCache[cacheKey] = content;
       }
 
-      // 自动类型检测：仅在未手动设置格式时执行
+      // 自动类型检测：始终重新检测以更新 rawValue
+      // 自动类型检测：未手动设置格式时重新检测
       const detectCell = (cell.isMerged && cell.mergeParent)
         ? this.data.cells[targetRow][targetCol]
         : cell;
-      if (!detectCell.format) {
+      if (!detectCell.format || detectCell.isAutoFormat) {
         const detection = DataTypeDetector.detect(content);
         detectCell.dataType = detection.dataType;
         detectCell.rawValue = detection.rawValue;
         if (detection.format) {
           detectCell.format = detection.format;
+          detectCell.isAutoFormat = true;
+        } else {
+          // 内容不再是可格式化的类型，清除自动格式
+          detectCell.format = undefined;
+          detectCell.isAutoFormat = undefined;
         }
       }
 
@@ -351,6 +383,9 @@ export class SpreadsheetModel {
 
     this.isDirty = true;
     this.clearCacheIfNeeded();
+
+    // 通知图表模型：单元格数据已变更，检查受影响的图表状态
+    this.notifyChartDataChange(targetRow, targetCol);
 
     return { success: true, validationResult: warningResult };
   }
@@ -1367,6 +1402,9 @@ export class SpreadsheetModel {
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterInsertRows(rowIndex, count);
 
+    // 通知图表模型调整数据范围
+    this.chartModel.adjustDataRanges('rowInsert', rowIndex, count);
+
     this.clearAllCache();
     this.isDirty = true;
     return true;
@@ -1393,6 +1431,9 @@ export class SpreadsheetModel {
 
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterDeleteRows(rowIndex, actualCount);
+
+    // 通知图表模型调整数据范围
+    this.chartModel.adjustDataRanges('rowDelete', rowIndex, actualCount);
 
     this.clearAllCache();
     this.isDirty = true;
@@ -1432,6 +1473,9 @@ export class SpreadsheetModel {
 
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterInsertCols(colIndex, count);
+
+    // 通知图表模型调整数据范围
+    this.chartModel.adjustDataRanges('colInsert', colIndex, count);
 
     this.clearAllCache();
     this.isDirty = true;
@@ -1489,6 +1533,9 @@ export class SpreadsheetModel {
 
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterDeleteCols(colIndex, actualCount);
+
+    // 通知图表模型调整数据范围
+    this.chartModel.adjustDataRanges('colDelete', colIndex, actualCount);
 
     this.clearAllCache();
     this.isDirty = true;
@@ -1745,6 +1792,7 @@ export class SpreadsheetModel {
     wrapText?: boolean;
     richText?: RichTextSegment[];
     validation?: ValidationRule;
+    sparkline?: SparklineConfig;
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -1776,6 +1824,7 @@ export class SpreadsheetModel {
         wrapText: parentCell.wrapText,
         richText: parentCell.richText,
         validation: parentCell.validation,
+        sparkline: parentCell.sparkline,
       };
     }
 
@@ -1800,6 +1849,7 @@ export class SpreadsheetModel {
       wrapText: cell.wrapText,
       richText: cell.richText,
       validation: cell.validation,
+      sparkline: cell.sparkline,
     };
   }
 
@@ -1980,7 +2030,9 @@ export class SpreadsheetModel {
         rowHeights: customRowHeights,
         colWidths: customColWidths,
         // 序列化条件格式规则（仅在有规则时包含）
-        ...(this.conditionalFormats.length > 0 ? { conditionalFormats: this.conditionalFormats } : {})
+        ...(this.conditionalFormats.length > 0 ? { conditionalFormats: this.conditionalFormats } : {}),
+        // 序列化图表配置（仅在有图表时包含）
+        ...(this.chartModel.getAllCharts().length > 0 ? { charts: this.chartModel.serialize() } : {})
       }
     };
 
@@ -2097,6 +2149,11 @@ export class SpreadsheetModel {
 
       if (!data.cells || !Array.isArray(data.cells)) {
         warnings.push('数据中没有单元格数组 (cells)');
+      }
+
+      // 验证 charts 字段：如果存在但不是数组，记录警告
+      if (data.charts !== undefined && !Array.isArray(data.charts)) {
+        warnings.push('charts 字段格式无效（应为数组），将忽略图表数据');
       }
 
     } catch (error) {
@@ -2312,6 +2369,14 @@ export class SpreadsheetModel {
       this.conditionalFormatEngine = new ConditionalFormatEngine();
       for (const rule of this.conditionalFormats) {
         this.conditionalFormatEngine.addRule(rule);
+      }
+
+      // 反序列化图表配置（旧格式文件无此字段，跳过）
+      if (Array.isArray(data.charts)) {
+        this.chartModel.deserialize(data.charts as unknown[]);
+      } else if (data.charts !== undefined) {
+        // charts 字段存在但不是数组，忽略并警告
+        console.warn('导入数据中 charts 字段格式无效（非数组），已忽略图表数据');
       }
 
       // 重新计算所有公式
@@ -3058,6 +3123,7 @@ export class SpreadsheetModel {
       });
 
       targetCell.format = format;
+      targetCell.isAutoFormat = undefined;
       this.reformatCellContent(targetCell, format);
     } else {
       const oldFormat = cell.format ? { ...cell.format } : undefined;
@@ -3072,6 +3138,7 @@ export class SpreadsheetModel {
       });
 
       cell.format = format;
+      cell.isAutoFormat = undefined;
       this.reformatCellContent(cell, format);
     }
 
@@ -3146,6 +3213,7 @@ export class SpreadsheetModel {
           if (!processedCells.has(key)) {
             const targetCell = this.data.cells[parentRow][parentCol];
             targetCell.format = format;
+            targetCell.isAutoFormat = undefined;
             this.reformatCellContent(targetCell, format);
             processedCells.add(key);
           }
@@ -3153,6 +3221,7 @@ export class SpreadsheetModel {
           const key = `${i}-${j}`;
           if (!processedCells.has(key)) {
             cell.format = format;
+            cell.isAutoFormat = undefined;
             this.reformatCellContent(cell, format);
             processedCells.add(key);
           }
@@ -3183,6 +3252,7 @@ export class SpreadsheetModel {
       targetCell.content = String(targetCell.rawValue);
     }
     targetCell.format = undefined;
+    targetCell.isAutoFormat = undefined;
     targetCell.dataType = undefined;
     targetCell.rawValue = undefined;
 
@@ -3215,6 +3285,7 @@ export class SpreadsheetModel {
               targetCell.content = String(targetCell.rawValue);
             }
             targetCell.format = undefined;
+            targetCell.isAutoFormat = undefined;
             targetCell.dataType = undefined;
             targetCell.rawValue = undefined;
             processedCells.add(key);
@@ -3226,6 +3297,7 @@ export class SpreadsheetModel {
               cell.content = String(cell.rawValue);
             }
             cell.format = undefined;
+            cell.isAutoFormat = undefined;
             cell.dataType = undefined;
             cell.rawValue = undefined;
             processedCells.add(key);

@@ -66,6 +66,14 @@ public class DocumentApplier {
             applySetRichText(cells, (SetRichTextOp) op);
         } else if (op instanceof SetValidationOp) {
             applySetValidation(cells, (SetValidationOp) op);
+        } else if (op instanceof ChartCreateOp) {
+            applyChartCreate(document, (ChartCreateOp) op);
+        } else if (op instanceof ChartUpdateOp) {
+            applyChartUpdate(document, (ChartUpdateOp) op);
+        } else if (op instanceof ChartDeleteOp) {
+            applyChartDelete(document, (ChartDeleteOp) op);
+        } else if (op instanceof SetSparklineOp) {
+            applySetSparkline(document, (SetSparklineOp) op);
         }
     }
 
@@ -295,5 +303,74 @@ public class DocumentApplier {
         if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
             cells.get(op.getRow()).get(op.getCol()).setValidation(op.getValidation());
         }
+    }
+
+    // ============================================================
+    // 图表操作应用逻辑
+    // ============================================================
+
+    /**
+     * 应用图表创建操作：将图表配置添加到 charts 列表
+     */
+    private static void applyChartCreate(SpreadsheetData data, ChartCreateOp op) {
+        List<ChartConfigData> charts = data.getCharts();
+        if (charts == null) {
+            charts = new ArrayList<>();
+            data.setCharts(charts);
+        }
+        charts.add(op.getChartConfig());
+    }
+
+    /**
+     * 应用图表更新操作：根据 chartId 查找并替换配置
+     */
+    private static void applyChartUpdate(SpreadsheetData data, ChartUpdateOp op) {
+        List<ChartConfigData> charts = data.getCharts();
+        if (charts == null || charts.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < charts.size(); i++) {
+            if (op.getChartId().equals(charts.get(i).getId())) {
+                charts.set(i, op.getChartConfig());
+                return;
+            }
+        }
+    }
+
+    /**
+     * 应用图表删除操作：根据 chartId 从列表中移除
+     */
+    private static void applyChartDelete(SpreadsheetData data, ChartDeleteOp op) {
+        List<ChartConfigData> charts = data.getCharts();
+        if (charts == null || charts.isEmpty()) {
+            return;
+        }
+        charts.removeIf(chart -> op.getChartId().equals(chart.getId()));
+    }
+
+    /**
+     * 应用设置迷你图操作：设置目标单元格的 sparkline 字段
+     */
+    private static void applySetSparkline(SpreadsheetData data, SetSparklineOp op) {
+        List<List<Cell>> cells = data.getCells();
+        if (cells.isEmpty()) {
+            return;
+        }
+        // 确保行存在，必要时扩展行
+        while (cells.size() <= op.getRow()) {
+            int colCount = cells.isEmpty() ? DEFAULT_COLS : cells.get(0).size();
+            List<Cell> newRow = new ArrayList<>(colCount);
+            for (int c = 0; c < colCount; c++) {
+                newRow.add(new Cell());
+            }
+            cells.add(newRow);
+        }
+        // 确保列存在，必要时扩展列
+        List<Cell> row = cells.get(op.getRow());
+        while (row.size() <= op.getCol()) {
+            row.add(new Cell());
+        }
+        // 设置或清除迷你图
+        row.get(op.getCol()).setSparkline(op.getSparkline());
     }
 }

@@ -800,6 +800,263 @@ public class OTTransformer {
     }
 
     // ============================================================
+    // DataRange 调整辅助方法（用于图表和迷你图操作）
+    // ============================================================
+
+    /**
+     * 根据行插入操作调整 DataRange 的行索引
+     */
+    private static DataRange adjustDataRangeForRowInsert(DataRange range, int rowIndex, int count) {
+        if (range == null) return null;
+        int startRow = range.getStartRow();
+        int endRow = range.getEndRow();
+        if (rowIndex <= startRow) {
+            // 插入点在范围之前或起始位置，整体下移
+            startRow += count;
+            endRow += count;
+        } else if (rowIndex <= endRow) {
+            // 插入点在范围内部，扩展 endRow
+            endRow += count;
+        }
+        // 插入点在范围之后，不变
+        return new DataRange(startRow, range.getStartCol(), endRow, range.getEndCol());
+    }
+
+    /**
+     * 根据行删除操作调整 DataRange 的行索引
+     */
+    private static DataRange adjustDataRangeForRowDelete(DataRange range, int rowIndex, int count) {
+        if (range == null) return null;
+        int startRow = range.getStartRow();
+        int endRow = range.getEndRow();
+        int delEnd = rowIndex + count;
+        if (rowIndex <= startRow) {
+            // 删除点在范围之前或起始位置，整体上移
+            startRow = Math.max(rowIndex, startRow - count);
+            endRow = Math.max(startRow, endRow - count);
+        } else if (rowIndex <= endRow) {
+            // 删除点在范围内部，收缩 endRow
+            endRow = Math.max(startRow, endRow - Math.min(count, endRow - rowIndex + 1));
+        }
+        // 删除点在范围之后，不变
+        return new DataRange(startRow, range.getStartCol(), endRow, range.getEndCol());
+    }
+
+    /**
+     * 根据列插入操作调整 DataRange 的列索引
+     */
+    private static DataRange adjustDataRangeForColInsert(DataRange range, int colIndex, int count) {
+        if (range == null) return null;
+        int startCol = range.getStartCol();
+        int endCol = range.getEndCol();
+        if (colIndex <= startCol) {
+            // 插入点在范围之前或起始位置，整体右移
+            startCol += count;
+            endCol += count;
+        } else if (colIndex <= endCol) {
+            // 插入点在范围内部，扩展 endCol
+            endCol += count;
+        }
+        // 插入点在范围之后，不变
+        return new DataRange(range.getStartRow(), startCol, range.getEndRow(), endCol);
+    }
+
+    /**
+     * 根据列删除操作调整 DataRange 的列索引
+     */
+    private static DataRange adjustDataRangeForColDelete(DataRange range, int colIndex, int count) {
+        if (range == null) return null;
+        int startCol = range.getStartCol();
+        int endCol = range.getEndCol();
+        int delEnd = colIndex + count;
+        if (colIndex <= startCol) {
+            // 删除点在范围之前或起始位置，整体左移
+            startCol = Math.max(colIndex, startCol - count);
+            endCol = Math.max(startCol, endCol - count);
+        } else if (colIndex <= endCol) {
+            // 删除点在范围内部，收缩 endCol
+            endCol = Math.max(startCol, endCol - Math.min(count, endCol - colIndex + 1));
+        }
+        // 删除点在范围之后，不变
+        return new DataRange(range.getStartRow(), startCol, range.getEndRow(), endCol);
+    }
+
+    /**
+     * 克隆 ChartConfigData 并替换 dataRange
+     */
+    private static ChartConfigData cloneChartConfigWithDataRange(ChartConfigData config, DataRange newRange) {
+        ChartConfigData cloned = new ChartConfigData(
+            config.getId(), config.getType(), newRange,
+            config.getPosition(), config.getSize(),
+            config.getTitle(), config.getLegend(),
+            config.getAxes(), config.getDataLabels()
+        );
+        return cloned;
+    }
+
+    // ============================================================
+    // ChartCreateOp 的 OT 变换
+    // ============================================================
+
+    private static ChartCreateOp transformChartCreateVsRowInsert(ChartCreateOp op, RowInsertOp insertOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForRowInsert(config.getDataRange(), insertOp.getRowIndex(), insertOp.getCount());
+        ChartCreateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartCreateOp transformChartCreateVsRowDelete(ChartCreateOp op, RowDeleteOp deleteOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForRowDelete(config.getDataRange(), deleteOp.getRowIndex(), deleteOp.getCount());
+        ChartCreateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartCreateOp transformChartCreateVsColInsert(ChartCreateOp op, ColInsertOp insertOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForColInsert(config.getDataRange(), insertOp.getColIndex(), insertOp.getCount());
+        ChartCreateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartCreateOp transformChartCreateVsColDelete(ChartCreateOp op, ColDeleteOp deleteOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForColDelete(config.getDataRange(), deleteOp.getColIndex(), deleteOp.getCount());
+        ChartCreateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    /**
+     * ChartCreateOp vs ChartDeleteOp：同 chartId 时取消创建
+     */
+    private static CollabOperation transformChartCreateVsChartDelete(ChartCreateOp createOp, ChartDeleteOp deleteOp) {
+        if (createOp.getChartConfig() != null
+                && createOp.getChartConfig().getId() != null
+                && createOp.getChartConfig().getId().equals(deleteOp.getChartId())) {
+            return null; // 取消创建
+        }
+        return cloneOp(createOp);
+    }
+
+    // ============================================================
+    // ChartUpdateOp 的 OT 变换
+    // ============================================================
+
+    private static ChartUpdateOp transformChartUpdateVsRowInsert(ChartUpdateOp op, RowInsertOp insertOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForRowInsert(config.getDataRange(), insertOp.getRowIndex(), insertOp.getCount());
+        ChartUpdateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartUpdateOp transformChartUpdateVsRowDelete(ChartUpdateOp op, RowDeleteOp deleteOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForRowDelete(config.getDataRange(), deleteOp.getRowIndex(), deleteOp.getCount());
+        ChartUpdateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartUpdateOp transformChartUpdateVsColInsert(ChartUpdateOp op, ColInsertOp insertOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForColInsert(config.getDataRange(), insertOp.getColIndex(), insertOp.getCount());
+        ChartUpdateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    private static ChartUpdateOp transformChartUpdateVsColDelete(ChartUpdateOp op, ColDeleteOp deleteOp) {
+        ChartConfigData config = op.getChartConfig();
+        if (config == null || config.getDataRange() == null) return cloneOp(op);
+        DataRange adjusted = adjustDataRangeForColDelete(config.getDataRange(), deleteOp.getColIndex(), deleteOp.getCount());
+        ChartUpdateOp result = cloneOp(op);
+        result.setChartConfig(cloneChartConfigWithDataRange(config, adjusted));
+        return result;
+    }
+
+    /**
+     * ChartUpdateOp vs ChartDeleteOp：同 chartId 时取消更新
+     */
+    private static CollabOperation transformChartUpdateVsChartDelete(ChartUpdateOp updateOp, ChartDeleteOp deleteOp) {
+        if (updateOp.getChartId() != null && updateOp.getChartId().equals(deleteOp.getChartId())) {
+            return null; // 取消更新
+        }
+        return cloneOp(updateOp);
+    }
+
+    // ============================================================
+    // SetSparklineOp 的 OT 变换
+    // ============================================================
+
+    private static SetSparklineOp transformSetSparklineVsRowInsert(SetSparklineOp op, RowInsertOp insertOp) {
+        SetSparklineOp result = cloneOp(op);
+        // 调整 row 索引（与 CellEditOp 相同逻辑）
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        // 调整 sparkline.dataRange 的行索引
+        if (op.getSparkline() != null && op.getSparkline().getDataRange() != null) {
+            SparklineConfigData sparkline = result.getSparkline();
+            DataRange adjusted = adjustDataRangeForRowInsert(sparkline.getDataRange(), insertOp.getRowIndex(), insertOp.getCount());
+            sparkline.setDataRange(adjusted);
+        }
+        return result;
+    }
+
+    private static CollabOperation transformSetSparklineVsRowDelete(SetSparklineOp op, RowDeleteOp deleteOp) {
+        // 调整 row 索引，如果行被删除则取消操作
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetSparklineOp result = cloneOp(op);
+        result.setRow(newRow);
+        // 调整 sparkline.dataRange 的行索引
+        if (op.getSparkline() != null && op.getSparkline().getDataRange() != null) {
+            SparklineConfigData sparkline = result.getSparkline();
+            DataRange adjusted = adjustDataRangeForRowDelete(sparkline.getDataRange(), deleteOp.getRowIndex(), deleteOp.getCount());
+            sparkline.setDataRange(adjusted);
+        }
+        return result;
+    }
+
+    private static SetSparklineOp transformSetSparklineVsColInsert(SetSparklineOp op, ColInsertOp insertOp) {
+        SetSparklineOp result = cloneOp(op);
+        // 调整 col 索引
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        // 调整 sparkline.dataRange 的列索引
+        if (op.getSparkline() != null && op.getSparkline().getDataRange() != null) {
+            SparklineConfigData sparkline = result.getSparkline();
+            DataRange adjusted = adjustDataRangeForColInsert(sparkline.getDataRange(), insertOp.getColIndex(), insertOp.getCount());
+            sparkline.setDataRange(adjusted);
+        }
+        return result;
+    }
+
+    private static CollabOperation transformSetSparklineVsColDelete(SetSparklineOp op, ColDeleteOp deleteOp) {
+        // 调整 col 索引，如果列被删除则取消操作
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetSparklineOp result = cloneOp(op);
+        result.setCol(newCol);
+        // 调整 sparkline.dataRange 的列索引
+        if (op.getSparkline() != null && op.getSparkline().getDataRange() != null) {
+            SparklineConfigData sparkline = result.getSparkline();
+            DataRange adjusted = adjustDataRangeForColDelete(sparkline.getDataRange(), deleteOp.getColIndex(), deleteOp.getCount());
+            sparkline.setDataRange(adjusted);
+        }
+        return result;
+    }
+
+    // ============================================================
     // 核心 transformSingle 函数
     // ============================================================
 
@@ -831,6 +1088,11 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColInsert((SetWrapTextOp) opA, insertOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsColInsert((SetRichTextOp) opA, insertOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsColInsert((SetValidationOp) opA, insertOp);
+            // 图表操作 vs ColInsert
+            if (opA instanceof ChartCreateOp) return transformChartCreateVsColInsert((ChartCreateOp) opA, insertOp);
+            if (opA instanceof ChartUpdateOp) return transformChartUpdateVsColInsert((ChartUpdateOp) opA, insertOp);
+            if (opA instanceof ChartDeleteOp) return cloneOp(opA); // 删除操作不受影响
+            if (opA instanceof SetSparklineOp) return transformSetSparklineVsColInsert((SetSparklineOp) opA, insertOp);
         }
 
         // opB 是 colDelete
@@ -857,6 +1119,11 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColDelete((SetWrapTextOp) opA, deleteOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsColDelete((SetRichTextOp) opA, deleteOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsColDelete((SetValidationOp) opA, deleteOp);
+            // 图表操作 vs ColDelete
+            if (opA instanceof ChartCreateOp) return transformChartCreateVsColDelete((ChartCreateOp) opA, deleteOp);
+            if (opA instanceof ChartUpdateOp) return transformChartUpdateVsColDelete((ChartUpdateOp) opA, deleteOp);
+            if (opA instanceof ChartDeleteOp) return cloneOp(opA); // 删除操作不受影响
+            if (opA instanceof SetSparklineOp) return transformSetSparklineVsColDelete((SetSparklineOp) opA, deleteOp);
         }
 
         // opB 是 colResize 时，不影响其他操作
@@ -885,6 +1152,11 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowInsert((SetWrapTextOp) opA, insertOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowInsert((SetRichTextOp) opA, insertOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsRowInsert((SetValidationOp) opA, insertOp);
+            // 图表操作 vs RowInsert
+            if (opA instanceof ChartCreateOp) return transformChartCreateVsRowInsert((ChartCreateOp) opA, insertOp);
+            if (opA instanceof ChartUpdateOp) return transformChartUpdateVsRowInsert((ChartUpdateOp) opA, insertOp);
+            if (opA instanceof ChartDeleteOp) return cloneOp(opA); // 删除操作不受影响
+            if (opA instanceof SetSparklineOp) return transformSetSparklineVsRowInsert((SetSparklineOp) opA, insertOp);
         }
 
         // opB 是 rowDelete
@@ -908,6 +1180,11 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowDelete((SetWrapTextOp) opA, deleteOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowDelete((SetRichTextOp) opA, deleteOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsRowDelete((SetValidationOp) opA, deleteOp);
+            // 图表操作 vs RowDelete
+            if (opA instanceof ChartCreateOp) return transformChartCreateVsRowDelete((ChartCreateOp) opA, deleteOp);
+            if (opA instanceof ChartUpdateOp) return transformChartUpdateVsRowDelete((ChartUpdateOp) opA, deleteOp);
+            if (opA instanceof ChartDeleteOp) return cloneOp(opA); // 删除操作不受影响
+            if (opA instanceof SetSparklineOp) return transformSetSparklineVsRowDelete((SetSparklineOp) opA, deleteOp);
         }
 
         // opB 是 cellEdit
@@ -1177,6 +1454,20 @@ public class OTTransformer {
                     return null;
                 }
             }
+            return cloneOp(opA);
+        }
+
+        // opB 是 chartDelete：图表创建/更新操作与同 chartId 的删除操作冲突时取消
+        if (opB instanceof ChartDeleteOp) {
+            ChartDeleteOp deleteOp = (ChartDeleteOp) opB;
+            if (opA instanceof ChartCreateOp) return transformChartCreateVsChartDelete((ChartCreateOp) opA, deleteOp);
+            if (opA instanceof ChartUpdateOp) return transformChartUpdateVsChartDelete((ChartUpdateOp) opA, deleteOp);
+            if (opA instanceof ChartDeleteOp) return cloneOp(opA); // 两个删除互不影响
+            return cloneOp(opA);
+        }
+
+        // opB 是 chartCreate/chartUpdate/setSparkline：不影响其他操作
+        if (opB instanceof ChartCreateOp || opB instanceof ChartUpdateOp || opB instanceof SetSparklineOp) {
             return cloneOp(opA);
         }
 

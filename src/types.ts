@@ -1,4 +1,11 @@
 // ============================================================
+// 图表类型导入与重新导出
+// ============================================================
+
+import type { SparklineConfig, ChartConfig } from './chart/types';
+export type { SparklineConfig, ChartConfig };
+
+// ============================================================
 // 数据类型与格式化相关类型定义
 // ============================================================
 
@@ -126,9 +133,11 @@ export interface Cell {
   dataType?: DataType;             // 数据类型
   rawValue?: number;               // 原始数值（数字/日期/百分比/货币的实际值）
   format?: CellFormat;             // 格式信息
+  isAutoFormat?: boolean;          // 是否为自动检测设置的格式（区别于用户手动设置）
   richText?: RichTextSegment[];    // 富文本内容
   wrapText?: boolean;              // 是否自动换行
   validation?: ValidationRule;     // 数据验证规则
+  sparkline?: SparklineConfig;     // 迷你图配置
 }
 
 // 表格数据结构
@@ -136,6 +145,7 @@ export interface SpreadsheetData {
   cells: Cell[][];
   rowHeights: number[];
   colWidths: number[];
+  charts?: ChartConfig[];          // 图表配置列表
 }
 
 // 视口位置

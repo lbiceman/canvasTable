@@ -15,6 +15,7 @@ public class SpreadsheetData {
     private List<Integer> rowHeights;
     private List<Integer> colWidths;
     private List<ConditionalFormatRule> conditionalFormats;
+    private List<ChartConfigData> charts;
 
     public SpreadsheetData() {
         this.cells = new ArrayList<>();
@@ -62,6 +63,14 @@ public class SpreadsheetData {
         this.conditionalFormats = conditionalFormats;
     }
 
+    public List<ChartConfigData> getCharts() {
+        return charts;
+    }
+
+    public void setCharts(List<ChartConfigData> charts) {
+        this.charts = charts;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -70,11 +79,12 @@ public class SpreadsheetData {
         return java.util.Objects.equals(cells, that.cells)
                 && java.util.Objects.equals(rowHeights, that.rowHeights)
                 && java.util.Objects.equals(colWidths, that.colWidths)
-                && java.util.Objects.equals(conditionalFormats, that.conditionalFormats);
+                && java.util.Objects.equals(conditionalFormats, that.conditionalFormats)
+                && java.util.Objects.equals(charts, that.charts);
     }
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash(cells, rowHeights, colWidths, conditionalFormats);
+        return java.util.Objects.hash(cells, rowHeights, colWidths, conditionalFormats, charts);
     }
 }

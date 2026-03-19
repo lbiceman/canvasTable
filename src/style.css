@@ -1133,6 +1133,62 @@ h1 {
   font-weight: 600;
 }
 
+/* 迷你图下拉选择器样式 */
+.sparkline-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.sparkline-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 80px;
+}
+
+.sparkline-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.sparkline-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 100px;
+}
+
+.sparkline-dropdown.visible {
+  display: block;
+}
+
+.sparkline-option {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.sparkline-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.sparkline-option.active {
+  background-color: var(--theme-selection-bg);
+  font-weight: 600;
+}
+
 /* 自动换行按钮样式 */
 .wrap-text-btn {
   display: flex;

@@ -7,6 +7,11 @@ import { SearchDialog, SearchResult } from './search-dialog';
 import { CollaborationEngine } from './collaboration/collaboration-engine';
 import { CollabOperation } from './collaboration/types';
 import { ValidationEngine } from './validation';
+import { ChartOverlay } from './chart/chart-overlay';
+import { ChartEngine } from './chart/chart-engine';
+import { ChartEditor } from './chart/chart-editor';
+import type { SparklineType, DataRange, ThemeColors } from './chart/types';
+import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -65,6 +70,11 @@ export class SpreadsheetApp {
   // 条件格式设置面板
   private conditionalFormatPanel: HTMLDivElement | null = null;
 
+  // 图表交互模块
+  private chartOverlay: ChartOverlay;
+  private chartEngine: ChartEngine;
+  private chartEditor: ChartEditor;
+
   constructor(_containerId: string) {
     // 创建模型
     this.model = new SpreadsheetModel();
@@ -105,6 +115,16 @@ export class SpreadsheetApp {
 
     // 创建渲染器
     this.renderer = new SpreadsheetRenderer(this.canvas, this.model, config);
+
+    // 初始化图表模块
+    const ctx = this.canvas.getContext('2d') as CanvasRenderingContext2D;
+    this.chartEngine = new ChartEngine(ctx);
+    this.chartOverlay = new ChartOverlay(this.model.chartModel, this.chartEngine);
+    this.chartEditor = new ChartEditor(this.model.chartModel, () => {
+      this.renderer.render();
+    });
+    // 将图表浮动层设置到渲染器
+    this.renderer.setChartOverlay(this.chartOverlay);
 
     // 创建滚动条
     this.createScrollbars();
@@ -909,6 +929,9 @@ export class SpreadsheetApp {
       });
     }
 
+    // 初始化图表工具栏按钮事件
+    this.initChartToolbarEvents();
+
     // 键盘事件
     document.addEventListener('keydown', this.handleKeyDown.bind(this));
 
@@ -920,6 +943,11 @@ export class SpreadsheetApp {
   private handleKeyDown(event: KeyboardEvent): void {
     // 如果内联编辑器正在编辑，则忽略键盘事件
     if (this.inlineEditor.isEditing()) {
+      return;
+    }
+
+    // IME 组合输入期间不处理按键
+    if (event.isComposing || event.keyCode === 229) {
       return;
     }
 
@@ -1005,6 +1033,13 @@ export class SpreadsheetApp {
 
     // Delete / Backspace 删除内容
     if (event.key === 'Delete' || event.key === 'Backspace') {
+      // 【图表交互】如果有选中的图表，Delete 键删除图表
+      if (this.chartOverlay.getSelectedChartId()) {
+        event.preventDefault();
+        this.chartOverlay.deleteSelectedChart();
+        this.renderer.render();
+        return;
+      }
       event.preventDefault();
       this.handleDeleteKey();
       return;
@@ -1012,6 +1047,12 @@ export class SpreadsheetApp {
 
     // Escape 取消选择
     if (event.key === 'Escape') {
+      // 【图表交互】如果有选中的图表，Escape 取消选中
+      if (this.chartOverlay.getSelectedChartId()) {
+        this.chartOverlay.deselectChart();
+        this.renderer.render();
+        return;
+      }
       this.currentSelection = null;
       this.renderer.clearSelection();
       this.renderer.clearHighlight();
@@ -1611,6 +1652,20 @@ export class SpreadsheetApp {
       return;
     }
 
+    // 【图表交互】将画布坐标转换为数据区域坐标，代理到 ChartOverlay
+    const { headerWidth, headerHeight } = this.renderer.getConfig();
+    const viewport = this.renderer.getViewport();
+    if (x > headerWidth && y > headerHeight) {
+      const dataX = x - headerWidth + viewport.scrollX;
+      const dataY = y - headerHeight + viewport.scrollY;
+      const consumed = this.chartOverlay.handleMouseDown(dataX, dataY);
+      if (consumed) {
+        // 图表层消费了事件，阻止正常电子表格交互
+        this.renderer.render();
+        return;
+      }
+    }
+
     // 检查是否点击了行号区域
     const clickedRow = this.renderer.getRowHeaderAtPosition(x, y);
     if (clickedRow !== null) {
@@ -1734,6 +1789,21 @@ export class SpreadsheetApp {
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+
+    // 【图表交互】双击图表时打开编辑面板
+    const { headerWidth, headerHeight } = this.renderer.getConfig();
+    const viewport = this.renderer.getViewport();
+    if (x > headerWidth && y > headerHeight) {
+      const dataX = x - headerWidth + viewport.scrollX;
+      const dataY = y - headerHeight + viewport.scrollY;
+      const hit = this.chartOverlay.hitTest(dataX, dataY);
+      if (hit) {
+        this.chartOverlay.selectChart(hit.chartId);
+        this.chartEditor.open(hit.chartId);
+        this.renderer.render();
+        return;
+      }
+    }
 
     // 检查是否在表格区域内
     const cellPosition = this.renderer.getCellAtPosition(x, y);
@@ -1865,6 +1935,21 @@ export class SpreadsheetApp {
       return;
     }
 
+    // 【图表交互】将画布坐标转换为数据区域坐标，代理到 ChartOverlay
+    const { headerWidth, headerHeight } = this.renderer.getConfig();
+    const viewport = this.renderer.getViewport();
+    if (x > headerWidth && y > headerHeight) {
+      const dataX = x - headerWidth + viewport.scrollX;
+      const dataY = y - headerHeight + viewport.scrollY;
+      const cursorStyle = this.chartOverlay.handleMouseMove(dataX, dataY);
+      if (cursorStyle) {
+        // 图表层返回了光标样式，更新光标并重绘
+        this.canvas.style.cursor = cursorStyle;
+        this.renderer.render();
+        return;
+      }
+    }
+
     // 检查是否在调整区域，更新鼠标样式
     const rowResizeInfo = this.renderer.getRowResizeAtPosition(x, y);
     const colResizeInfo = this.renderer.getColResizeAtPosition(x, y);
@@ -1918,6 +2003,9 @@ export class SpreadsheetApp {
 
   // 处理鼠标松开事件
   private handleMouseUp(): void {
+    // 【图表交互】通知图表浮动层鼠标释放
+    this.chartOverlay.handleMouseUp();
+
     this.selectionStart = null;
 
     // 协同模式下广播最终选择区域
@@ -2332,6 +2420,193 @@ export class SpreadsheetApp {
     const wrapTextBtn = document.getElementById('wrap-text-btn');
     if (wrapTextBtn) {
       wrapTextBtn.classList.toggle('active', wrap);
+    }
+  }
+
+  // ============================================================
+  // 图表工具栏按钮事件
+  // ============================================================
+
+  /**
+   * 初始化图表工具栏按钮事件
+   *
+   * - "插入图表"按钮：点击后检查选区是否包含数据，有则弹出类型选择面板
+   * - "迷你图"下拉按钮：切换下拉菜单显示
+   * - 迷你图选项：点击后弹出数据范围输入对话框，创建 SparklineConfig
+   */
+  private initChartToolbarEvents(): void {
+    // 插入图表按钮
+    const insertChartBtn = document.getElementById('insert-chart-btn');
+    if (insertChartBtn) {
+      insertChartBtn.addEventListener('click', () => {
+        this.handleInsertChart();
+      });
+    }
+
+    // 迷你图下拉按钮（与 number-format-picker 相同的下拉模式）
+    const sparklineBtn = document.getElementById('sparkline-btn');
+    const sparklineDropdown = document.getElementById('sparkline-dropdown');
+    if (sparklineBtn && sparklineDropdown) {
+      sparklineBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sparklineDropdown.classList.toggle('visible');
+      });
+
+      // 迷你图选项点击
+      const sparklineOptions = sparklineDropdown.querySelectorAll('.sparkline-option');
+      sparklineOptions.forEach((option) => {
+        option.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const sparklineType = (option as HTMLElement).dataset.type as SparklineType;
+          if (sparklineType) {
+            this.handleSparklineOption(sparklineType);
+          }
+          sparklineDropdown.classList.remove('visible');
+        });
+      });
+
+      // 点击其他地方关闭下拉框
+      document.addEventListener('click', () => {
+        sparklineDropdown.classList.remove('visible');
+      });
+    }
+  }
+
+  /**
+   * 处理"插入图表"按钮点击
+   *
+   * 检查当前选区是否包含数据，有则调用 ChartOverlay.showTypeSelector()。
+   */
+  private handleInsertChart(): void {
+    if (!this.currentSelection) return;
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 检查选区是否包含至少一个有内容的单元格
+    let hasData = false;
+    for (let r = startRow; r <= endRow && !hasData; r++) {
+      for (let c = startCol; c <= endCol && !hasData; c++) {
+        const cell = this.model.getCell(r, c);
+        if (cell && cell.content !== '') {
+          hasData = true;
+        }
+      }
+    }
+
+    if (!hasData) {
+      return;
+    }
+
+    // 计算弹出面板位置（使用插入图表按钮的位置）
+    const btn = document.getElementById('insert-chart-btn');
+    let popupX = 100;
+    let popupY = 100;
+    if (btn) {
+      const rect = btn.getBoundingClientRect();
+      popupX = rect.left;
+      popupY = rect.bottom + 4;
+    }
+
+    const dataRange: DataRange = { startRow, startCol, endRow, endCol };
+    this.chartOverlay.showTypeSelector(popupX, popupY, dataRange);
+  }
+
+  /**
+   * 处理迷你图选项点击
+   *
+   * 弹出数据范围输入对话框，解析后在当前选中单元格创建 SparklineConfig。
+   */
+  private handleSparklineOption(type: SparklineType): void {
+    if (!this.currentSelection) return;
+
+    const { startRow, startCol } = this.currentSelection;
+
+    // 弹出数据范围输入对话框
+    const rangeStr = prompt('请输入数据范围（例如 A1:A10）：');
+    if (!rangeStr || rangeStr.trim() === '') return;
+
+    const parsed = this.parseRangeString(rangeStr.trim());
+    if (!parsed) {
+      alert('无效的数据范围格式，请使用如 A1:A10 的格式。');
+      return;
+    }
+
+    // 在当前选中单元格设置迷你图配置
+    const cell = this.model.getCell(startRow, startCol);
+    if (cell) {
+      cell.sparkline = {
+        type,
+        dataRange: parsed,
+      };
+      this.renderer.render();
+    }
+  }
+
+  /**
+   * 解析范围字符串（如 "A1:A10"）为 DataRange 对象
+   *
+   * @returns DataRange 或 null（格式无效时）
+   */
+  private parseRangeString(rangeStr: string): DataRange | null {
+    const match = rangeStr.match(/^([A-Za-z]+)(\d+):([A-Za-z]+)(\d+)$/);
+    if (!match) return null;
+
+    const startCol = this.letterToColumnIndex(match[1].toUpperCase());
+    const startRow = parseInt(match[2], 10) - 1;
+    const endCol = this.letterToColumnIndex(match[3].toUpperCase());
+    const endRow = parseInt(match[4], 10) - 1;
+
+    if (startRow < 0 || startCol < 0 || endRow < 0 || endCol < 0) return null;
+    if (startRow > endRow || startCol > endCol) return null;
+
+    return { startRow, startCol, endRow, endCol };
+  }
+
+  /**
+   * 将列字母转换为列索引（A=0, B=1, ..., Z=25, AA=26, ...）
+   */
+  private letterToColumnIndex(letters: string): number {
+    let index = 0;
+    for (let i = 0; i < letters.length; i++) {
+      index = index * 26 + (letters.charCodeAt(i) - 64);
+    }
+    return index - 1;
+  }
+
+  /**
+   * 更新"插入图表"按钮的启用/禁用状态
+   *
+   * 根据当前选区是否包含数据来决定按钮状态。
+   */
+  private updateInsertChartButtonState(): void {
+    const btn = document.getElementById('insert-chart-btn');
+    if (!btn) return;
+
+    if (!this.currentSelection) {
+      btn.setAttribute('disabled', '');
+      btn.title = '请先选择数据区域';
+      return;
+    }
+
+    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+
+    // 检查选区是否包含至少一个有内容的单元格
+    let hasData = false;
+    for (let r = startRow; r <= endRow && !hasData; r++) {
+      for (let c = startCol; c <= endCol && !hasData; c++) {
+        const cell = this.model.getCell(r, c);
+        if (cell && cell.content !== '') {
+          hasData = true;
+        }
+      }
+    }
+
+    if (hasData) {
+      btn.removeAttribute('disabled');
+      btn.title = '插入图表';
+    } else {
+      btn.setAttribute('disabled', '');
+      btn.title = '请先选择数据区域';
     }
   }
 
@@ -3299,6 +3574,8 @@ export class SpreadsheetApp {
 
   // 处理设置单元格内容
   private handleSetContent(): void {
+    // 内联编辑器激活时不处理，避免用旧值覆盖编辑器保存的新值
+    if (this.inlineEditor.isEditing()) return;
     if (this.currentSelection) {
       const { startRow, startCol } = this.currentSelection;
 
@@ -3477,6 +3754,9 @@ export class SpreadsheetApp {
       const { startRow, startCol } = this.currentSelection;
       this.showInputHintIfNeeded(startRow, startCol);
     }
+
+    // 更新"插入图表"按钮状态
+    this.updateInsertChartButtonState();
   }
 
   // 将列索引转换为字母（A, B, C, ..., Z, AA, AB, ...）
@@ -3584,8 +3864,19 @@ export class SpreadsheetApp {
   }
 
   // 设置主题
-  public setTheme(colors: any): void {
+  public setTheme(colors: Record<string, string>): void {
     this.renderer.setThemeColors(colors);
+
+    // 根据背景色判断亮色/暗色主题，更新图表引擎配色
+    const isDark = colors.background !== '#ffffff';
+    const chartTheme: ThemeColors = {
+      background: colors.background || '#ffffff',
+      foreground: colors.foreground || '#333333',
+      gridLine: colors.gridLine || '#e0e0e0',
+      chartColors: isDark ? CHART_COLORS_DARK : CHART_COLORS_LIGHT,
+    };
+    this.chartEngine.setThemeColors(chartTheme);
+
     this.renderer.render();
   }
 

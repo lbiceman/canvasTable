@@ -10,6 +10,8 @@ export class InlineEditor {
   private currentCol: number = -1;
   private saveCallback: ((value: string) => void) | null = null;
   private richTextSaveCallback: ((segments: RichTextSegment[]) => void) | null = null;
+  private isSaving: boolean = false;
+  private isComposing: boolean = false;
 
   constructor() {
     // 创建编辑器容器元素
@@ -36,7 +38,23 @@ export class InlineEditor {
   }
 
   private initEventListeners(): void {
+    // 监听 IME 输入法组合状态，防止 composition 期间触发保存
+    this.inputElement.addEventListener('compositionstart', () => {
+      this.isComposing = true;
+    });
+    this.inputElement.addEventListener('compositionend', () => {
+      this.isComposing = false;
+    });
+    this.richTextEditor.addEventListener('compositionstart', () => {
+      this.isComposing = true;
+    });
+    this.richTextEditor.addEventListener('compositionend', () => {
+      this.isComposing = false;
+    });
+
     this.inputElement.addEventListener('keydown', (event: KeyboardEvent) => {
+      // IME 组合输入期间不处理按键
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter' && event.altKey) {
         event.preventDefault();
         this.insertNewlineAtCursor();
@@ -47,9 +65,15 @@ export class InlineEditor {
         this.cancel();
       }
     });
-    this.inputElement.addEventListener('blur', () => { this.save(); });
+    this.inputElement.addEventListener('blur', () => {
+      // IME 组合输入期间不触发保存，等 compositionend 后再处理
+      if (this.isComposing) return;
+      this.save();
+    });
 
     this.richTextEditor.addEventListener('keydown', (event: KeyboardEvent) => {
+      // IME 组合输入期间不处理按键
+      if (event.isComposing || event.keyCode === 229) return;
       if (event.key === 'Enter' && !event.altKey) {
         event.preventDefault();
         this.save();
@@ -57,7 +81,11 @@ export class InlineEditor {
         this.cancel();
       }
     });
-    this.richTextEditor.addEventListener('blur', () => { this.save(); });
+    this.richTextEditor.addEventListener('blur', () => {
+      // IME 组合输入期间不触发保存
+      if (this.isComposing) return;
+      this.save();
+    });
   }
 
   // 显示普通文本编辑器
@@ -175,14 +203,19 @@ export class InlineEditor {
 
   // 保存编辑内容
   private save(): void {
-    if (!this.isActive) return;
-    if (this.richTextMode && this.richTextSaveCallback) {
-      const segments = this.getRichTextSegments();
-      this.richTextSaveCallback(segments);
-    } else if (this.saveCallback) {
-      this.saveCallback(this.inputElement.value);
+    if (!this.isActive || this.isSaving) return;
+    this.isSaving = true;
+    try {
+      if (this.richTextMode && this.richTextSaveCallback) {
+        const segments = this.getRichTextSegments();
+        this.richTextSaveCallback(segments);
+      } else if (this.saveCallback) {
+        this.saveCallback(this.inputElement.value);
+      }
+      this.hide();
+    } finally {
+      this.isSaving = false;
     }
-    this.hide();
   }
 
   // 取消编辑
