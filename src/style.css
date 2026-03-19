@@ -611,6 +611,12 @@ h1 {
   text-align: center;
 }
 
+.context-menu-divider {
+  height: 1px;
+  background-color: var(--theme-grid-line, #e0e0e0);
+  margin: 4px 0;
+}
+
 .context-menu-input-item {
   display: flex;
   align-items: center;

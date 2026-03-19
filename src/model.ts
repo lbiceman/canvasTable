@@ -50,12 +50,6 @@ export class SpreadsheetModel {
     // 初始化图表数据模型
     this.chartModel = new ChartModel(this);
 
-    // 初始化排序筛选数据模型
-    this.sortFilterModel = new SortFilterModel({
-      getCell: (r: number, c: number) => this.getCell(r, c),
-      getRowCount: () => this.getRowCount(),
-    });
-
     // 初始化公式引擎
     this.formulaEngine = FormulaEngine.getInstance();
     this.formulaEngine.setCellGetter((row: number, col: number) => {
@@ -88,6 +82,12 @@ export class SpreadsheetModel {
     for (let j = 0; j < cols; j++) {
       this.data.colWidths[j] = DEFAULT_COL_WIDTH;
     }
+
+    // 初始化排序筛选数据模型（必须在 this.data 初始化之后，因为 buildIdentityMap 会调用 getRowCount）
+    this.sortFilterModel = new SortFilterModel({
+      getCell: (r: number, c: number) => this.getCell(r, c),
+      getRowCount: () => this.getRowCount(),
+    });
   }
 
   // 获取单元格数据

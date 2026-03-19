@@ -523,11 +523,11 @@ export class SpreadsheetRenderer {
             );
           }
 
-          // 检查该列是否有筛选条件
+          // 仅在该列有活跃筛选时显示高亮图标
           const hasFilter = this.sortFilterModel.hasActiveFilter(col);
-          if (hasFilter || this.sortFilterModel.isActive()) {
+          if (hasFilter) {
             ColumnHeaderIndicator.renderFilterIcon(
-              this.ctx, currentX, 0, colWidth, headerHeight, hasFilter
+              this.ctx, currentX, 0, colWidth, headerHeight, true
             );
           }
         }

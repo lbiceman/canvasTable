@@ -16,7 +16,6 @@ import { SheetManager } from './sheet-manager';
 import { SheetTabBar } from './sheet-tab-bar';
 import { SheetContextMenu } from './sheet-context-menu';
 import { FilterDropdown } from './sort-filter/filter-dropdown';
-import { ColumnHeaderIndicator } from './sort-filter/column-header-indicator';
 import type { SortDirection, ColumnFilter } from './sort-filter/types';
 
 export class SpreadsheetApp {
@@ -344,6 +343,73 @@ export class SpreadsheetApp {
 
     this.colContextMenu.appendChild(insertItem);
     this.colContextMenu.appendChild(deleteItem);
+
+    // 分隔线
+    const divider = document.createElement('div');
+    divider.className = 'context-menu-divider';
+    this.colContextMenu.appendChild(divider);
+
+    // 排序与筛选选项
+    const sortAscItem = document.createElement('div');
+    sortAscItem.className = 'context-menu-item';
+    sortAscItem.innerHTML = '<span class="context-menu-icon">↑</span>升序排序';
+    sortAscItem.addEventListener('click', () => {
+      if (this.contextMenuCol !== null) {
+        this.handleSort(this.contextMenuCol, 'asc');
+      }
+      this.hideColContextMenu();
+    });
+
+    const sortDescItem = document.createElement('div');
+    sortDescItem.className = 'context-menu-item';
+    sortDescItem.innerHTML = '<span class="context-menu-icon">↓</span>降序排序';
+    sortDescItem.addEventListener('click', () => {
+      if (this.contextMenuCol !== null) {
+        this.handleSort(this.contextMenuCol, 'desc');
+      }
+      this.hideColContextMenu();
+    });
+
+    const filterItem = document.createElement('div');
+    filterItem.className = 'context-menu-item';
+    filterItem.innerHTML = '<span class="context-menu-icon">🔽</span>筛选...';
+    filterItem.addEventListener('click', () => {
+      if (this.contextMenuCol !== null) {
+        const col = this.contextMenuCol;
+        const canvasRect = this.canvas.getBoundingClientRect();
+        const cellRect = this.renderer.getCellRect(0, col);
+        const { headerHeight } = this.renderer.getConfig();
+        const anchorX = canvasRect.left + (cellRect?.x ?? 0);
+        const anchorY = canvasRect.top + headerHeight;
+        this.filterDropdown.show(anchorX, anchorY, col);
+      }
+      this.hideColContextMenu();
+    });
+
+    const clearSortFilterItem = document.createElement('div');
+    clearSortFilterItem.className = 'context-menu-item';
+    clearSortFilterItem.innerHTML = '<span class="context-menu-icon">✕</span>清除排序与筛选';
+    clearSortFilterItem.addEventListener('click', () => {
+      const sfModel = this.model.sortFilterModel;
+      const oldSnapshot = sfModel.getSnapshot();
+      sfModel.clearSort();
+      sfModel.clearAllFilters();
+      const newSnapshot = sfModel.getSnapshot();
+      this.model.getHistoryManager().record({
+        type: 'setFilter',
+        data: newSnapshot,
+        undoData: oldSnapshot,
+      });
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+      this.hideColContextMenu();
+    });
+
+    this.colContextMenu.appendChild(sortAscItem);
+    this.colContextMenu.appendChild(sortDescItem);
+    this.colContextMenu.appendChild(filterItem);
+    this.colContextMenu.appendChild(clearSortFilterItem);
+
     document.body.appendChild(this.colContextMenu);
 
     // 点击其他地方关闭列菜单
@@ -1808,20 +1874,6 @@ export class SpreadsheetApp {
     // 检查是否点击了列号区域
     const clickedCol = this.renderer.getColHeaderAtPosition(x, y);
     if (clickedCol !== null) {
-      // 检查是否点击了筛选图标区域
-      const colX = this.renderer.getCellRect(0, clickedCol)?.x ?? 0;
-      const { headerHeight } = this.renderer.getConfig();
-      if (ColumnHeaderIndicator.hitTestFilterIcon(x, y, colX, 0, this.model.getColWidth(clickedCol), headerHeight)) {
-        // 点击了筛选图标，显示筛选下拉菜单
-        const canvasRect = this.canvas.getBoundingClientRect();
-        this.filterDropdown.show(
-          canvasRect.left + colX,
-          canvasRect.top + headerHeight,
-          clickedCol
-        );
-        return;
-      }
-
       // 高亮整列
       this.renderer.setHighlightedCol(clickedCol);
 
