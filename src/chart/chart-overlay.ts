@@ -310,7 +310,7 @@ export class ChartOverlay {
    * @param y 面板显示的 Y 坐标
    * @param dataRange 数据范围
    */
-  showTypeSelector(x: number, y: number, dataRange: DataRange): void {
+  showTypeSelector(x: number, y: number, dataRange: DataRange, chartPosition: { x: number; y: number }): void {
     // 移除已有面板
     this.removeTypeSelector();
 
@@ -348,8 +348,8 @@ export class ChartOverlay {
         item.style.background = 'transparent';
       });
       item.addEventListener('click', () => {
-        // 创建图表，位置默认在数据区域右侧
-        const position = { x: Math.max(0, x), y: Math.max(0, y) };
+        // 创建图表，位置基于数据区域计算
+        const position = { x: Math.max(0, chartPosition.x), y: Math.max(0, chartPosition.y) };
         const chartId = this.chartModel.createChart(type, dataRange, position);
         if (chartId) {
           this.selectChart(chartId);

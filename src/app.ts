@@ -2478,7 +2478,10 @@ export class SpreadsheetApp {
    * 检查当前选区是否包含数据，有则调用 ChartOverlay.showTypeSelector()。
    */
   private handleInsertChart(): void {
-    if (!this.currentSelection) return;
+    if (!this.currentSelection) {
+      alert('请先选择包含数据的单元格区域');
+      return;
+    }
 
     const { startRow, startCol, endRow, endCol } = this.currentSelection;
 
@@ -2494,6 +2497,7 @@ export class SpreadsheetApp {
     }
 
     if (!hasData) {
+      alert('选中的区域没有数据，请选择包含数据的区域');
       return;
     }
 
@@ -2507,8 +2511,24 @@ export class SpreadsheetApp {
       popupY = rect.bottom + 4;
     }
 
+    // 计算图表在数据区域中的放置位置（选区右侧偏移 20px）
+    const config = this.renderer.getConfig();
+    const viewport = this.renderer.getViewport();
+    let chartX = config.headerWidth;
+    for (let c = 0; c <= endCol; c++) {
+      chartX += this.model.getColWidth(c);
+    }
+    chartX += viewport.scrollX + 20;
+
+    let chartY = config.headerHeight;
+    for (let r = 0; r < startRow; r++) {
+      chartY += this.model.getRowHeight(r);
+    }
+    chartY += viewport.scrollY;
+
     const dataRange: DataRange = { startRow, startCol, endRow, endCol };
-    this.chartOverlay.showTypeSelector(popupX, popupY, dataRange);
+    const chartPosition = { x: chartX, y: chartY };
+    this.chartOverlay.showTypeSelector(popupX, popupY, dataRange, chartPosition);
   }
 
   /**
