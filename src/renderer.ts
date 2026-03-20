@@ -1916,16 +1916,24 @@ export class SpreadsheetRenderer {
     return border;
   }
 
-  // 设置选择区域
+  /**
+   * 设置选择区域
+   * @deprecated 请使用 setMultiSelection() 代替。此方法保留仅为向后兼容，
+   * 内部已委托到 setMultiSelection()，不再直接操作 this.selection。
+   */
   public setSelection(startRow: number, startCol: number, endRow: number, endCol: number): void {
-    this.selection = { startRow, startCol, endRow, endCol };
-    this.render();
+    // 委托到 setMultiSelection()，由其统一管理选区状态和渲染
+    this.setMultiSelection([{ startRow, startCol, endRow, endCol }], 0);
   }
 
   /** 设置多选区数据 */
   public setMultiSelection(selections: Selection[], activeIndex: number): void {
     this.multiSelections = selections;
     this.activeSelectionIndex = activeIndex;
+    // 清除旧的单选区状态，确保 multiSelections 为唯一选区数据源
+    this.selection = null;
+    // 触发重绘，使 setMultiSelection() 成为选区更新的唯一渲染入口
+    this.render();
   }
 
   /** 设置是否高亮所有行列标题（全选状态） */

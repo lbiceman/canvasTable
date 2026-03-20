@@ -1865,8 +1865,8 @@ export class SpreadsheetApp {
     if (this.multiSelection.isSelectAll()) {
       this.multiSelection.setSingle({ startRow: 0, startCol: 0, endRow: 0, endCol: 0 });
       this.renderer.setHighlightAll(false);
-      this.renderer.setMultiSelection([], -1);
-      this.renderer.setSelection(0, 0, 0, 0);
+      // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
       this.renderer.scrollToCell(0, 0);
       this.renderer.clearHighlight();
       this.updateSelectedCellInfo();
@@ -1905,12 +1905,8 @@ export class SpreadsheetApp {
         endCol: newEndCol
       });
 
-      this.renderer.setSelection(
-        Math.min(startRow, newEndRow),
-        Math.min(startCol, newEndCol),
-        Math.max(startRow, newEndRow),
-        Math.max(startCol, newEndCol)
-      );
+      // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
     } else {
       // 普通方向键：移动选择
       const newRow = Math.max(0, Math.min(startRow + deltaRow, this.model.getRowCount() - 1));
@@ -1923,7 +1919,8 @@ export class SpreadsheetApp {
         endCol: newCol
       });
 
-      this.renderer.setSelection(newRow, newCol, newRow, newCol);
+      // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
 
       // 确保选中的单元格可见
       this.renderer.scrollToCell(newRow, newCol);
@@ -1980,7 +1977,8 @@ export class SpreadsheetApp {
       endCol: newCol
     });
 
-    this.renderer.setSelection(newRow, newCol, newRow, newCol);
+    // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+    this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
     this.renderer.scrollToCell(newRow, newCol);
     this.renderer.clearHighlight();
     this.updateSelectedCellInfo();
@@ -2005,7 +2003,8 @@ export class SpreadsheetApp {
       endCol: startCol
     });
 
-    this.renderer.setSelection(newRow, startCol, newRow, startCol);
+    // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+    this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
     this.renderer.scrollToCell(newRow, startCol);
     this.renderer.clearHighlight();
     this.updateSelectedCellInfo();
@@ -2567,7 +2566,8 @@ export class SpreadsheetApp {
       endCol: result.col
     });
 
-    this.renderer.setSelection(result.row, result.col, result.row, result.col);
+    // 统一使用 setMultiSelection() 更新选区，避免双状态源冲突
+    this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
     this.renderer.scrollToCell(result.row, result.col);
     this.renderer.clearHighlight();
     this.updateSelectedCellInfo();
@@ -2859,11 +2859,7 @@ export class SpreadsheetApp {
       this.isDraggingRowHeader = true;
       this.rowHeaderDragStartRow = clickedRow;
 
-      const activeSel = this.multiSelection.getActiveSelection();
-      if (activeSel) {
-        this.renderer.setSelection(activeSel.startRow, activeSel.startCol, activeSel.endRow, activeSel.endCol);
-      }
-      // 同步多选区到渲染器
+      // 同步多选区到渲染器（setMultiSelection 会自动触发 render()）
       this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
       // 更新单元格信息显示
@@ -2908,11 +2904,7 @@ export class SpreadsheetApp {
       this.isDraggingColHeader = true;
       this.colHeaderDragStartCol = clickedCol;
 
-      const activeSel = this.multiSelection.getActiveSelection();
-      if (activeSel) {
-        this.renderer.setSelection(activeSel.startRow, activeSel.startCol, activeSel.endRow, activeSel.endCol);
-      }
-      // 同步多选区到渲染器
+      // 同步多选区到渲染器（setMultiSelection 会自动触发 render()）
       this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
       // 更新单元格信息显示
@@ -2947,11 +2939,8 @@ export class SpreadsheetApp {
                 endCol: cellInfo.col + cellInfo.colSpan - 1
               };
               this.multiSelection.setSingle(dropdownSelection);
-              this.renderer.setSelection(
-                cellInfo.row, cellInfo.col,
-                cellInfo.row + cellInfo.rowSpan - 1,
-                cellInfo.col + cellInfo.colSpan - 1
-              );
+              // 同步多选区到渲染器（setMultiSelection 会自动触发 render()）
+              this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
               this.updateSelectedCellInfo();
 
               // 显示下拉菜单
@@ -2976,12 +2965,6 @@ export class SpreadsheetApp {
           } else {
             this.multiSelection.setSingle(mergedSelection);
           }
-          this.renderer.setSelection(
-            cellInfo.row,
-            cellInfo.col,
-            cellInfo.row + cellInfo.rowSpan - 1,
-            cellInfo.col + cellInfo.colSpan - 1
-          );
         } else {
           // 普通单元格
           this.selectionStart = cellPosition;
@@ -2997,15 +2980,9 @@ export class SpreadsheetApp {
           } else {
             this.multiSelection.setSingle(cellSelection);
           }
-          this.renderer.setSelection(
-            cellPosition.row,
-            cellPosition.col,
-            cellPosition.row,
-            cellPosition.col
-          );
         }
 
-        // 同步多选区到渲染器
+        // 同步多选区到渲染器（setMultiSelection 会自动触发 render()）
         this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
         // 更新单元格信息显示
@@ -3178,7 +3155,7 @@ export class SpreadsheetApp {
           endRow,
           endCol: maxCol
         });
-        this.renderer.setSelection(startRow, 0, endRow, maxCol);
+        // 统一使用 setMultiSelection() 更新渲染器选区状态
         this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
         this.updateSelectedCellInfo();
       }
@@ -3198,7 +3175,7 @@ export class SpreadsheetApp {
           endRow: maxRow,
           endCol
         });
-        this.renderer.setSelection(0, startCol, maxRow, endCol);
+        // 统一使用 setMultiSelection() 更新渲染器选区状态
         this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
         this.updateSelectedCellInfo();
       }
@@ -3286,18 +3263,6 @@ export class SpreadsheetApp {
           const startCellInfo = this.model.getMergedCellInfo(this.selectionStart.row, this.selectionStart.col);
 
           if (startCellInfo) {
-            // 计算实际的起始和结束位置（考虑合并单元格）
-            const actualStartRow = startCellInfo.row;
-            const actualStartCol = startCellInfo.col;
-            const actualEndRow = currentCellInfo.row + currentCellInfo.rowSpan - 1;
-            const actualEndCol = currentCellInfo.col + currentCellInfo.colSpan - 1;
-
-            // 确保选择区域的起始和结束位置正确
-            const startRow = Math.min(actualStartRow, currentCellInfo.row);
-            const endRow = Math.max(actualStartRow + startCellInfo.rowSpan - 1, actualEndRow);
-            const startCol = Math.min(actualStartCol, currentCellInfo.col);
-            const endCol = Math.max(actualStartCol + startCellInfo.colSpan - 1, actualEndCol);
-
             this.multiSelection.setSingle({
               startRow: this.selectionStart.row,
               startCol: this.selectionStart.col,
@@ -3305,7 +3270,8 @@ export class SpreadsheetApp {
               endCol: cellPosition.col
             });
 
-            this.renderer.setSelection(startRow, startCol, endRow, endCol);
+            // 统一使用 setMultiSelection() 更新渲染器选区状态，避免双状态源冲突
+            this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
           }
         }
       }
