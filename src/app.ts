@@ -111,16 +111,16 @@ export class SpreadsheetApp {
   private filterDropdown: FilterDropdown;
 
   constructor(_containerId: string) {
-    // 创建模型
-    this.model = new SpreadsheetModel();
+    // 初始化多工作表管理器（默认创建 Sheet1）
+    this.sheetManager = new SheetManager();
+
+    // 获取活动工作表的模型
+    this.model = this.sheetManager.getActiveModel();
 
     // 注册公式错误回调
     this.model.registerFormulaErrorCallback((error: string) => {
       this.showFormulaError(error);
     });
-
-    // 初始化多工作表管理器（默认创建 Sheet1，使用当前 model）
-    this.sheetManager = new SheetManager();
 
     // 设置工作表切换回调（统一处理所有切换场景：标签点击、隐藏、删除等）
     this.sheetManager.setOnSwitchCallback((sheetId: string) => {
@@ -2594,8 +2594,10 @@ export class SpreadsheetApp {
 
     const oldContent = cell.content;
     // 替换所有出现的搜索文本（不区分大小写）
+    // 转义正则特殊字符
+    const escapedSearch = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const newContent = cell.content.replace(
-      new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+      new RegExp(escapedSearch, 'gi'),
       replaceText
     );
 
@@ -2611,6 +2613,7 @@ export class SpreadsheetApp {
     this.updateUndoRedoButtons();
     return true;
   }
+
 
   // 全部替换所有匹配单元格内容
   private handleReplaceAll(searchText: string, replaceText: string): number {

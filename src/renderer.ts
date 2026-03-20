@@ -559,6 +559,7 @@ export class SpreadsheetRenderer {
    */
   private renderHiddenColIndicator(x: number): void {
     const { headerHeight } = this.config;
+    const colGroupHeight = this.getColGroupAreaHeight();
 
     this.ctx.save();
     this.ctx.strokeStyle = this.themeColors.headerText;
@@ -566,13 +567,13 @@ export class SpreadsheetRenderer {
 
     // 绘制两条平行垂直线，间距 2px
     this.ctx.beginPath();
-    this.ctx.moveTo(x - 1, 0);
-    this.ctx.lineTo(x - 1, headerHeight);
+    this.ctx.moveTo(x - 1, colGroupHeight);
+    this.ctx.lineTo(x - 1, colGroupHeight + headerHeight);
     this.ctx.stroke();
 
     this.ctx.beginPath();
-    this.ctx.moveTo(x + 1, 0);
-    this.ctx.lineTo(x + 1, headerHeight);
+    this.ctx.moveTo(x + 1, colGroupHeight);
+    this.ctx.lineTo(x + 1, colGroupHeight + headerHeight);
     this.ctx.stroke();
 
     this.ctx.restore();
@@ -582,10 +583,13 @@ export class SpreadsheetRenderer {
   private renderColHeaders(): void {
     const { headerWidth, headerHeight, fontSize, fontFamily } = this.config;
     const { offsetX } = this.viewport;
+    
+    // 列分组区域高度，列标题需要绘制在分组区域下方
+    const colGroupHeight = this.getColGroupAreaHeight();
 
     // 绘制背景
     this.ctx.fillStyle = this.themeColors.headerBackground;
-    this.ctx.fillRect(headerWidth, 0, this.canvasWidth - headerWidth, headerHeight);
+    this.ctx.fillRect(headerWidth, colGroupHeight, this.canvasWidth - headerWidth, headerHeight);
 
     this.ctx.font = `${fontSize}px ${fontFamily}`;
     this.ctx.textAlign = 'center';
@@ -614,7 +618,7 @@ export class SpreadsheetRenderer {
         } else {
           this.ctx.fillStyle = this.themeColors.headerBackground;
         }
-        this.ctx.fillRect(Math.max(headerWidth, currentX), 0, colWidth, headerHeight);
+        this.ctx.fillRect(Math.max(headerWidth, currentX), colGroupHeight, colWidth, headerHeight);
 
         // 绘制列号
         this.ctx.fillStyle = this.themeColors.headerText;
@@ -623,7 +627,7 @@ export class SpreadsheetRenderer {
           this.ctx.fillText(
             this.columnIndexToLetter(col),
             textX,
-            headerHeight / 2
+            colGroupHeight + headerHeight / 2
           );
         }
 
@@ -634,7 +638,7 @@ export class SpreadsheetRenderer {
           const sortRule = sortRules.find((r) => r.colIndex === col);
           if (sortRule) {
             ColumnHeaderIndicator.renderSortArrow(
-              this.ctx, currentX, 0, colWidth, headerHeight, sortRule.direction
+              this.ctx, currentX, colGroupHeight, colWidth, headerHeight, sortRule.direction
             );
           }
 
@@ -642,7 +646,7 @@ export class SpreadsheetRenderer {
           const hasFilter = this.sortFilterModel.hasActiveFilter(col);
           if (hasFilter) {
             ColumnHeaderIndicator.renderFilterIcon(
-              this.ctx, currentX, 0, colWidth, headerHeight, true
+              this.ctx, currentX, colGroupHeight, colWidth, headerHeight, true
             );
           }
         }
@@ -651,8 +655,8 @@ export class SpreadsheetRenderer {
         this.ctx.strokeStyle = this.themeColors.gridLine;
         this.ctx.lineWidth = 1;
         this.ctx.beginPath();
-        this.ctx.moveTo(currentX + colWidth, 0);
-        this.ctx.lineTo(currentX + colWidth, headerHeight);
+        this.ctx.moveTo(currentX + colWidth, colGroupHeight);
+        this.ctx.lineTo(currentX + colWidth, colGroupHeight + headerHeight);
         this.ctx.stroke();
       }
 
@@ -662,8 +666,8 @@ export class SpreadsheetRenderer {
     // 绘制底边框
     this.ctx.strokeStyle = this.themeColors.gridLine;
     this.ctx.beginPath();
-    this.ctx.moveTo(headerWidth, headerHeight);
-    this.ctx.lineTo(this.canvasWidth, headerHeight);
+    this.ctx.moveTo(headerWidth, colGroupHeight + headerHeight);
+    this.ctx.lineTo(this.canvasWidth, colGroupHeight + headerHeight);
     this.ctx.stroke();
   }
 
@@ -1627,7 +1631,20 @@ export class SpreadsheetRenderer {
     const { headerWidth, headerHeight } = this.config;
     const { scrollX, scrollY } = this.viewport;
 
-    const { startRow, startCol, endRow, endCol } = sel;
+    let { startRow, startCol, endRow, endCol } = sel;
+
+    // 排序筛选激活时，将数据行转换为显示行
+    const sfActive = this.sortFilterModel && this.sortFilterModel.isActive();
+    if (sfActive) {
+      const displayStartRow = this.sortFilterModel!.getDisplayRowIndex(startRow);
+      const displayEndRow = this.sortFilterModel!.getDisplayRowIndex(endRow);
+      if (displayStartRow === -1 || displayEndRow === -1) {
+        // 选区行被筛选隐藏，不渲染
+        return;
+      }
+      startRow = displayStartRow;
+      endRow = displayEndRow;
+    }
 
     // 计算选择区域与视口的交集
     const visibleStartRow = Math.max(startRow, this.viewport.startRow);
@@ -2016,8 +2033,22 @@ export class SpreadsheetRenderer {
     const dataY = y - headerHeight + scrollY;
 
     // 获取行列索引
-    const row = this.model.getRowAtY(dataY);
+    // 注意：getRowAtY 返回的是基于原始数据布局的行索引
+    // 当排序筛选激活时，需要先计算显示行索引，再映射到数据行
+    let row: number;
     const col = this.model.getColAtX(dataX);
+
+    if (this.sortFilterModel && this.sortFilterModel.isActive()) {
+      // 排序筛选激活时，dataY 对应的是显示行的位置
+      // 需要找到该位置对应的显示行索引，然后映射到数据行
+      const displayRow = this.model.getRowAtY(dataY);
+      row = this.sortFilterModel.getDataRowIndex(displayRow);
+      if (row === -1) {
+        return null;
+      }
+    } else {
+      row = this.model.getRowAtY(dataY);
+    }
 
     if (row >= 0 && row < this.model.getRowCount() &&
         col >= 0 && col < this.model.getColCount()) {
@@ -2041,7 +2072,18 @@ export class SpreadsheetRenderer {
     const dataY = y - headerHeight + scrollY;
 
     // 获取行索引
-    const row = this.model.getRowAtY(dataY);
+    let row: number;
+
+    if (this.sortFilterModel && this.sortFilterModel.isActive()) {
+      // 排序筛选激活时，需要将显示行映射到数据行
+      const displayRow = this.model.getRowAtY(dataY);
+      row = this.sortFilterModel.getDataRowIndex(displayRow);
+      if (row === -1) {
+        return null;
+      }
+    } else {
+      row = this.model.getRowAtY(dataY);
+    }
 
     if (row >= 0 && row < this.model.getRowCount()) {
       return row;
@@ -2054,9 +2096,10 @@ export class SpreadsheetRenderer {
   public getColHeaderAtPosition(x: number, y: number): number | null {
     const { headerWidth, headerHeight } = this.config;
     const { scrollX } = this.viewport;
+    const colGroupHeight = this.getColGroupAreaHeight();
 
-    // 检查是否在列号区域内
-    if (x <= headerWidth || y > headerHeight) {
+    // 检查是否在列号区域内（考虑列分组区域高度）
+    if (x <= headerWidth || y < colGroupHeight || y > colGroupHeight + headerHeight) {
       return null;
     }
 
@@ -2083,9 +2126,19 @@ export class SpreadsheetRenderer {
       return null;
     }
 
+    // 排序筛选激活时，将数据行转换为显示行
+    let displayRow = row;
+    if (this.sortFilterModel && this.sortFilterModel.isActive()) {
+      displayRow = this.sortFilterModel.getDisplayRowIndex(row);
+      if (displayRow === -1) {
+        // 该行被筛选隐藏
+        return null;
+      }
+    }
+
     // 计算单元格的位置（考虑滚动偏移）
     const x = headerWidth + this.model.getColX(col) - scrollX;
-    const y = headerHeight + this.model.getRowY(row) - scrollY;
+    const y = headerHeight + this.model.getRowY(displayRow) - scrollY;
 
     // 获取单元格信息
     const cellInfo = this.model.getMergedCellInfo(row, col);
@@ -2112,10 +2165,20 @@ export class SpreadsheetRenderer {
   public scrollToCell(row: number, col: number): void {
     const { headerWidth, headerHeight } = this.config;
 
+    // 排序筛选激活时，需要将数据行转换为显示行来计算位置
+    let displayRow = row;
+    if (this.sortFilterModel && this.sortFilterModel.isActive()) {
+      displayRow = this.sortFilterModel.getDisplayRowIndex(row);
+      if (displayRow === -1) {
+        // 该行被筛选隐藏，无法滚动到
+        return;
+      }
+    }
+
     const cellX = this.model.getColX(col);
-    const cellY = this.model.getRowY(row);
+    const cellY = this.model.getRowY(displayRow);
     const cellWidth = this.model.getColWidth(col);
-    const cellHeight = this.model.getRowHeight(row);
+    const cellHeight = this.model.getRowHeight(displayRow);
 
     const viewWidth = this.canvasWidth - headerWidth;
     const viewHeight = this.canvasHeight - headerHeight;
@@ -2468,9 +2531,10 @@ export class SpreadsheetRenderer {
   public getColResizeAtPosition(x: number, y: number): number | null {
     const { headerWidth, headerHeight } = this.config;
     const resizeThreshold = 5; // 检测范围（像素）
+    const colGroupHeight = this.getColGroupAreaHeight();
 
-    // 必须在列号区域内
-    if (x <= headerWidth || y > headerHeight) {
+    // 必须在列号区域内（考虑列分组区域高度）
+    if (x <= headerWidth || y < colGroupHeight || y > colGroupHeight + headerHeight) {
       return null;
     }
 
