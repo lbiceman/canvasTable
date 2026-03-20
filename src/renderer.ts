@@ -1,5 +1,6 @@
 import { SpreadsheetModel } from './model';
 import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment } from './types';
+import type { RowColumnGroup } from './types';
 import { CursorAwareness } from './collaboration/cursor-awareness';
 import { NumberFormatter, DateFormatter } from './format-engine';
 import { ConditionalFormatEngine } from './conditional-format';
@@ -24,6 +25,19 @@ export class SpreadsheetRenderer {
   private highlightedRow: number | null = null;
   // 高亮列
   private highlightedCol: number | null = null;
+
+  // 多选区数据
+  private multiSelections: Selection[] = [];
+  private activeSelectionIndex: number = -1;
+
+  // 是否高亮所有行列标题（全选状态）
+  private highlightAllHeaders: boolean = false;
+
+  // 填充柄拖拽预览区域
+  private fillDragPreview: Selection | null = null;
+
+  // 拖拽移动预览区域
+  private dragMovePreview: Selection | null = null;
 
   // 光标感知模块（协同编辑时设置）
   private cursorAwareness: CursorAwareness | null = null;
@@ -176,29 +190,39 @@ export class SpreadsheetRenderer {
     const { headerHeight, headerWidth } = this.config;
     const { scrollX, scrollY } = this.viewport;
 
-    // 根据滚动位置计算起始行
+    // 根据滚动位置计算起始行（跳过隐藏行）
     let startRow = this.model.getRowAtY(scrollY);
+    while (startRow < this.model.getRowCount() - 1 && this.model.isRowHidden(startRow)) {
+      startRow++;
+    }
     let offsetY = this.model.getRowY(startRow) - scrollY;
 
-    // 根据滚动位置计算起始列
+    // 根据滚动位置计算起始列（跳过隐藏列）
     let startCol = this.model.getColAtX(scrollX);
+    while (startCol < this.model.getColCount() - 1 && this.model.isColHidden(startCol)) {
+      startCol++;
+    }
     let offsetX = this.model.getColX(startCol) - scrollX;
 
-    // 计算可见行数
+    // 计算可见行数（跳过隐藏行）
     let currentY = headerHeight + offsetY;
     let endRow = startRow;
 
     while (currentY < this.canvasHeight && endRow < this.model.getRowCount() - 1) {
-      currentY += this.model.getRowHeight(endRow);
+      if (!this.model.isRowHidden(endRow)) {
+        currentY += this.model.getRowHeight(endRow);
+      }
       endRow++;
     }
 
-    // 计算可见列数
+    // 计算可见列数（跳过隐藏列）
     let currentX = headerWidth + offsetX;
     let endCol = startCol;
 
     while (currentX < this.canvasWidth && endCol < this.model.getColCount() - 1) {
-      currentX += this.model.getColWidth(endCol);
+      if (!this.model.isColHidden(endCol)) {
+        currentX += this.model.getColWidth(endCol);
+      }
       endCol++;
     }
 
@@ -263,10 +287,21 @@ export class SpreadsheetRenderer {
     // 绘制网格线
     this.renderGrid();
 
-    // 绘制选择区域
-    if (this.selection) {
+    // 绘制选择区域（多选区或单选区）
+    if (this.multiSelections.length > 0) {
+      this.renderMultiSelection();
+    } else if (this.selection) {
       this.renderSelection();
     }
+
+    // 绘制填充柄（活动选区右下角方块）
+    this.renderFillHandle();
+
+    // 绘制填充柄拖拽预览（虚线边框）
+    this.renderFillDragPreview();
+
+    // 绘制拖拽移动预览（半透明背景 + 虚线边框）
+    this.renderDragMovePreview();
 
     // 绘制远程用户光标（协同编辑）
     if (this.cursorAwareness) {
@@ -290,6 +325,12 @@ export class SpreadsheetRenderer {
     // 绘制列标题（在单元格之上）
     this.renderColHeaders();
 
+    // 绘制行分组指示区域（在行标题左侧）
+    this.renderRowGroupIndicators();
+
+    // 绘制列分组指示区域（在列标题上方）
+    this.renderColGroupIndicators();
+
     // 绘制左上角空白区域
     this.renderCorner();
 
@@ -302,6 +343,9 @@ export class SpreadsheetRenderer {
   // 绘制高亮行背景
   private renderHighlightedRow(): void {
     if (this.highlightedRow === null) return;
+
+    // 隐藏行不绘制高亮
+    if (this.model.isRowHidden(this.highlightedRow)) return;
 
     const { headerWidth, headerHeight } = this.config;
     const { scrollY } = this.viewport;
@@ -323,6 +367,9 @@ export class SpreadsheetRenderer {
   // 绘制高亮列背景
   private renderHighlightedCol(): void {
     if (this.highlightedCol === null) return;
+
+    // 隐藏列不绘制高亮
+    if (this.model.isColHidden(this.highlightedCol)) return;
 
     const { headerWidth, headerHeight } = this.config;
     const { scrollX } = this.viewport;
@@ -422,6 +469,15 @@ export class SpreadsheetRenderer {
 
     // 绘制行标题
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      // 跳过隐藏行，但检查是否需要绘制隐藏指示符
+      if (this.model.isRowHidden(row)) {
+        // 检查该隐藏行是否是一段连续隐藏区域的起始位置，绘制双线指示符
+        if (row === this.viewport.startRow || !this.model.isRowHidden(row - 1)) {
+          this.renderHiddenRowIndicator(currentY);
+        }
+        continue;
+      }
+
       // 排序筛选激活时，映射到数据行
       const dataRow = sfActive ? this.sortFilterModel!.getDataRowIndex(row) : row;
       if (dataRow === -1) {
@@ -433,8 +489,8 @@ export class SpreadsheetRenderer {
 
       // 只绘制可见部分
       if (currentY + rowHeight > headerHeight && currentY < this.canvasHeight) {
-        // 绘制行号背景（高亮行使用深色背景）
-        if (this.highlightedRow === row) {
+        // 绘制行号背景（高亮行或全选状态使用深色背景）
+        if (this.highlightedRow === row || this.highlightAllHeaders) {
           this.ctx.fillStyle = this.themeColors.highlightHeaderBackground;
         } else {
           this.ctx.fillStyle = this.themeColors.headerBackground;
@@ -472,6 +528,56 @@ export class SpreadsheetRenderer {
     this.ctx.stroke();
   }
 
+  /**
+   * 在行标题区域绘制隐藏行双线指示符
+   * 两条平行细线，间距 2px，提示用户此处存在隐藏行
+   */
+  private renderHiddenRowIndicator(y: number): void {
+    const { headerWidth } = this.config;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = this.themeColors.headerText;
+    this.ctx.lineWidth = 1;
+
+    // 绘制两条平行水平线，间距 2px
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, y - 1);
+    this.ctx.lineTo(headerWidth, y - 1);
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(0, y + 1);
+    this.ctx.lineTo(headerWidth, y + 1);
+    this.ctx.stroke();
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 在列标题区域绘制隐藏列双线指示符
+   * 两条平行细线，间距 2px，提示用户此处存在隐藏列
+   */
+  private renderHiddenColIndicator(x: number): void {
+    const { headerHeight } = this.config;
+
+    this.ctx.save();
+    this.ctx.strokeStyle = this.themeColors.headerText;
+    this.ctx.lineWidth = 1;
+
+    // 绘制两条平行垂直线，间距 2px
+    this.ctx.beginPath();
+    this.ctx.moveTo(x - 1, 0);
+    this.ctx.lineTo(x - 1, headerHeight);
+    this.ctx.stroke();
+
+    this.ctx.beginPath();
+    this.ctx.moveTo(x + 1, 0);
+    this.ctx.lineTo(x + 1, headerHeight);
+    this.ctx.stroke();
+
+    this.ctx.restore();
+  }
+
   // 绘制列标题
   private renderColHeaders(): void {
     const { headerWidth, headerHeight, fontSize, fontFamily } = this.config;
@@ -489,12 +595,21 @@ export class SpreadsheetRenderer {
 
     // 绘制列标题
     for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+      // 跳过隐藏列，但检查是否需要绘制隐藏指示符
+      if (this.model.isColHidden(col)) {
+        // 检查该隐藏列是否是一段连续隐藏区域的起始位置，绘制双线指示符
+        if (col === this.viewport.startCol || !this.model.isColHidden(col - 1)) {
+          this.renderHiddenColIndicator(currentX);
+        }
+        continue;
+      }
+
       const colWidth = this.model.getColWidth(col);
 
       // 只绘制可见部分
       if (currentX + colWidth > headerWidth && currentX < this.canvasWidth) {
-        // 绘制列号背景（高亮列使用深色背景）
-        if (this.highlightedCol === col) {
+        // 绘制列号背景（高亮列或全选状态使用深色背景）
+        if (this.highlightedCol === col || this.highlightAllHeaders) {
           this.ctx.fillStyle = this.themeColors.highlightHeaderBackground;
         } else {
           this.ctx.fillStyle = this.themeColors.headerBackground;
@@ -872,6 +987,11 @@ export class SpreadsheetRenderer {
 
     // 遍历可见行
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      // 跳过隐藏行
+      if (this.model.isRowHidden(row)) {
+        continue;
+      }
+
       // 排序筛选激活时，将显示行映射到数据行
       const dataRow = sfActive ? this.sortFilterModel!.getDataRowIndex(row) : row;
       if (dataRow === -1) {
@@ -885,6 +1005,11 @@ export class SpreadsheetRenderer {
 
       // 遍历可见列
       for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+        // 跳过隐藏列
+        if (this.model.isColHidden(col)) {
+          continue;
+        }
+
         const colWidth = this.model.getColWidth(col);
 
         // 获取单元格信息（考虑合并单元格），使用数据行索引
@@ -1428,10 +1553,20 @@ export class SpreadsheetRenderer {
     let currentY = headerHeight + offsetY;
 
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      // 跳过隐藏行
+      if (this.model.isRowHidden(row)) {
+        continue;
+      }
+
       const rowHeight = this.model.getRowHeight(row);
       let currentX = headerWidth + offsetX;
 
       for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+        // 跳过隐藏列
+        if (this.model.isColHidden(col)) {
+          continue;
+        }
+
         const colWidth = this.model.getColWidth(col);
 
         if (horizontalBorders[row][col]) {
@@ -1471,11 +1606,28 @@ export class SpreadsheetRenderer {
   // 绘制选择区域
   private renderSelection(): void {
     if (!this.selection) return;
+    // 单选区使用活动选区颜色绘制
+    this.renderSingleSelection(this.selection, true);
+  }
 
+  /** 渲染多选区：遍历所有选区分别绘制背景和边框 */
+  private renderMultiSelection(): void {
+    for (let i = 0; i < this.multiSelections.length; i++) {
+      const isActive = i === this.activeSelectionIndex;
+      this.renderSingleSelection(this.multiSelections[i], isActive);
+    }
+  }
+
+  /**
+   * 渲染单个选区的背景和边框
+   * @param sel 选区对象
+   * @param isActive 是否为活动选区（决定边框颜色）
+   */
+  private renderSingleSelection(sel: Selection, isActive: boolean): void {
     const { headerWidth, headerHeight } = this.config;
     const { scrollX, scrollY } = this.viewport;
 
-    const { startRow, startCol, endRow, endCol } = this.selection;
+    const { startRow, startCol, endRow, endCol } = sel;
 
     // 计算选择区域与视口的交集
     const visibleStartRow = Math.max(startRow, this.viewport.startRow);
@@ -1488,18 +1640,22 @@ export class SpreadsheetRenderer {
     }
 
     // 计算选择区域的起始坐标（考虑滚动偏移）
-    let startX = headerWidth + this.model.getColX(visibleStartCol) - scrollX;
-    let startY = headerHeight + this.model.getRowY(visibleStartRow) - scrollY;
+    const startX = headerWidth + this.model.getColX(visibleStartCol) - scrollX;
+    const startY = headerHeight + this.model.getRowY(visibleStartRow) - scrollY;
 
-    // 计算宽度和高度
+    // 计算宽度和高度（跳过隐藏行列）
     let width = 0;
     for (let col = visibleStartCol; col <= visibleEndCol; col++) {
-      width += this.model.getColWidth(col);
+      if (!this.model.isColHidden(col)) {
+        width += this.model.getColWidth(col);
+      }
     }
 
     let height = 0;
     for (let row = visibleStartRow; row <= visibleEndRow; row++) {
-      height += this.model.getRowHeight(row);
+      if (!this.model.isRowHidden(row)) {
+        height += this.model.getRowHeight(row);
+      }
     }
 
     // 裁剪到可见区域
@@ -1512,18 +1668,274 @@ export class SpreadsheetRenderer {
     this.ctx.fillStyle = this.themeColors.selectionBackground;
     this.ctx.fillRect(startX, startY, width, height);
 
-    // 绘制选择区域边框
-    this.ctx.strokeStyle = this.themeColors.selectionBorder;
+    // 绘制选择区域边框：活动选区使用主题色，非活动选区使用半透明变体
+    if (isActive) {
+      this.ctx.strokeStyle = this.themeColors.selectionBorder;
+    } else {
+      this.ctx.strokeStyle = this.getInactiveSelectionBorderColor();
+    }
     this.ctx.lineWidth = 2;
     this.ctx.strokeRect(startX, startY, width, height);
 
     this.ctx.restore();
   }
 
+  /**
+   * 渲染填充柄（活动选区右下角的 6×6 像素方块）
+   */
+  private renderFillHandle(): void {
+    // 获取活动选区
+    const activeSelection = this.multiSelections.length > 0
+      ? this.multiSelections[this.activeSelectionIndex]
+      : this.selection;
+
+    if (!activeSelection) return;
+
+    const { headerWidth, headerHeight } = this.config;
+    const { scrollX, scrollY } = this.viewport;
+
+    // 计算活动选区右下角的屏幕坐标
+    const endRow = Math.max(activeSelection.startRow, activeSelection.endRow);
+    const endCol = Math.max(activeSelection.startCol, activeSelection.endCol);
+
+    const endX = headerWidth + this.model.getColX(endCol) - scrollX + this.model.getColWidth(endCol);
+    const endY = headerHeight + this.model.getRowY(endRow) - scrollY + this.model.getRowHeight(endRow);
+
+    // 检查填充柄是否在可见区域内
+    if (endX < headerWidth || endY < headerHeight) return;
+    if (endX > this.canvasWidth || endY > this.canvasHeight) return;
+
+    const handleSize = 6;
+    const halfSize = handleSize / 2;
+
+    this.ctx.save();
+    this.ctx.fillStyle = this.themeColors.selectionBorder;
+    this.ctx.fillRect(endX - halfSize, endY - halfSize, handleSize, handleSize);
+    this.ctx.restore();
+  }
+
+  /**
+   * 判断指定坐标是否在填充柄区域内（±4px 容差）
+   */
+  public isOnFillHandle(x: number, y: number): boolean {
+    const activeSelection = this.multiSelections.length > 0
+      ? this.multiSelections[this.activeSelectionIndex]
+      : this.selection;
+
+    if (!activeSelection) return false;
+
+    const { headerWidth, headerHeight } = this.config;
+    const { scrollX, scrollY } = this.viewport;
+
+    const endRow = Math.max(activeSelection.startRow, activeSelection.endRow);
+    const endCol = Math.max(activeSelection.startCol, activeSelection.endCol);
+
+    const endX = headerWidth + this.model.getColX(endCol) - scrollX + this.model.getColWidth(endCol);
+    const endY = headerHeight + this.model.getRowY(endRow) - scrollY + this.model.getRowHeight(endRow);
+
+    const tolerance = 4;
+    return Math.abs(x - endX) <= tolerance && Math.abs(y - endY) <= tolerance;
+  }
+
+  /**
+   * 设置填充柄拖拽预览区域
+   * 传入 null 清除预览
+   */
+  public setFillDragPreview(preview: Selection | null): void {
+    this.fillDragPreview = preview;
+  }
+
+  /**
+   * 渲染填充柄拖拽预览（虚线边框）
+   * 在拖拽过程中显示目标填充区域的虚线边框
+   */
+  private renderFillDragPreview(): void {
+    if (!this.fillDragPreview) return;
+
+    const { headerWidth, headerHeight } = this.config;
+    const { scrollX, scrollY } = this.viewport;
+
+    const { startRow, startCol, endRow, endCol } = this.fillDragPreview;
+
+    // 计算预览区域的屏幕坐标
+    const x = headerWidth + this.model.getColX(startCol) - scrollX;
+    const y = headerHeight + this.model.getRowY(startRow) - scrollY;
+
+    // 计算宽度和高度（跳过隐藏行列）
+    let width = 0;
+    for (let col = startCol; col <= endCol; col++) {
+      if (!this.model.isColHidden(col)) {
+        width += this.model.getColWidth(col);
+      }
+    }
+
+    let height = 0;
+    for (let row = startRow; row <= endRow; row++) {
+      if (!this.model.isRowHidden(row)) {
+        height += this.model.getRowHeight(row);
+      }
+    }
+
+    // 裁剪到数据区域
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+    this.ctx.clip();
+
+    // 绘制虚线边框
+    this.ctx.strokeStyle = this.themeColors.selectionBorder;
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([4, 3]);
+    this.ctx.strokeRect(x, y, width, height);
+    this.ctx.setLineDash([]);
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 获取活动选区的屏幕坐标矩形
+   * 用于拖拽移动时的边框命中检测
+   */
+  public getSelectionRect(): { x: number; y: number; width: number; height: number } | null {
+    const activeSelection = this.multiSelections.length > 0
+      ? this.multiSelections[this.activeSelectionIndex]
+      : this.selection;
+
+    if (!activeSelection) return null;
+
+    const { headerWidth, headerHeight } = this.config;
+    const { scrollX, scrollY } = this.viewport;
+
+    const minRow = Math.min(activeSelection.startRow, activeSelection.endRow);
+    const maxRow = Math.max(activeSelection.startRow, activeSelection.endRow);
+    const minCol = Math.min(activeSelection.startCol, activeSelection.endCol);
+    const maxCol = Math.max(activeSelection.startCol, activeSelection.endCol);
+
+    const rectX = headerWidth + this.model.getColX(minCol) - scrollX;
+    const rectY = headerHeight + this.model.getRowY(minRow) - scrollY;
+
+    // 计算宽度和高度（跳过隐藏行列）
+    let width = 0;
+    for (let col = minCol; col <= maxCol; col++) {
+      if (!this.model.isColHidden(col)) {
+        width += this.model.getColWidth(col);
+      }
+    }
+
+    let height = 0;
+    for (let row = minRow; row <= maxRow; row++) {
+      if (!this.model.isRowHidden(row)) {
+        height += this.model.getRowHeight(row);
+      }
+    }
+
+    return { x: rectX, y: rectY, width, height };
+  }
+
+  /**
+   * 设置拖拽移动预览区域
+   * 传入 null 清除预览
+   */
+  public setDragMovePreview(preview: Selection | null): void {
+    this.dragMovePreview = preview;
+  }
+
+  /**
+   * 渲染拖拽移动预览（半透明背景 + 虚线边框）
+   * 在拖拽过程中显示目标移动区域
+   */
+  private renderDragMovePreview(): void {
+    if (!this.dragMovePreview) return;
+
+    const { headerWidth, headerHeight } = this.config;
+    const { scrollX, scrollY } = this.viewport;
+
+    const { startRow, startCol, endRow, endCol } = this.dragMovePreview;
+
+    // 计算预览区域的屏幕坐标
+    const x = headerWidth + this.model.getColX(startCol) - scrollX;
+    const y = headerHeight + this.model.getRowY(startRow) - scrollY;
+
+    // 计算宽度和高度（跳过隐藏行列）
+    let width = 0;
+    for (let col = startCol; col <= endCol; col++) {
+      if (!this.model.isColHidden(col)) {
+        width += this.model.getColWidth(col);
+      }
+    }
+
+    let height = 0;
+    for (let row = startRow; row <= endRow; row++) {
+      if (!this.model.isRowHidden(row)) {
+        height += this.model.getRowHeight(row);
+      }
+    }
+
+    // 裁剪到数据区域
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+    this.ctx.clip();
+
+    // 绘制半透明背景
+    this.ctx.fillStyle = this.themeColors.selectionBackground;
+    this.ctx.fillRect(x, y, width, height);
+
+    // 绘制虚线边框
+    this.ctx.strokeStyle = this.themeColors.selectionBorder;
+    this.ctx.lineWidth = 2;
+    this.ctx.setLineDash([4, 3]);
+    this.ctx.strokeRect(x, y, width, height);
+    this.ctx.setLineDash([]);
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 获取非活动选区的半透明边框颜色
+   * 将 selectionBorder 颜色转换为 alpha=0.3 的半透明变体
+   */
+  private getInactiveSelectionBorderColor(): string {
+    const border = this.themeColors.selectionBorder;
+    // 处理 #RRGGBB 格式
+    if (border.startsWith('#') && border.length === 7) {
+      const r = parseInt(border.slice(1, 3), 16);
+      const g = parseInt(border.slice(3, 5), 16);
+      const b = parseInt(border.slice(5, 7), 16);
+      return `rgba(${r}, ${g}, ${b}, 0.3)`;
+    }
+    // 处理 rgb(...) 格式
+    if (border.startsWith('rgb(')) {
+      return border.replace('rgb(', 'rgba(').replace(')', ', 0.3)');
+    }
+    // 处理 rgba(...) 格式，替换 alpha 值
+    if (border.startsWith('rgba(')) {
+      return border.replace(/,\s*[\d.]+\)$/, ', 0.3)');
+    }
+    // 回退：直接返回原色
+    return border;
+  }
+
   // 设置选择区域
   public setSelection(startRow: number, startCol: number, endRow: number, endCol: number): void {
     this.selection = { startRow, startCol, endRow, endCol };
     this.render();
+  }
+
+  /** 设置多选区数据 */
+  public setMultiSelection(selections: Selection[], activeIndex: number): void {
+    this.multiSelections = selections;
+    this.activeSelectionIndex = activeIndex;
+  }
+
+  /** 设置是否高亮所有行列标题（全选状态） */
+  public setHighlightAll(highlight: boolean): void {
+    this.highlightAllHeaders = highlight;
+  }
+
+  /** 获取是否处于全选高亮状态 */
+  public getHighlightAll(): boolean {
+    return this.highlightAllHeaders;
   }
 
   // 清除选择区域
@@ -1745,6 +2157,300 @@ export class SpreadsheetRenderer {
       }
 
       currentY += rowHeight;
+    }
+
+    return null;
+  }
+
+  // ============================================================
+  // 分组折叠按钮渲染
+  // ============================================================
+
+  /**
+   * 获取行分组指示区域宽度
+   * 宽度 = maxLevel × 16px，无分组时返回 0
+   */
+  public getRowGroupAreaWidth(): number {
+    const maxLevel = this.model.getMaxGroupLevel('row');
+    return maxLevel * 16;
+  }
+
+  /**
+   * 获取列分组指示区域高度
+   * 高度 = maxLevel × 16px，无分组时返回 0
+   */
+  public getColGroupAreaHeight(): number {
+    const maxLevel = this.model.getMaxGroupLevel('col');
+    return maxLevel * 16;
+  }
+
+  /**
+   * 绘制行分组指示区域
+   * 在行标题左侧绘制层级指示线和折叠/展开按钮
+   */
+  private renderRowGroupIndicators(): void {
+    const rowGroupWidth = this.getRowGroupAreaWidth();
+    if (rowGroupWidth === 0) return;
+
+    const { headerHeight } = this.config;
+    const { scrollY } = this.viewport;
+    const rowGroups = this.model.getRowGroups();
+
+    // 绘制分组指示区域背景
+    this.ctx.fillStyle = this.themeColors.headerBackground;
+    this.ctx.fillRect(0, headerHeight, rowGroupWidth, this.canvasHeight - headerHeight);
+
+    // 绘制右边框
+    this.ctx.strokeStyle = this.themeColors.gridLine;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(rowGroupWidth, headerHeight);
+    this.ctx.lineTo(rowGroupWidth, this.canvasHeight);
+    this.ctx.stroke();
+
+    // 裁剪到分组指示区域，防止绘制溢出
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(0, headerHeight, rowGroupWidth, this.canvasHeight - headerHeight);
+    this.ctx.clip();
+
+    // 遍历所有行分组，绘制层级指示线和按钮
+    for (const group of rowGroups) {
+      this.renderSingleRowGroup(group, headerHeight, scrollY);
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制单个行分组的指示线和折叠/展开按钮
+   */
+  private renderSingleRowGroup(
+    group: RowColumnGroup,
+    headerHeight: number,
+    scrollY: number
+  ): void {
+    const levelWidth = 16;
+    // 层级列的 X 中心位置（level 1 在最左侧）
+    const levelX = (group.level - 1) * levelWidth + levelWidth / 2;
+
+    // 计算分组起始行和结束行的屏幕 Y 坐标
+    const startY = headerHeight + this.model.getRowY(group.start) - scrollY;
+    const endRowBottom = headerHeight + this.model.getRowY(group.end) - scrollY
+      + this.model.getRowHeight(group.end);
+
+    // 检查分组是否在可见范围内
+    if (endRowBottom < headerHeight || startY > this.canvasHeight) return;
+
+    const buttonSize = 12;
+    // 按钮绘制在分组末尾行的中心位置
+    const buttonY = endRowBottom - buttonSize - 2;
+    const buttonX = levelX - buttonSize / 2;
+
+    // 绘制竖线：从分组起始行到按钮顶部
+    this.ctx.strokeStyle = this.themeColors.headerText;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(levelX, Math.max(headerHeight, startY));
+    this.ctx.lineTo(levelX, Math.max(headerHeight, buttonY));
+    this.ctx.stroke();
+
+    // 绘制横线：从竖线连接到分组起始行右侧
+    const rowGroupWidth = this.getRowGroupAreaWidth();
+    this.ctx.beginPath();
+    this.ctx.moveTo(levelX, Math.max(headerHeight, startY));
+    this.ctx.lineTo(rowGroupWidth, Math.max(headerHeight, startY));
+    this.ctx.stroke();
+
+    // 绘制折叠/展开按钮（12×12px）
+    this.renderGroupButton(buttonX, buttonY, buttonSize, group.collapsed);
+  }
+
+  /**
+   * 绘制列分组指示区域
+   * 在列标题上方绘制层级指示线和折叠/展开按钮
+   */
+  private renderColGroupIndicators(): void {
+    const colGroupHeight = this.getColGroupAreaHeight();
+    if (colGroupHeight === 0) return;
+
+    const { headerWidth } = this.config;
+    const { scrollX } = this.viewport;
+    const colGroups = this.model.getColGroups();
+
+    // 绘制分组指示区域背景
+    this.ctx.fillStyle = this.themeColors.headerBackground;
+    this.ctx.fillRect(headerWidth, 0, this.canvasWidth - headerWidth, colGroupHeight);
+
+    // 绘制底边框
+    this.ctx.strokeStyle = this.themeColors.gridLine;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(headerWidth, colGroupHeight);
+    this.ctx.lineTo(this.canvasWidth, colGroupHeight);
+    this.ctx.stroke();
+
+    // 裁剪到分组指示区域，防止绘制溢出
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(headerWidth, 0, this.canvasWidth - headerWidth, colGroupHeight);
+    this.ctx.clip();
+
+    // 遍历所有列分组，绘制层级指示线和按钮
+    for (const group of colGroups) {
+      this.renderSingleColGroup(group, headerWidth, scrollX);
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制单个列分组的指示线和折叠/展开按钮
+   */
+  private renderSingleColGroup(
+    group: RowColumnGroup,
+    headerWidth: number,
+    scrollX: number
+  ): void {
+    const levelHeight = 16;
+    // 层级行的 Y 中心位置（level 1 在最上方）
+    const levelY = (group.level - 1) * levelHeight + levelHeight / 2;
+
+    // 计算分组起始列和结束列的屏幕 X 坐标
+    const startX = headerWidth + this.model.getColX(group.start) - scrollX;
+    const endColRight = headerWidth + this.model.getColX(group.end) - scrollX
+      + this.model.getColWidth(group.end);
+
+    // 检查分组是否在可见范围内
+    if (endColRight < headerWidth || startX > this.canvasWidth) return;
+
+    const buttonSize = 12;
+    // 按钮绘制在分组末尾列的中心位置
+    const buttonX = endColRight - buttonSize - 2;
+    const buttonY = levelY - buttonSize / 2;
+
+    // 绘制横线：从分组起始列到按钮左侧
+    this.ctx.strokeStyle = this.themeColors.headerText;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(Math.max(headerWidth, startX), levelY);
+    this.ctx.lineTo(Math.max(headerWidth, buttonX), levelY);
+    this.ctx.stroke();
+
+    // 绘制竖线：从横线连接到分组起始列下方
+    const colGroupHeight = this.getColGroupAreaHeight();
+    this.ctx.beginPath();
+    this.ctx.moveTo(Math.max(headerWidth, startX), levelY);
+    this.ctx.lineTo(Math.max(headerWidth, startX), colGroupHeight);
+    this.ctx.stroke();
+
+    // 绘制折叠/展开按钮（12×12px）
+    this.renderGroupButton(buttonX, buttonY, buttonSize, group.collapsed);
+  }
+
+  /**
+   * 绘制分组折叠/展开按钮
+   * 折叠状态显示 "+"，展开状态显示 "-"
+   * @param x 按钮左上角 X 坐标
+   * @param y 按钮左上角 Y 坐标
+   * @param size 按钮尺寸（12px）
+   * @param collapsed 是否处于折叠状态
+   */
+  private renderGroupButton(x: number, y: number, size: number, collapsed: boolean): void {
+    // 绘制按钮背景
+    this.ctx.fillStyle = this.themeColors.headerBackground;
+    this.ctx.fillRect(x, y, size, size);
+
+    // 绘制按钮边框
+    this.ctx.strokeStyle = this.themeColors.headerText;
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(x, y, size, size);
+
+    // 绘制 +/- 图标
+    const cx = x + size / 2;
+    const cy = y + size / 2;
+    const iconPadding = 3;
+
+    this.ctx.beginPath();
+    // 横线（- 和 + 都有）
+    this.ctx.moveTo(x + iconPadding, cy);
+    this.ctx.lineTo(x + size - iconPadding, cy);
+    this.ctx.stroke();
+
+    if (collapsed) {
+      // 折叠状态：额外绘制竖线形成 "+"
+      this.ctx.beginPath();
+      this.ctx.moveTo(cx, y + iconPadding);
+      this.ctx.lineTo(cx, y + size - iconPadding);
+      this.ctx.stroke();
+    }
+  }
+
+  /**
+   * 检测指定坐标是否点击了行分组的折叠/展开按钮
+   * 返回匹配的分组信息，未命中返回 null
+   */
+  public getRowGroupButtonAtPosition(x: number, y: number): RowColumnGroup | null {
+    const rowGroupWidth = this.getRowGroupAreaWidth();
+    if (rowGroupWidth === 0) return null;
+
+    const { headerHeight } = this.config;
+    const { scrollY } = this.viewport;
+
+    // 检查是否在行分组指示区域内
+    if (x > rowGroupWidth || y <= headerHeight) return null;
+
+    const rowGroups = this.model.getRowGroups();
+    const buttonSize = 12;
+
+    for (const group of rowGroups) {
+      const levelWidth = 16;
+      const levelX = (group.level - 1) * levelWidth + levelWidth / 2;
+      const endRowBottom = headerHeight + this.model.getRowY(group.end) - scrollY
+        + this.model.getRowHeight(group.end);
+
+      const buttonX = levelX - buttonSize / 2;
+      const buttonY = endRowBottom - buttonSize - 2;
+
+      if (x >= buttonX && x <= buttonX + buttonSize &&
+          y >= buttonY && y <= buttonY + buttonSize) {
+        return group;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 检测指定坐标是否点击了列分组的折叠/展开按钮
+   * 返回匹配的分组信息，未命中返回 null
+   */
+  public getColGroupButtonAtPosition(x: number, y: number): RowColumnGroup | null {
+    const colGroupHeight = this.getColGroupAreaHeight();
+    if (colGroupHeight === 0) return null;
+
+    const { headerWidth } = this.config;
+    const { scrollX } = this.viewport;
+
+    // 检查是否在列分组指示区域内
+    if (x <= headerWidth || y > colGroupHeight) return null;
+
+    const colGroups = this.model.getColGroups();
+    const buttonSize = 12;
+
+    for (const group of colGroups) {
+      const levelHeight = 16;
+      const levelY = (group.level - 1) * levelHeight + levelHeight / 2;
+      const endColRight = headerWidth + this.model.getColX(group.end) - scrollX
+        + this.model.getColWidth(group.end);
+
+      const buttonX = endColRight - buttonSize - 2;
+      const buttonY = levelY - buttonSize / 2;
+
+      if (x >= buttonX && x <= buttonX + buttonSize &&
+          y >= buttonY && y <= buttonY + buttonSize) {
+        return group;
+      }
     }
 
     return null;

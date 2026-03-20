@@ -258,3 +258,64 @@ export interface WorkbookData {
   activeSheetId: string;
   sheets: Array<WorkbookSheetEntry>;
 }
+
+
+// ============================================================
+// 选区与编辑增强相关类型定义
+// ============================================================
+
+/** 多选区集合 */
+export interface MultiSelectionState {
+  selections: Selection[];
+  activeIndex: number;
+}
+
+/** 冻结窗格配置 */
+export interface FreezeConfig {
+  rows: number;  // 冻结行数
+  cols: number;  // 冻结列数
+}
+
+/** 行/列分组 */
+export interface RowColumnGroup {
+  type: 'row' | 'col';
+  start: number;
+  end: number;
+  level: number;
+  collapsed: boolean;
+}
+
+/** 填充方向 */
+export type FillDirection = 'down' | 'up' | 'right' | 'left';
+
+/** 填充模式 */
+export interface FillPattern {
+  type: 'number' | 'date' | 'text';
+  step: number;          // 数字步长或日期天数间隔
+  values: string[];      // 源值（用于文本复制填充）
+}
+
+/** 选择性粘贴模式 */
+export type PasteSpecialMode = 'values' | 'formats' | 'formulas' | 'transpose';
+
+/** 剪贴板单元格完整数据 */
+export interface ClipboardCellData {
+  content: string;
+  formulaContent?: string;
+  fontColor?: string;
+  bgColor?: string;
+  fontSize?: number;
+  fontBold?: boolean;
+  fontItalic?: boolean;
+  fontUnderline?: boolean;
+  fontAlign?: 'left' | 'center' | 'right';
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  format?: CellFormat;
+}
+
+/** 内部剪贴板数据 */
+export interface InternalClipboard {
+  cells: ClipboardCellData[][];
+  startRow: number;
+  startCol: number;
+}

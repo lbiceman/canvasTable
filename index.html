@@ -159,6 +159,21 @@
               <div class="sparkline-option" data-type="winLoss">盈亏迷你图</div>
             </div>
           </div>
+          <!-- 冻结窗格下拉按钮 -->
+          <div class="freeze-picker" title="冻结窗格">
+            <button id="freeze-btn" type="button">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M7.5 1V14M7.5 1L5 3.5M7.5 1L10 3.5M7.5 14L5 11.5M7.5 14L10 11.5M1 7.5H14M1 7.5L3.5 5M1 7.5L3.5 10M14 7.5L11.5 5M14 7.5L11.5 10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+              <span>冻结</span>
+            </button>
+            <div id="freeze-dropdown" class="freeze-dropdown">
+              <div class="freeze-option" data-freeze="firstRow">冻结首行</div>
+              <div class="freeze-option" data-freeze="firstCol">冻结首列</div>
+              <div class="freeze-option" data-freeze="currentCell">冻结至当前单元格</div>
+              <div class="freeze-option" data-freeze="none">取消冻结</div>
+            </div>
+          </div>
           <div class="separator"></div>
           <div class="cell-info">
             <span id="selected-cell">A1</span>

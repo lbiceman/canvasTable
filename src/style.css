@@ -1204,6 +1204,57 @@ h1 {
   font-weight: 600;
 }
 
+/* 冻结窗格下拉选择器样式 */
+.freeze-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.freeze-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.freeze-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.freeze-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 140px;
+}
+
+.freeze-dropdown.visible {
+  display: block;
+}
+
+.freeze-option {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.freeze-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
 /* 自动换行按钮样式 */
 .wrap-text-btn {
   display: flex;
@@ -1314,6 +1365,45 @@ h1 {
 
 .search-btn:active {
   transform: scale(0.95);
+}
+
+/* 替换行样式 */
+.search-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--theme-grid-line);
+}
+
+.replace-input-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.replace-input {
+  width: 200px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  outline: none;
+}
+
+.replace-input:focus {
+  border-color: #007bff;
+}
+
+.replace-btn,
+.replace-all-btn {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 
@@ -2475,4 +2565,92 @@ h1 {
 
 .filter-dropdown-cancel-btn:hover {
   background: var(--theme-button-hover-bg, #f5f5f5);
+}
+
+/* ============================================================
+   选择性粘贴对话框样式
+   ============================================================ */
+
+/* 遮罩层 */
+.paste-special-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+/* 对话框容器 */
+.paste-special-dialog {
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  min-width: 240px;
+  padding: 16px;
+}
+
+/* 标题 */
+.paste-special-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+/* 选项列表 */
+.paste-special-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 选项按钮 */
+.paste-special-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--theme-background);
+  color: var(--theme-foreground);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  height: auto;
+}
+
+.paste-special-option:hover {
+  background: var(--theme-highlight-bg);
+  border-color: var(--theme-grid-line);
+}
+
+.paste-special-option:focus {
+  outline: none;
+  border-color: var(--theme-selection-border);
+  box-shadow: 0 0 0 2px var(--theme-selection-bg);
+}
+
+/* 选项图标 */
+.paste-special-option-icon {
+  font-size: 16px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* 选项文本 */
+.paste-special-option-label {
+  font-size: 13px;
+  font-weight: 500;
 }

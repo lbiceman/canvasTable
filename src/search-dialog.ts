@@ -8,17 +8,28 @@ export class SearchDialog {
   private dialog: HTMLDivElement;
   private input: HTMLInputElement;
   private resultsInfo: HTMLSpanElement;
+  private replaceInput: HTMLInputElement;
+  private replaceBtn: HTMLButtonElement;
+  private replaceAllBtn: HTMLButtonElement;
+  private replaceRow: HTMLDivElement;
+  private mode: 'find' | 'findReplace' = 'find';
   private results: SearchResult[] = [];
   private currentIndex: number = -1;
   private onSearch: ((keyword: string) => SearchResult[]) | null = null;
   private onNavigate: ((result: SearchResult) => void) | null = null;
   private onClose: (() => void) | null = null;
   private onNoResults: (() => void) | null = null;
+  private onReplace: ((searchText: string, replaceText: string) => boolean) | null = null;
+  private onReplaceAll: ((searchText: string, replaceText: string) => number) | null = null;
 
   constructor() {
     this.dialog = this.createDialog();
     this.input = this.dialog.querySelector('.search-input') as HTMLInputElement;
     this.resultsInfo = this.dialog.querySelector('.search-results-info') as HTMLSpanElement;
+    this.replaceInput = this.dialog.querySelector('.replace-input') as HTMLInputElement;
+    this.replaceBtn = this.dialog.querySelector('.replace-btn') as HTMLButtonElement;
+    this.replaceAllBtn = this.dialog.querySelector('.replace-all-btn') as HTMLButtonElement;
+    this.replaceRow = this.dialog.querySelector('.search-replace-row') as HTMLDivElement;
     document.body.appendChild(this.dialog);
     this.bindEvents();
   }
@@ -52,6 +63,13 @@ export class SearchDialog {
           </svg>
         </button>
       </div>
+      <div class="search-replace-row" style="display: none;">
+        <div class="replace-input-wrapper">
+          <input type="text" class="replace-input" placeholder="替换为..." />
+        </div>
+        <button class="search-btn replace-btn" title="替换">替换</button>
+        <button class="search-btn replace-all-btn" title="全部替换">全部替换</button>
+      </div>
     `;
     return dialog;
   }
@@ -62,7 +80,7 @@ export class SearchDialog {
       this.search();
     });
 
-    // 键盘事件
+    // 查找输入框键盘事件
     this.input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -76,6 +94,13 @@ export class SearchDialog {
       }
     });
 
+    // 替换输入框键盘事件
+    this.replaceInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        this.hide();
+      }
+    });
+
     // 按钮事件
     const prevBtn = this.dialog.querySelector('.search-prev');
     const nextBtn = this.dialog.querySelector('.search-next');
@@ -84,10 +109,20 @@ export class SearchDialog {
     prevBtn?.addEventListener('click', () => this.prev());
     nextBtn?.addEventListener('click', () => this.next());
     closeBtn?.addEventListener('click', () => this.hide());
+
+    // 替换按钮事件
+    this.replaceBtn.addEventListener('click', () => this.handleReplace());
+    this.replaceAllBtn.addEventListener('click', () => this.handleReplaceAll());
   }
 
-  public show(): void {
+  /** 显示对话框，支持查找模式和查找替换模式 */
+  public show(mode?: 'find' | 'findReplace'): void {
+    this.mode = mode ?? 'find';
     this.dialog.style.display = 'block';
+
+    // 根据模式显示/隐藏替换行
+    this.replaceRow.style.display = this.mode === 'findReplace' ? 'flex' : 'none';
+
     this.input.focus();
     this.input.select();
   }
@@ -118,6 +153,48 @@ export class SearchDialog {
 
   public setNoResultsHandler(handler: () => void): void {
     this.onNoResults = handler;
+  }
+
+  /** 设置替换回调 */
+  public setReplaceHandler(handler: (search: string, replace: string) => boolean): void {
+    this.onReplace = handler;
+  }
+
+  /** 设置全部替换回调 */
+  public setReplaceAllHandler(handler: (search: string, replace: string) => number): void {
+    this.onReplaceAll = handler;
+  }
+
+  /** 执行替换当前匹配 */
+  private handleReplace(): void {
+    const searchText = this.input.value.trim();
+    const replaceText = this.replaceInput.value;
+    if (!searchText || this.currentIndex < 0) return;
+
+    if (this.onReplace) {
+      const replaced = this.onReplace(searchText, replaceText);
+      if (replaced) {
+        // 替换成功后重新搜索以更新结果
+        this.search();
+      }
+    }
+  }
+
+  /** 执行全部替换 */
+  private handleReplaceAll(): void {
+    const searchText = this.input.value.trim();
+    const replaceText = this.replaceInput.value;
+    if (!searchText) return;
+
+    if (this.onReplaceAll) {
+      const count = this.onReplaceAll(searchText, replaceText);
+      // 全部替换后重新搜索以更新结果
+      this.search();
+      // 显示替换计数
+      if (count > 0) {
+        this.resultsInfo.textContent = `已替换 ${count} 项`;
+      }
+    }
   }
 
   private search(): void {

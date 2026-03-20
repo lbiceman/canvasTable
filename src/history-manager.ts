@@ -22,7 +22,31 @@ export type ActionType =
   | 'setValidation'
   | 'setConditionalFormat'
   | 'setSort'
-  | 'setFilter';
+  | 'setFilter'
+  // 批量删除行/列
+  | 'batchDeleteRows'
+  | 'batchDeleteCols'
+  // 隐藏/取消隐藏行/列
+  | 'hideRows'
+  | 'hideCols'
+  | 'unhideRows'
+  | 'unhideCols'
+  // 分组操作
+  | 'createGroup'
+  | 'removeGroup'
+  | 'collapseGroup'
+  | 'expandGroup'
+  // 冻结窗格
+  | 'freeze'
+  // 填充
+  | 'fill'
+  // 拖拽移动
+  | 'dragMove'
+  // 选择性粘贴
+  | 'pasteSpecial'
+  // 查找替换
+  | 'replace'
+  | 'replaceAll';
 
 
 // 历史记录项

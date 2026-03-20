@@ -1,6 +1,8 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
+import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup } from './types';
+import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
 import { SearchDialog, SearchResult } from './search-dialog';
@@ -17,12 +19,14 @@ import { SheetTabBar } from './sheet-tab-bar';
 import { SheetContextMenu } from './sheet-context-menu';
 import { FilterDropdown } from './sort-filter/filter-dropdown';
 import type { SortDirection, ColumnFilter } from './sort-filter/types';
+import { MultiSelectionManager } from './multi-selection';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
   private renderer: SpreadsheetRenderer;
   private canvas: HTMLCanvasElement;
-  private currentSelection: Selection | null = null;
+  // 多选区管理器（替换原 currentSelection: Selection | null）
+  private multiSelection: MultiSelectionManager = new MultiSelectionManager();
   private selectionStart: CellPosition | null = null;
   private inlineEditor: InlineEditor;
   private dataManager: DataManager;
@@ -53,10 +57,28 @@ export class SpreadsheetApp {
   // 行操作右键菜单
   private contextMenu: HTMLDivElement | null = null;
   private contextMenuRow: number | null = null;
+  private batchDeleteRowItem: HTMLDivElement | null = null;
 
   // 列操作右键菜单
   private colContextMenu: HTMLDivElement | null = null;
   private contextMenuCol: number | null = null;
+  private batchDeleteColItem: HTMLDivElement | null = null;
+
+  // 行号/列号区域拖拽选择状态
+  private isDraggingRowHeader = false;
+  private rowHeaderDragStartRow: number = -1;
+  private isDraggingColHeader = false;
+  private colHeaderDragStartCol: number = -1;
+
+  // 填充柄拖拽状态
+  private isFillDragging = false;
+  private fillDragSourceSelection: Selection | null = null;
+  private fillDragCurrentCell: CellPosition | null = null;
+
+  // 拖拽移动状态
+  private isDragMoving: boolean = false;
+  private dragMoveSource: Selection | null = null;
+  private dragMoveTarget: CellPosition | null = null;
 
   // 行高/列宽调整状态
   private isResizingRow = false;
@@ -124,6 +146,15 @@ export class SpreadsheetApp {
     this.searchDialog.setSearchHandler(this.handleSearch.bind(this));
     this.searchDialog.setNavigateHandler(this.handleSearchNavigate.bind(this));
     this.searchDialog.setNoResultsHandler(this.handleSearchNoResults.bind(this));
+    // 设置替换回调
+    this.searchDialog.setReplaceHandler(this.handleReplace.bind(this));
+    this.searchDialog.setReplaceAllHandler(this.handleReplaceAll.bind(this));
+
+    // 创建选择性粘贴对话框
+    this.pasteSpecialDialog = new PasteSpecialDialog();
+    this.pasteSpecialDialog.setSelectHandler((mode: PasteSpecialMode) => {
+      this.handlePasteSpecial(mode);
+    });
 
     // 渲染配置
     const config: RenderConfig = {
@@ -282,8 +313,56 @@ export class SpreadsheetApp {
     deleteItem.innerHTML = '<span class="context-menu-icon">🗑️</span>删除当前行';
     deleteItem.addEventListener('click', () => this.deleteCurrentRow());
 
+    // 批量删除选中行选项
+    this.batchDeleteRowItem = document.createElement('div');
+    this.batchDeleteRowItem.className = 'context-menu-item';
+    this.batchDeleteRowItem.innerHTML = '<span class="context-menu-icon">🗑️</span>删除选中行';
+    this.batchDeleteRowItem.addEventListener('click', () => this.batchDeleteSelectedRows());
+
     this.contextMenu.appendChild(insertItem);
     this.contextMenu.appendChild(deleteItem);
+    this.contextMenu.appendChild(this.batchDeleteRowItem);
+
+    // 分隔线（隐藏行操作）
+    const hideRowDivider = document.createElement('div');
+    hideRowDivider.className = 'context-menu-divider';
+    this.contextMenu.appendChild(hideRowDivider);
+
+    // 隐藏行选项
+    const hideRowItem = document.createElement('div');
+    hideRowItem.className = 'context-menu-item';
+    hideRowItem.innerHTML = '<span class="context-menu-icon">👁️‍🗨️</span>隐藏行';
+    hideRowItem.addEventListener('click', () => this.hideSelectedRows());
+
+    // 取消隐藏行选项
+    const unhideRowItem = document.createElement('div');
+    unhideRowItem.className = 'context-menu-item';
+    unhideRowItem.innerHTML = '<span class="context-menu-icon">👁️</span>取消隐藏行';
+    unhideRowItem.addEventListener('click', () => this.unhideAdjacentRows());
+
+    this.contextMenu.appendChild(hideRowItem);
+    this.contextMenu.appendChild(unhideRowItem);
+
+    // 分隔线（分组行操作）
+    const groupRowDivider = document.createElement('div');
+    groupRowDivider.className = 'context-menu-divider';
+    this.contextMenu.appendChild(groupRowDivider);
+
+    // 分组行选项
+    const groupRowItem = document.createElement('div');
+    groupRowItem.className = 'context-menu-item';
+    groupRowItem.innerHTML = '<span class="context-menu-icon">📁</span>分组行';
+    groupRowItem.addEventListener('click', () => this.groupSelectedRows());
+
+    // 取消分组行选项
+    const ungroupRowItem = document.createElement('div');
+    ungroupRowItem.className = 'context-menu-item';
+    ungroupRowItem.innerHTML = '<span class="context-menu-icon">📂</span>取消分组行';
+    ungroupRowItem.addEventListener('click', () => this.ungroupSelectedRows());
+
+    this.contextMenu.appendChild(groupRowItem);
+    this.contextMenu.appendChild(ungroupRowItem);
+
     document.body.appendChild(this.contextMenu);
 
     // 点击其他地方关闭菜单
@@ -341,8 +420,55 @@ export class SpreadsheetApp {
     deleteItem.innerHTML = '<span class="context-menu-icon">🗑️</span>删除当前列';
     deleteItem.addEventListener('click', () => this.deleteCurrentCol());
 
+    // 批量删除选中列选项
+    this.batchDeleteColItem = document.createElement('div');
+    this.batchDeleteColItem.className = 'context-menu-item';
+    this.batchDeleteColItem.innerHTML = '<span class="context-menu-icon">🗑️</span>删除选中列';
+    this.batchDeleteColItem.addEventListener('click', () => this.batchDeleteSelectedCols());
+
     this.colContextMenu.appendChild(insertItem);
     this.colContextMenu.appendChild(deleteItem);
+    this.colContextMenu.appendChild(this.batchDeleteColItem);
+
+    // 分隔线（隐藏列操作）
+    const hideColDivider = document.createElement('div');
+    hideColDivider.className = 'context-menu-divider';
+    this.colContextMenu.appendChild(hideColDivider);
+
+    // 隐藏列选项
+    const hideColItem = document.createElement('div');
+    hideColItem.className = 'context-menu-item';
+    hideColItem.innerHTML = '<span class="context-menu-icon">👁️‍🗨️</span>隐藏列';
+    hideColItem.addEventListener('click', () => this.hideSelectedCols());
+
+    // 取消隐藏列选项
+    const unhideColItem = document.createElement('div');
+    unhideColItem.className = 'context-menu-item';
+    unhideColItem.innerHTML = '<span class="context-menu-icon">👁️</span>取消隐藏列';
+    unhideColItem.addEventListener('click', () => this.unhideAdjacentCols());
+
+    this.colContextMenu.appendChild(hideColItem);
+    this.colContextMenu.appendChild(unhideColItem);
+
+    // 分隔线（分组列操作）
+    const groupColDivider = document.createElement('div');
+    groupColDivider.className = 'context-menu-divider';
+    this.colContextMenu.appendChild(groupColDivider);
+
+    // 分组列选项
+    const groupColItem = document.createElement('div');
+    groupColItem.className = 'context-menu-item';
+    groupColItem.innerHTML = '<span class="context-menu-icon">📁</span>分组列';
+    groupColItem.addEventListener('click', () => this.groupSelectedCols());
+
+    // 取消分组列选项
+    const ungroupColItem = document.createElement('div');
+    ungroupColItem.className = 'context-menu-item';
+    ungroupColItem.innerHTML = '<span class="context-menu-icon">📂</span>取消分组列';
+    ungroupColItem.addEventListener('click', () => this.ungroupSelectedCols());
+
+    this.colContextMenu.appendChild(groupColItem);
+    this.colContextMenu.appendChild(ungroupColItem);
 
     // 分隔线
     const divider = document.createElement('div');
@@ -462,7 +588,7 @@ export class SpreadsheetApp {
             count: 1,
           });
         }
-        this.currentSelection = null;
+        this.multiSelection.clear();
         this.renderer.clearSelection();
         this.renderer.clearHighlight();
         this.renderer.render();
@@ -479,6 +605,13 @@ export class SpreadsheetApp {
     this.colContextMenu.style.left = `${x}px`;
     this.colContextMenu.style.top = `${y}px`;
     this.colContextMenu.style.display = 'block';
+
+    // 根据是否选中整列来启用/禁用批量删除选中列菜单项
+    if (this.batchDeleteColItem) {
+      const hasWholeColSelection = this.hasSelectedWholeCols();
+      this.batchDeleteColItem.style.opacity = hasWholeColSelection ? '1' : '0.4';
+      this.batchDeleteColItem.style.pointerEvents = hasWholeColSelection ? 'auto' : 'none';
+    }
   }
 
   // 隐藏列操作右键菜单
@@ -737,6 +870,13 @@ export class SpreadsheetApp {
     this.contextMenu.style.left = `${x}px`;
     this.contextMenu.style.top = `${y}px`;
     this.contextMenu.style.display = 'block';
+
+    // 根据是否选中整行来启用/禁用批量删除选中行菜单项
+    if (this.batchDeleteRowItem) {
+      const hasWholeRowSelection = this.hasSelectedWholeRows();
+      this.batchDeleteRowItem.style.opacity = hasWholeRowSelection ? '1' : '0.4';
+      this.batchDeleteRowItem.style.pointerEvents = hasWholeRowSelection ? 'auto' : 'none';
+    }
   }
 
   // 隐藏右键菜单
@@ -764,7 +904,7 @@ export class SpreadsheetApp {
             count: 1,
           });
         }
-        this.currentSelection = null;
+        this.multiSelection.clear();
         this.renderer.clearSelection();
         this.renderer.clearHighlight();
         this.renderer.render();
@@ -772,6 +912,407 @@ export class SpreadsheetApp {
         this.updateStatusBar();
       }
     }
+  }
+
+  // 批量删除选中的整行
+  private batchDeleteSelectedRows(): void {
+    this.hideContextMenu();
+
+    // 从多选区中提取所有整行选区的行索引
+    const rowIndices = this.getSelectedWholeRowIndices();
+
+    if (rowIndices.length === 0) return;
+
+    const success = this.model.batchDeleteRows(rowIndices);
+    if (success) {
+      this.multiSelection.clear();
+      this.renderer.clearSelection();
+      this.renderer.clearHighlight();
+      this.renderer.render();
+      this.updateScrollbars();
+      this.updateUndoRedoButtons();
+      this.updateStatusBar();
+    }
+  }
+
+  // 批量删除选中的整列
+  private batchDeleteSelectedCols(): void {
+    this.hideColContextMenu();
+
+    // 从多选区中提取所有整列选区的列索引
+    const colIndices = this.getSelectedWholeColIndices();
+
+    if (colIndices.length === 0) return;
+
+    const success = this.model.batchDeleteColumns(colIndices);
+    if (success) {
+      this.multiSelection.clear();
+      this.renderer.clearSelection();
+      this.renderer.clearHighlight();
+      this.renderer.render();
+      this.updateScrollbars();
+      this.updateUndoRedoButtons();
+      this.updateStatusBar();
+    }
+  }
+
+  // 判断当前多选区中是否包含整行选区
+  private hasSelectedWholeRows(): boolean {
+    return this.getSelectedWholeRowIndices().length > 0;
+  }
+
+  // 判断当前多选区中是否包含整列选区
+  private hasSelectedWholeCols(): boolean {
+    return this.getSelectedWholeColIndices().length > 0;
+  }
+
+  // 从多选区中提取所有整行选区的行索引
+  private getSelectedWholeRowIndices(): number[] {
+    const maxCol = this.model.getColCount() - 1;
+    const rowIndices: number[] = [];
+    for (const sel of this.multiSelection.getSelections()) {
+      const minCol = Math.min(sel.startCol, sel.endCol);
+      const selMaxCol = Math.max(sel.startCol, sel.endCol);
+      // 整行选区: startCol === 0 && endCol === maxCol
+      if (minCol === 0 && selMaxCol === maxCol) {
+        const minRow = Math.min(sel.startRow, sel.endRow);
+        const maxRow = Math.max(sel.startRow, sel.endRow);
+        for (let r = minRow; r <= maxRow; r++) {
+          rowIndices.push(r);
+        }
+      }
+    }
+    return rowIndices;
+  }
+
+  // 从多选区中提取所有整列选区的列索引
+  private getSelectedWholeColIndices(): number[] {
+    const maxRow = this.model.getRowCount() - 1;
+    const colIndices: number[] = [];
+    for (const sel of this.multiSelection.getSelections()) {
+      const minRow = Math.min(sel.startRow, sel.endRow);
+      const selMaxRow = Math.max(sel.startRow, sel.endRow);
+      // 整列选区: startRow === 0 && endRow === maxRow
+      if (minRow === 0 && selMaxRow === maxRow) {
+        const minCol = Math.min(sel.startCol, sel.endCol);
+        const maxCol = Math.max(sel.startCol, sel.endCol);
+        for (let c = minCol; c <= maxCol; c++) {
+          colIndices.push(c);
+        }
+      }
+    }
+    return colIndices;
+  }
+
+  // 隐藏选中的行
+  private hideSelectedRows(): void {
+    this.hideContextMenu();
+
+    // 从整行选区中提取行索引，或使用 contextMenuRow
+    let rowIndices = this.getSelectedWholeRowIndices();
+    if (rowIndices.length === 0 && this.contextMenuRow !== null) {
+      rowIndices = [this.contextMenuRow];
+    }
+    if (rowIndices.length === 0) return;
+
+    this.model.hideRows(rowIndices);
+    this.model.getHistoryManager().record({
+      type: 'hideRows',
+      data: rowIndices,
+      undoData: rowIndices,
+    });
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateUndoRedoButtons();
+  }
+
+  // 取消隐藏右键点击行号附近的隐藏行
+  private unhideAdjacentRows(): void {
+    this.hideContextMenu();
+
+    const row = this.contextMenuRow;
+    if (row === null) return;
+
+    // 收集右键行前后相邻的隐藏行索引
+    const hiddenIndices: number[] = [];
+
+    // 向前检查（row - 1, row - 2, ...）
+    for (let r = row - 1; r >= 0; r--) {
+      if (this.model.isRowHidden(r)) {
+        hiddenIndices.push(r);
+      } else {
+        break;
+      }
+    }
+
+    // 向后检查（row + 1, row + 2, ...）
+    const rowCount = this.model.getRowCount();
+    for (let r = row + 1; r < rowCount; r++) {
+      if (this.model.isRowHidden(r)) {
+        hiddenIndices.push(r);
+      } else {
+        break;
+      }
+    }
+
+    // 当前行本身如果被隐藏也取消隐藏
+    if (this.model.isRowHidden(row)) {
+      hiddenIndices.push(row);
+    }
+
+    if (hiddenIndices.length === 0) return;
+
+    this.model.unhideRows(hiddenIndices);
+    this.model.getHistoryManager().record({
+      type: 'unhideRows',
+      data: hiddenIndices,
+      undoData: hiddenIndices,
+    });
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateUndoRedoButtons();
+  }
+
+  // 隐藏选中的列
+  private hideSelectedCols(): void {
+    this.hideColContextMenu();
+
+    // 从整列选区中提取列索引，或使用 contextMenuCol
+    let colIndices = this.getSelectedWholeColIndices();
+    if (colIndices.length === 0 && this.contextMenuCol !== null) {
+      colIndices = [this.contextMenuCol];
+    }
+    if (colIndices.length === 0) return;
+
+    this.model.hideCols(colIndices);
+    this.model.getHistoryManager().record({
+      type: 'hideCols',
+      data: colIndices,
+      undoData: colIndices,
+    });
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateUndoRedoButtons();
+  }
+
+  // 取消隐藏右键点击列号附近的隐藏列
+  private unhideAdjacentCols(): void {
+    this.hideColContextMenu();
+
+    const col = this.contextMenuCol;
+    if (col === null) return;
+
+    // 收集右键列前后相邻的隐藏列索引
+    const hiddenIndices: number[] = [];
+
+    // 向前检查（col - 1, col - 2, ...）
+    for (let c = col - 1; c >= 0; c--) {
+      if (this.model.isColHidden(c)) {
+        hiddenIndices.push(c);
+      } else {
+        break;
+      }
+    }
+
+    // 向后检查（col + 1, col + 2, ...）
+    const colCount = this.model.getColCount();
+    for (let c = col + 1; c < colCount; c++) {
+      if (this.model.isColHidden(c)) {
+        hiddenIndices.push(c);
+      } else {
+        break;
+      }
+    }
+
+    // 当前列本身如果被隐藏也取消隐藏
+    if (this.model.isColHidden(col)) {
+      hiddenIndices.push(col);
+    }
+
+    if (hiddenIndices.length === 0) return;
+
+    this.model.unhideCols(hiddenIndices);
+    this.model.getHistoryManager().record({
+      type: 'unhideCols',
+      data: hiddenIndices,
+      undoData: hiddenIndices,
+    });
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateUndoRedoButtons();
+  }
+
+  // ============================================================
+  // 分组操作处理
+  // ============================================================
+
+  // 从整行选区获取行范围（最小行和最大行）
+  private getSelectedRowRange(): { startRow: number; endRow: number } | null {
+    const maxCol = this.model.getColCount() - 1;
+    for (const sel of this.multiSelection.getSelections()) {
+      const minCol = Math.min(sel.startCol, sel.endCol);
+      const selMaxCol = Math.max(sel.startCol, sel.endCol);
+      if (minCol === 0 && selMaxCol === maxCol) {
+        return {
+          startRow: Math.min(sel.startRow, sel.endRow),
+          endRow: Math.max(sel.startRow, sel.endRow),
+        };
+      }
+    }
+    return null;
+  }
+
+  // 从整列选区获取列范围（最小列和最大列）
+  private getSelectedColRange(): { startCol: number; endCol: number } | null {
+    const maxRow = this.model.getRowCount() - 1;
+    for (const sel of this.multiSelection.getSelections()) {
+      const minRow = Math.min(sel.startRow, sel.endRow);
+      const selMaxRow = Math.max(sel.startRow, sel.endRow);
+      if (minRow === 0 && selMaxRow === maxRow) {
+        return {
+          startCol: Math.min(sel.startCol, sel.endCol),
+          endCol: Math.max(sel.startCol, sel.endCol),
+        };
+      }
+    }
+    return null;
+  }
+
+  // 分组选中的行
+  private groupSelectedRows(): void {
+    this.hideContextMenu();
+
+    const range = this.getSelectedRowRange();
+    if (!range) return;
+
+    const { startRow, endRow } = range;
+    const success = this.model.createRowGroup(startRow, endRow);
+    if (success) {
+      this.model.getHistoryManager().record({
+        type: 'createGroup',
+        data: { groupType: 'row' as const, start: startRow, end: endRow },
+        undoData: { groupType: 'row' as const, start: startRow, end: endRow },
+      });
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 取消分组选中的行
+  private ungroupSelectedRows(): void {
+    this.hideContextMenu();
+
+    const range = this.getSelectedRowRange();
+    if (!range) return;
+
+    const { startRow, endRow } = range;
+    const success = this.model.removeGroup('row', startRow, endRow);
+    if (success) {
+      this.model.getHistoryManager().record({
+        type: 'removeGroup',
+        data: { groupType: 'row' as const, start: startRow, end: endRow },
+        undoData: { groupType: 'row' as const, start: startRow, end: endRow },
+      });
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 分组选中的列
+  private groupSelectedCols(): void {
+    this.hideColContextMenu();
+
+    const range = this.getSelectedColRange();
+    if (!range) return;
+
+    const { startCol, endCol } = range;
+    const success = this.model.createColGroup(startCol, endCol);
+    if (success) {
+      this.model.getHistoryManager().record({
+        type: 'createGroup',
+        data: { groupType: 'col' as const, start: startCol, end: endCol },
+        undoData: { groupType: 'col' as const, start: startCol, end: endCol },
+      });
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 取消分组选中的列
+  private ungroupSelectedCols(): void {
+    this.hideColContextMenu();
+
+    const range = this.getSelectedColRange();
+    if (!range) return;
+
+    const { startCol, endCol } = range;
+    const success = this.model.removeGroup('col', startCol, endCol);
+    if (success) {
+      this.model.getHistoryManager().record({
+        type: 'removeGroup',
+        data: { groupType: 'col' as const, start: startCol, end: endCol },
+        undoData: { groupType: 'col' as const, start: startCol, end: endCol },
+      });
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 处理分组折叠/展开按钮点击
+  private handleGroupButtonClick(group: RowColumnGroup): void {
+    const { type, start, end, collapsed } = group;
+
+    if (collapsed) {
+      // 当前折叠状态 → 展开
+      this.model.expandGroup(type, start, end);
+
+      // 收集分组范围内的行/列索引
+      const indices: number[] = [];
+      for (let i = start; i <= end; i++) {
+        indices.push(i);
+      }
+
+      // 取消隐藏
+      if (type === 'row') {
+        this.model.unhideRows(indices);
+      } else {
+        this.model.unhideCols(indices);
+      }
+
+      // 记录到历史管理器
+      this.model.getHistoryManager().record({
+        type: 'expandGroup',
+        data: { groupType: type, start, end, hiddenIndices: indices },
+        undoData: { groupType: type, start, end, hiddenIndices: indices },
+      });
+    } else {
+      // 当前展开状态 → 折叠
+      this.model.collapseGroup(type, start, end);
+
+      // 收集分组范围内的行/列索引
+      const indices: number[] = [];
+      for (let i = start; i <= end; i++) {
+        indices.push(i);
+      }
+
+      // 隐藏
+      if (type === 'row') {
+        this.model.hideRows(indices);
+      } else {
+        this.model.hideCols(indices);
+      }
+
+      // 记录到历史管理器
+      this.model.getHistoryManager().record({
+        type: 'collapseGroup',
+        data: { groupType: type, start, end, hiddenIndices: indices },
+        undoData: { groupType: type, start, end, hiddenIndices: indices },
+      });
+    }
+
+    this.renderer.render();
+    this.updateScrollbars();
+    this.updateUndoRedoButtons();
   }
 
   // 绑定滚动条事件
@@ -1083,6 +1624,12 @@ export class SpreadsheetApp {
         this.searchDialog.show();
         return;
       }
+      // 允许 Ctrl+H 打开查找替换框
+      if ((event.ctrlKey || event.metaKey) && event.key === 'h') {
+        event.preventDefault();
+        this.searchDialog.show('findReplace');
+        return;
+      }
       return;
     }
 
@@ -1090,6 +1637,16 @@ export class SpreadsheetApp {
     if ((event.ctrlKey || event.metaKey) && event.key === 'c') {
       event.preventDefault();
       this.handleCopy();
+      return;
+    }
+
+    // 选择性粘贴 Ctrl+Shift+V / Cmd+Shift+V
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'v') {
+      event.preventDefault();
+      // 仅在内部剪贴板有数据时打开对话框
+      if (this.internalClipboard) {
+        this.pasteSpecialDialog.show();
+      }
       return;
     }
 
@@ -1125,6 +1682,24 @@ export class SpreadsheetApp {
     if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
       event.preventDefault();
       this.searchDialog.show();
+      return;
+    }
+
+    // 查找替换 Ctrl+H / Cmd+H
+    if ((event.ctrlKey || event.metaKey) && event.key === 'h') {
+      event.preventDefault();
+      this.searchDialog.show('findReplace');
+      return;
+    }
+
+    // 全选 Ctrl+A / Cmd+A
+    if ((event.ctrlKey || event.metaKey) && event.key === 'a') {
+      event.preventDefault();
+      this.multiSelection.selectAll(this.model.getRowCount() - 1, this.model.getColCount() - 1);
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+      // 高亮所有行号和列号
+      this.renderer.setHighlightAll(true);
+      this.renderer.render();
       return;
     }
 
@@ -1171,7 +1746,7 @@ export class SpreadsheetApp {
         this.renderer.render();
         return;
       }
-      this.currentSelection = null;
+      this.multiSelection.clear();
       this.renderer.clearSelection();
       this.renderer.clearHighlight();
       this.renderer.render();
@@ -1199,11 +1774,12 @@ export class SpreadsheetApp {
 
   // 开始编辑当前选中的单元格
   private startEditing(clearContent: boolean, initialChar?: string): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
-    const { startRow, startCol } = this.currentSelection;
+    const { startRow, startCol } = activeSelection;
 
     // 排序筛选激活时，将显示行映射到数据行
     const sfModel = this.model.sortFilterModel;
@@ -1285,12 +1861,26 @@ export class SpreadsheetApp {
 
   // 处理方向键
   private handleArrowKey(key: string, shiftKey: boolean): void {
-    if (!this.currentSelection) {
-      // 如果没有选择，默认选择 A1
-      this.currentSelection = { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+    // 全选状态下按方向键：取消全选，定位到对应单元格
+    if (this.multiSelection.isSelectAll()) {
+      this.multiSelection.setSingle({ startRow: 0, startCol: 0, endRow: 0, endCol: 0 });
+      this.renderer.setHighlightAll(false);
+      this.renderer.setMultiSelection([], -1);
+      this.renderer.setSelection(0, 0, 0, 0);
+      this.renderer.scrollToCell(0, 0);
+      this.renderer.clearHighlight();
+      this.updateSelectedCellInfo();
+      return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    let activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
+      // 如果没有选择，默认选择 A1
+      this.multiSelection.setSingle({ startRow: 0, startCol: 0, endRow: 0, endCol: 0 });
+      activeSelection = this.multiSelection.getActiveSelection()!;
+    }
+
+    const { startRow, startCol, endRow, endCol } = activeSelection;
 
     // 计算移动方向
     let deltaRow = 0;
@@ -1308,12 +1898,12 @@ export class SpreadsheetApp {
       const newEndRow = Math.max(0, Math.min(endRow + deltaRow, this.model.getRowCount() - 1));
       const newEndCol = Math.max(0, Math.min(endCol + deltaCol, this.model.getColCount() - 1));
 
-      this.currentSelection = {
+      this.multiSelection.setSingle({
         startRow,
         startCol,
         endRow: newEndRow,
         endCol: newEndCol
-      };
+      });
 
       this.renderer.setSelection(
         Math.min(startRow, newEndRow),
@@ -1326,12 +1916,12 @@ export class SpreadsheetApp {
       const newRow = Math.max(0, Math.min(startRow + deltaRow, this.model.getRowCount() - 1));
       const newCol = Math.max(0, Math.min(startCol + deltaCol, this.model.getColCount() - 1));
 
-      this.currentSelection = {
+      this.multiSelection.setSingle({
         startRow: newRow,
         startCol: newCol,
         endRow: newRow,
         endCol: newCol
-      };
+      });
 
       this.renderer.setSelection(newRow, newCol, newRow, newCol);
 
@@ -1348,11 +1938,13 @@ export class SpreadsheetApp {
 
   // 处理 Tab 键
   private handleTabKey(shiftKey: boolean): void {
-    if (!this.currentSelection) {
-      this.currentSelection = { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
+    let activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
+      this.multiSelection.setSingle({ startRow: 0, startCol: 0, endRow: 0, endCol: 0 });
+      activeSelection = this.multiSelection.getActiveSelection()!;
     }
 
-    const { startRow, startCol } = this.currentSelection;
+    const { startRow, startCol } = activeSelection;
 
     let newRow = startRow;
     let newCol = startCol;
@@ -1381,12 +1973,12 @@ export class SpreadsheetApp {
       }
     }
 
-    this.currentSelection = {
+    this.multiSelection.setSingle({
       startRow: newRow,
       startCol: newCol,
       endRow: newRow,
       endCol: newCol
-    };
+    });
 
     this.renderer.setSelection(newRow, newCol, newRow, newCol);
     this.renderer.scrollToCell(newRow, newCol);
@@ -1396,21 +1988,22 @@ export class SpreadsheetApp {
 
   // 处理 Enter 键
   private handleEnterKey(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
-    const { startRow, startCol } = this.currentSelection;
+    const { startRow, startCol } = activeSelection;
 
     // 向下移动一行
     const newRow = Math.min(startRow + 1, this.model.getRowCount() - 1);
 
-    this.currentSelection = {
+    this.multiSelection.setSingle({
       startRow: newRow,
       startCol: startCol,
       endRow: newRow,
       endCol: startCol
-    };
+    });
 
     this.renderer.setSelection(newRow, startCol, newRow, startCol);
     this.renderer.scrollToCell(newRow, startCol);
@@ -1420,33 +2013,41 @@ export class SpreadsheetApp {
 
   // 处理 Delete 键
   private handleDeleteKey(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
-    const minRow = Math.min(startRow, endRow);
-    const maxRow = Math.max(startRow, endRow);
-    const minCol = Math.min(startCol, endCol);
-    const maxCol = Math.max(startCol, endCol);
+    // 多选区模式：清除所有选区内单元格内容
+    const allCells = this.multiSelection.getAllCells();
+    if (allCells.length === 0) return;
 
-    // 批量清除选中区域的内容
-    this.model.clearRangeContent(minRow, minCol, maxRow, maxCol);
+    // 计算所有选区的边界范围（用于 clearRangeContent 的历史记录）
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const minRow = Math.min(sel.startRow, sel.endRow);
+      const maxRow = Math.max(sel.startRow, sel.endRow);
+      const minCol = Math.min(sel.startCol, sel.endCol);
+      const maxCol = Math.max(sel.startCol, sel.endCol);
 
-    // 协同模式下提交操作
-    if (this.isCollaborationMode()) {
-      for (let row = minRow; row <= maxRow; row++) {
-        for (let col = minCol; col <= maxCol; col++) {
-          const previousContent = this.model.getCell(row, col)?.content ?? '';
-          if (previousContent !== '') {
-            this.submitCollabOperation({
-              ...this.createBaseOp(),
-              type: 'cellEdit',
-              row,
-              col,
-              content: '',
-              previousContent,
-            });
+      // 批量清除每个选区的内容
+      this.model.clearRangeContent(minRow, minCol, maxRow, maxCol);
+
+      // 协同模式下提交操作
+      if (this.isCollaborationMode()) {
+        for (let row = minRow; row <= maxRow; row++) {
+          for (let col = minCol; col <= maxCol; col++) {
+            const previousContent = this.model.getCell(row, col)?.content ?? '';
+            if (previousContent !== '') {
+              this.submitCollabOperation({
+                ...this.createBaseOp(),
+                type: 'cellEdit',
+                row,
+                col,
+                content: '',
+                previousContent,
+              });
+            }
           }
         }
       }
@@ -1460,14 +2061,19 @@ export class SpreadsheetApp {
   // 剪贴板数据
   private clipboardData: { content: string[][]; startRow: number; startCol: number } | null = null;
   private isCut: boolean = false;
+  // 内部剪贴板（保存完整单元格信息，用于选择性粘贴）
+  private internalClipboard: InternalClipboard | null = null;
+  // 选择性粘贴对话框
+  private pasteSpecialDialog: PasteSpecialDialog;
 
   // 处理复制
   private handleCopy(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = activeSelection;
     const minRow = Math.min(startRow, endRow);
     const maxRow = Math.max(startRow, endRow);
     const minCol = Math.min(startCol, endCol);
@@ -1475,17 +2081,44 @@ export class SpreadsheetApp {
 
     // 收集选中区域的内容
     const content: string[][] = [];
+    // 收集完整单元格信息（用于选择性粘贴）
+    const clipboardCells: ClipboardCellData[][] = [];
+
     for (let row = minRow; row <= maxRow; row++) {
       const rowData: string[] = [];
+      const cellRow: ClipboardCellData[] = [];
       for (let col = minCol; col <= maxCol; col++) {
         const cell = this.model.getCell(row, col);
         rowData.push(cell?.content || '');
+        // 保存完整单元格数据
+        const cellData: ClipboardCellData = {
+          content: cell?.content || '',
+          formulaContent: cell?.formulaContent,
+          fontColor: cell?.fontColor,
+          bgColor: cell?.bgColor,
+          fontSize: cell?.fontSize,
+          fontBold: cell?.fontBold,
+          fontItalic: cell?.fontItalic,
+          fontUnderline: cell?.fontUnderline,
+          fontAlign: cell?.fontAlign,
+          verticalAlign: cell?.verticalAlign,
+          format: cell?.format,
+        };
+        cellRow.push(cellData);
       }
       content.push(rowData);
+      clipboardCells.push(cellRow);
     }
 
     this.clipboardData = { content, startRow: minRow, startCol: minCol };
     this.isCut = false;
+
+    // 保存到内部剪贴板（完整单元格信息）
+    this.internalClipboard = {
+      cells: clipboardCells,
+      startRow: minRow,
+      startCol: minCol,
+    };
 
     // 同时复制到系统剪贴板（纯文本格式，用 Tab 分隔）
     const textContent = content.map(row => row.join('\t')).join('\n');
@@ -1502,11 +2135,12 @@ export class SpreadsheetApp {
 
   // 处理粘贴
   private async handlePaste(): Promise<void> {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
-    const { startRow, startCol } = this.currentSelection;
+    const { startRow, startCol } = activeSelection;
 
     // 优先尝试从系统剪贴板读取
     try {
@@ -1569,6 +2203,211 @@ export class SpreadsheetApp {
       }
       this.isCut = false;
     }
+
+    this.renderer.render();
+    this.updateSelectedCellInfo();
+    this.updateUndoRedoButtons();
+  }
+
+  /**
+   * 调整公式中的单元格引用，根据行列偏移量
+   * 例如：=A1+B2 偏移 (1, 1) → =B2+C3
+   * 支持绝对引用（$A$1 不调整）
+   */
+  private adjustFormulaReferences(formula: string, rowOffset: number, colOffset: number): string {
+    // 匹配单元格引用：可选 $ + 列字母 + 可选 $ + 行数字
+    const cellRefRegex = /(\$?)([A-Z]+)(\$?)(\d+)/g;
+    return formula.replace(cellRefRegex, (_match, colAbs: string, colLetters: string, rowAbs: string, rowNum: string) => {
+      // 绝对列引用不调整列
+      let newColLetters = colLetters;
+      if (!colAbs) {
+        const colIndex = this.colLettersToIndex(colLetters) + colOffset;
+        if (colIndex < 0) return _match; // 超出范围不调整
+        newColLetters = this.indexToColLetters(colIndex);
+      }
+      // 绝对行引用不调整行
+      let newRowNum = rowNum;
+      if (!rowAbs) {
+        const newRow = parseInt(rowNum, 10) + rowOffset;
+        if (newRow < 1) return _match; // 超出范围不调整
+        newRowNum = String(newRow);
+      }
+      return `${colAbs}${newColLetters}${rowAbs}${newRowNum}`;
+    });
+  }
+
+  /** 列字母转索引（A=0, B=1, ..., Z=25, AA=26） */
+  private colLettersToIndex(letters: string): number {
+    let index = 0;
+    for (let i = 0; i < letters.length; i++) {
+      index = index * 26 + (letters.charCodeAt(i) - 65 + 1);
+    }
+    return index - 1;
+  }
+
+  /** 索引转列字母（0=A, 1=B, ..., 25=Z, 26=AA） */
+  private indexToColLetters(index: number): string {
+    let result = '';
+    let n = index + 1;
+    while (n > 0) {
+      n--;
+      result = String.fromCharCode(65 + (n % 26)) + result;
+      n = Math.floor(n / 26);
+    }
+    return result;
+  }
+
+  /**
+   * 选择性粘贴处理
+   * 根据粘贴模式执行不同的粘贴逻辑，并记录到 HistoryManager
+   */
+  private handlePasteSpecial(mode: PasteSpecialMode): void {
+    if (!this.internalClipboard) return;
+
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    const { startRow: targetRow, startCol: targetCol } = activeSelection;
+    const { cells: srcCells, startRow: srcStartRow, startCol: srcStartCol } = this.internalClipboard;
+    const srcRows = srcCells.length;
+    const srcCols = srcCells[0]?.length ?? 0;
+    if (srcRows === 0 || srcCols === 0) return;
+
+    // 转置模式下行列互换
+    const pasteRows = mode === 'transpose' ? srcCols : srcRows;
+    const pasteCols = mode === 'transpose' ? srcRows : srcCols;
+
+    // 保存目标区域的旧数据用于撤销
+    const undoCells: Array<{
+      row: number; col: number;
+      content: string; formulaContent?: string;
+      fontColor?: string; bgColor?: string; fontSize?: number;
+      fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean;
+      fontAlign?: 'left' | 'center' | 'right';
+      verticalAlign?: 'top' | 'middle' | 'bottom';
+    }> = [];
+
+    for (let i = 0; i < pasteRows; i++) {
+      for (let j = 0; j < pasteCols; j++) {
+        const r = targetRow + i;
+        const c = targetCol + j;
+        if (r < this.model.getRowCount() && c < this.model.getColCount()) {
+          const oldCell = this.model.getCell(r, c);
+          undoCells.push({
+            row: r, col: c,
+            content: oldCell?.content ?? '',
+            formulaContent: oldCell?.formulaContent,
+            fontColor: oldCell?.fontColor,
+            bgColor: oldCell?.bgColor,
+            fontSize: oldCell?.fontSize,
+            fontBold: oldCell?.fontBold,
+            fontItalic: oldCell?.fontItalic,
+            fontUnderline: oldCell?.fontUnderline,
+            fontAlign: oldCell?.fontAlign,
+            verticalAlign: oldCell?.verticalAlign,
+          });
+        }
+      }
+    }
+
+    // 暂停历史记录（手动记录整个操作为单个 HistoryAction）
+    const historyManager = this.model.getHistoryManager();
+    historyManager.pauseRecording();
+
+    try {
+      for (let i = 0; i < pasteRows; i++) {
+        for (let j = 0; j < pasteCols; j++) {
+          const r = targetRow + i;
+          const c = targetCol + j;
+          if (r >= this.model.getRowCount() || c >= this.model.getColCount()) continue;
+
+          // 转置模式下交换行列索引获取源数据
+          const srcData = mode === 'transpose' ? srcCells[j][i] : srcCells[i][j];
+
+          switch (mode) {
+            case 'values': {
+              // 仅粘贴值：只写入 content，不传递格式和公式
+              this.model.setCellContentNoHistory(r, c, srcData.content);
+              break;
+            }
+            case 'formats': {
+              // 仅粘贴格式：只应用格式属性，不修改目标内容
+              const targetCell = this.model.getCell(r, c);
+              if (targetCell) {
+                if (srcData.fontColor !== undefined) targetCell.fontColor = srcData.fontColor;
+                if (srcData.bgColor !== undefined) targetCell.bgColor = srcData.bgColor;
+                if (srcData.fontSize !== undefined) targetCell.fontSize = srcData.fontSize;
+                if (srcData.fontBold !== undefined) targetCell.fontBold = srcData.fontBold;
+                if (srcData.fontItalic !== undefined) targetCell.fontItalic = srcData.fontItalic;
+                if (srcData.fontUnderline !== undefined) targetCell.fontUnderline = srcData.fontUnderline;
+                if (srcData.fontAlign !== undefined) targetCell.fontAlign = srcData.fontAlign;
+                if (srcData.verticalAlign !== undefined) targetCell.verticalAlign = srcData.verticalAlign;
+                if (srcData.format !== undefined) targetCell.format = srcData.format;
+              }
+              break;
+            }
+            case 'formulas': {
+              // 仅粘贴公式：写入 formulaContent，根据偏移调整引用
+              if (srcData.formulaContent) {
+                const rowOffset = r - srcStartRow - i;
+                const colOffset = c - srcStartCol - j;
+                const adjustedFormula = this.adjustFormulaReferences(
+                  srcData.formulaContent, rowOffset, colOffset
+                );
+                this.model.setCellContentNoHistory(r, c, adjustedFormula);
+              } else {
+                // 源单元格无公式时写入内容
+                this.model.setCellContentNoHistory(r, c, srcData.content);
+              }
+              break;
+            }
+            case 'transpose': {
+              // 转置粘贴：行列互换后写入全部数据（内容 + 格式）
+              const content = srcData.formulaContent
+                ? this.adjustFormulaReferences(
+                    srcData.formulaContent,
+                    r - srcStartRow - j,
+                    c - srcStartCol - i
+                  )
+                : srcData.content;
+              this.model.setCellContentNoHistory(r, c, content);
+              // 同时应用格式
+              const targetCell = this.model.getCell(r, c);
+              if (targetCell) {
+                if (srcData.fontColor !== undefined) targetCell.fontColor = srcData.fontColor;
+                if (srcData.bgColor !== undefined) targetCell.bgColor = srcData.bgColor;
+                if (srcData.fontSize !== undefined) targetCell.fontSize = srcData.fontSize;
+                if (srcData.fontBold !== undefined) targetCell.fontBold = srcData.fontBold;
+                if (srcData.fontItalic !== undefined) targetCell.fontItalic = srcData.fontItalic;
+                if (srcData.fontUnderline !== undefined) targetCell.fontUnderline = srcData.fontUnderline;
+                if (srcData.fontAlign !== undefined) targetCell.fontAlign = srcData.fontAlign;
+                if (srcData.verticalAlign !== undefined) targetCell.verticalAlign = srcData.verticalAlign;
+                if (srcData.format !== undefined) targetCell.format = srcData.format;
+              }
+              break;
+            }
+          }
+        }
+      }
+    } finally {
+      historyManager.resumeRecording();
+    }
+
+    // 记录选择性粘贴操作到历史管理器
+    historyManager.record({
+      type: 'pasteSpecial',
+      data: {
+        mode,
+        targetRow,
+        targetCol,
+        pasteRows,
+        pasteCols,
+        srcCells,
+        srcStartRow,
+        srcStartCol,
+      },
+      undoData: { cells: undoCells },
+    });
 
     this.renderer.render();
     this.updateSelectedCellInfo();
@@ -1721,12 +2560,12 @@ export class SpreadsheetApp {
   // 处理搜索结果导航
   private handleSearchNavigate(result: SearchResult): void {
     // 选中找到的单元格
-    this.currentSelection = {
+    this.multiSelection.setSingle({
       startRow: result.row,
       startCol: result.col,
       endRow: result.row,
       endCol: result.col
-    };
+    });
 
     this.renderer.setSelection(result.row, result.col, result.row, result.col);
     this.renderer.scrollToCell(result.row, result.col);
@@ -1736,9 +2575,80 @@ export class SpreadsheetApp {
 
   // 处理搜索无结果
   private handleSearchNoResults(): void {
-    this.currentSelection = null;
+    this.multiSelection.clear();
     this.renderer.clearSelection();
     this.renderer.clearHighlight();
+  }
+
+  // 替换当前匹配单元格内容
+  private handleReplace(searchText: string, replaceText: string): boolean {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return false;
+
+    const { startRow: row, startCol: col } = activeSelection;
+    const cell = this.model.getCell(row, col);
+    if (!cell || !cell.content) return false;
+
+    const lowerSearch = searchText.toLowerCase();
+    if (!cell.content.toLowerCase().includes(lowerSearch)) return false;
+
+    const oldContent = cell.content;
+    // 替换所有出现的搜索文本（不区分大小写）
+    const newContent = cell.content.replace(
+      new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+      replaceText
+    );
+
+    // 使用 setCellContentNoHistory 写入，手动记录历史
+    this.model.setCellContentNoHistory(row, col, newContent);
+    this.model.getHistoryManager().record({
+      type: 'replace',
+      data: { row, col, content: newContent },
+      undoData: { row, col, content: oldContent }
+    });
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
+    return true;
+  }
+
+  // 全部替换所有匹配单元格内容
+  private handleReplaceAll(searchText: string, replaceText: string): number {
+    const results = this.handleSearch(searchText);
+    if (results.length === 0) return 0;
+
+    // 收集所有需要替换的单元格旧内容
+    const undoCells: Array<{ row: number; col: number; content: string }> = [];
+    const redoCells: Array<{ row: number; col: number; content: string }> = [];
+    const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+
+    for (const result of results) {
+      const { row, col } = result;
+      const cell = this.model.getCell(row, col);
+      if (!cell) continue;
+
+      const oldContent = cell.content;
+      const newContent = oldContent.replace(regex, replaceText);
+
+      undoCells.push({ row, col, content: oldContent });
+      redoCells.push({ row, col, content: newContent });
+
+      // 逐个写入（不记录单独历史）
+      this.model.setCellContentNoHistory(row, col, newContent);
+    }
+
+    // 整个全部替换作为单个历史记录
+    if (undoCells.length > 0) {
+      this.model.getHistoryManager().record({
+        type: 'replaceAll',
+        data: { cells: redoCells },
+        undoData: { cells: undoCells }
+      });
+    }
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
+    return undoCells.length;
   }
 
   // 处理窗口大小改变
@@ -1804,6 +2714,21 @@ export class SpreadsheetApp {
     }
   }
 
+  /**
+   * 检测点击位置是否在选区边框上（±3px 容差）
+   * 用于拖拽移动交互的命中检测
+   */
+  private isOnSelectionBorder(x: number, y: number): boolean {
+    const rect = this.renderer.getSelectionRect();
+    if (!rect) return false;
+    const threshold = 3;
+    const onLeft = Math.abs(x - rect.x) <= threshold && y >= rect.y && y <= rect.y + rect.height;
+    const onRight = Math.abs(x - (rect.x + rect.width)) <= threshold && y >= rect.y && y <= rect.y + rect.height;
+    const onTop = Math.abs(y - rect.y) <= threshold && x >= rect.x && x <= rect.x + rect.width;
+    const onBottom = Math.abs(y - (rect.y + rect.height)) <= threshold && x >= rect.x && x <= rect.x + rect.width;
+    return onLeft || onRight || onTop || onBottom;
+  }
+
   // 处理鼠标按下事件
   private handleMouseDown(event: MouseEvent): void {
     // 如果内联编辑器正在编辑，则忽略鼠标事件
@@ -1851,20 +2776,95 @@ export class SpreadsheetApp {
       }
     }
 
+    // 检查是否点击了分组折叠/展开按钮
+    const rowGroupBtn = this.renderer.getRowGroupButtonAtPosition(x, y);
+    if (rowGroupBtn) {
+      this.handleGroupButtonClick(rowGroupBtn);
+      event.preventDefault();
+      return;
+    }
+    const colGroupBtn = this.renderer.getColGroupButtonAtPosition(x, y);
+    if (colGroupBtn) {
+      this.handleGroupButtonClick(colGroupBtn);
+      event.preventDefault();
+      return;
+    }
+
+    // 检查是否点击了填充柄区域
+    if (this.renderer.isOnFillHandle(x, y)) {
+      const activeSelection = this.multiSelection.getActiveSelection();
+      if (activeSelection) {
+        // 进入填充拖拽模式
+        this.isFillDragging = true;
+        this.fillDragSourceSelection = { ...activeSelection };
+        this.fillDragCurrentCell = null;
+        this.canvas.style.cursor = 'crosshair';
+        event.preventDefault();
+        return;
+      }
+    }
+
+    // 检查是否点击了选区边框（±3px），进入拖拽移动模式
+    if (this.isOnSelectionBorder(x, y)) {
+      const activeSelection = this.multiSelection.getActiveSelection();
+      if (activeSelection) {
+        this.isDragMoving = true;
+        this.dragMoveSource = {
+          startRow: Math.min(activeSelection.startRow, activeSelection.endRow),
+          startCol: Math.min(activeSelection.startCol, activeSelection.endCol),
+          endRow: Math.max(activeSelection.startRow, activeSelection.endRow),
+          endCol: Math.max(activeSelection.startCol, activeSelection.endCol)
+        };
+        this.dragMoveTarget = null;
+        this.canvas.style.cursor = 'move';
+        event.preventDefault();
+        return;
+      }
+    }
+
     // 检查是否点击了行号区域
     const clickedRow = this.renderer.getRowHeaderAtPosition(x, y);
     if (clickedRow !== null) {
       // 高亮整行
       this.renderer.setHighlightedRow(clickedRow);
 
+      const maxCol = this.model.getColCount() - 1;
+
       // 选择整行
-      this.currentSelection = {
+      const fullRowSelection: Selection = {
         startRow: clickedRow,
         startCol: 0,
         endRow: clickedRow,
-        endCol: this.model.getColCount() - 1
+        endCol: maxCol
       };
-      this.renderer.setSelection(clickedRow, 0, clickedRow, this.model.getColCount() - 1);
+
+      if (event.ctrlKey || event.metaKey) {
+        // Ctrl+点击：添加新选区
+        this.multiSelection.addSelection(fullRowSelection);
+      } else if (event.shiftKey && this.multiSelection.getActiveSelection()) {
+        // Shift+点击：扩展到范围
+        const active = this.multiSelection.getActiveSelection()!;
+        this.multiSelection.setSingle({
+          startRow: Math.min(active.startRow, clickedRow),
+          startCol: 0,
+          endRow: Math.max(active.endRow, clickedRow),
+          endCol: maxCol
+        });
+      } else {
+        // 普通点击：替换为单选区
+        this.multiSelection.setSingle(fullRowSelection);
+      }
+
+      // 进入行号拖拽模式
+      this.isDraggingRowHeader = true;
+      this.rowHeaderDragStartRow = clickedRow;
+
+      const activeSel = this.multiSelection.getActiveSelection();
+      if (activeSel) {
+        this.renderer.setSelection(activeSel.startRow, activeSel.startCol, activeSel.endRow, activeSel.endCol);
+      }
+      // 同步多选区到渲染器
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
       // 更新单元格信息显示
       this.updateSelectedCellInfo();
@@ -1877,14 +2877,43 @@ export class SpreadsheetApp {
       // 高亮整列
       this.renderer.setHighlightedCol(clickedCol);
 
+      const maxRow = this.model.getRowCount() - 1;
+
       // 选择整列
-      this.currentSelection = {
+      const fullColSelection: Selection = {
         startRow: 0,
         startCol: clickedCol,
-        endRow: this.model.getRowCount() - 1,
+        endRow: maxRow,
         endCol: clickedCol
       };
-      this.renderer.setSelection(0, clickedCol, this.model.getRowCount() - 1, clickedCol);
+
+      if (event.ctrlKey || event.metaKey) {
+        // Ctrl+点击：添加新选区
+        this.multiSelection.addSelection(fullColSelection);
+      } else if (event.shiftKey && this.multiSelection.getActiveSelection()) {
+        // Shift+点击：扩展到范围
+        const active = this.multiSelection.getActiveSelection()!;
+        this.multiSelection.setSingle({
+          startRow: 0,
+          startCol: Math.min(active.startCol, clickedCol),
+          endRow: maxRow,
+          endCol: Math.max(active.endCol, clickedCol)
+        });
+      } else {
+        // 普通点击：替换为单选区
+        this.multiSelection.setSingle(fullColSelection);
+      }
+
+      // 进入列号拖拽模式
+      this.isDraggingColHeader = true;
+      this.colHeaderDragStartCol = clickedCol;
+
+      const activeSel = this.multiSelection.getActiveSelection();
+      if (activeSel) {
+        this.renderer.setSelection(activeSel.startRow, activeSel.startCol, activeSel.endRow, activeSel.endCol);
+      }
+      // 同步多选区到渲染器
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
       // 更新单元格信息显示
       this.updateSelectedCellInfo();
@@ -1911,12 +2940,13 @@ export class SpreadsheetApp {
             if (clickXInCell >= cellRect.width - arrowWidth) {
               // 先设置选择区域
               this.selectionStart = { row: cellInfo.row, col: cellInfo.col };
-              this.currentSelection = {
+              const dropdownSelection: Selection = {
                 startRow: cellInfo.row,
                 startCol: cellInfo.col,
                 endRow: cellInfo.row + cellInfo.rowSpan - 1,
                 endCol: cellInfo.col + cellInfo.colSpan - 1
               };
+              this.multiSelection.setSingle(dropdownSelection);
               this.renderer.setSelection(
                 cellInfo.row, cellInfo.col,
                 cellInfo.row + cellInfo.rowSpan - 1,
@@ -1934,12 +2964,18 @@ export class SpreadsheetApp {
         // 如果是合并单元格，选择整个合并区域
         if (cellInfo.rowSpan > 1 || cellInfo.colSpan > 1) {
           this.selectionStart = { row: cellInfo.row, col: cellInfo.col };
-          this.currentSelection = {
+          const mergedSelection: Selection = {
             startRow: cellInfo.row,
             startCol: cellInfo.col,
             endRow: cellInfo.row + cellInfo.rowSpan - 1,
             endCol: cellInfo.col + cellInfo.colSpan - 1
           };
+          // 检测 Ctrl/Meta 键决定添加选区还是替换选区
+          if (event.ctrlKey || event.metaKey) {
+            this.multiSelection.addSelection(mergedSelection);
+          } else {
+            this.multiSelection.setSingle(mergedSelection);
+          }
           this.renderer.setSelection(
             cellInfo.row,
             cellInfo.col,
@@ -1949,12 +2985,18 @@ export class SpreadsheetApp {
         } else {
           // 普通单元格
           this.selectionStart = cellPosition;
-          this.currentSelection = {
+          const cellSelection: Selection = {
             startRow: cellPosition.row,
             startCol: cellPosition.col,
             endRow: cellPosition.row,
             endCol: cellPosition.col
           };
+          // 检测 Ctrl/Meta 键决定添加选区还是替换选区
+          if (event.ctrlKey || event.metaKey) {
+            this.multiSelection.addSelection(cellSelection);
+          } else {
+            this.multiSelection.setSingle(cellSelection);
+          }
           this.renderer.setSelection(
             cellPosition.row,
             cellPosition.col,
@@ -1962,6 +3004,9 @@ export class SpreadsheetApp {
             cellPosition.col
           );
         }
+
+        // 同步多选区到渲染器
+        this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
 
         // 更新单元格信息显示
         this.updateSelectedCellInfo();
@@ -2000,24 +3045,24 @@ export class SpreadsheetApp {
       if (cellInfo) {
         // 如果单元格有下拉列表验证，双击时显示下拉菜单而非编辑器
         if (cellInfo.validation && cellInfo.validation.type === 'dropdown') {
-          this.currentSelection = {
+          this.multiSelection.setSingle({
             startRow: cellInfo.row,
             startCol: cellInfo.col,
             endRow: cellInfo.row + cellInfo.rowSpan - 1,
             endCol: cellInfo.col + cellInfo.colSpan - 1
-          };
+          });
           this.updateSelectedCellInfo();
           this.showDropdownMenu(cellInfo.row, cellInfo.col);
           return;
         }
 
         // 更新选择区域
-        this.currentSelection = {
+        this.multiSelection.setSingle({
           startRow: cellInfo.row,
           startCol: cellInfo.col,
           endRow: cellInfo.row,
           endCol: cellInfo.col
-        };
+        });
 
         // 更新单元格信息显示
         this.updateSelectedCellInfo();
@@ -2120,6 +3165,83 @@ export class SpreadsheetApp {
       return;
     }
 
+    // 处理行号区域拖拽选择
+    if (this.isDraggingRowHeader) {
+      const clickedRow = this.renderer.getRowHeaderAtPosition(x, y);
+      if (clickedRow !== null) {
+        const maxCol = this.model.getColCount() - 1;
+        const startRow = Math.min(this.rowHeaderDragStartRow, clickedRow);
+        const endRow = Math.max(this.rowHeaderDragStartRow, clickedRow);
+        this.multiSelection.setSingle({
+          startRow,
+          startCol: 0,
+          endRow,
+          endCol: maxCol
+        });
+        this.renderer.setSelection(startRow, 0, endRow, maxCol);
+        this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
+        this.updateSelectedCellInfo();
+      }
+      return;
+    }
+
+    // 处理列号区域拖拽选择
+    if (this.isDraggingColHeader) {
+      const clickedCol = this.renderer.getColHeaderAtPosition(x, y);
+      if (clickedCol !== null) {
+        const maxRow = this.model.getRowCount() - 1;
+        const startCol = Math.min(this.colHeaderDragStartCol, clickedCol);
+        const endCol = Math.max(this.colHeaderDragStartCol, clickedCol);
+        this.multiSelection.setSingle({
+          startRow: 0,
+          startCol,
+          endRow: maxRow,
+          endCol
+        });
+        this.renderer.setSelection(0, startCol, maxRow, endCol);
+        this.renderer.setMultiSelection(this.multiSelection.getSelections(), this.multiSelection.getSelections().length - 1);
+        this.updateSelectedCellInfo();
+      }
+      return;
+    }
+
+    // 处理填充柄拖拽
+    if (this.isFillDragging && this.fillDragSourceSelection) {
+      const cellPosition = this.renderer.getCellAtPosition(x, y);
+      if (cellPosition) {
+        this.fillDragCurrentCell = cellPosition;
+        // 计算填充预览区域
+        const preview = this.calculateFillPreview(this.fillDragSourceSelection, cellPosition);
+        this.renderer.setFillDragPreview(preview);
+        this.renderer.render();
+        this.canvas.style.cursor = 'crosshair';
+      }
+      event.preventDefault();
+      return;
+    }
+
+    // 处理拖拽移动
+    if (this.isDragMoving && this.dragMoveSource) {
+      const cellPosition = this.renderer.getCellAtPosition(x, y);
+      if (cellPosition) {
+        this.dragMoveTarget = cellPosition;
+        // 计算目标区域预览
+        const srcRows = this.dragMoveSource.endRow - this.dragMoveSource.startRow;
+        const srcCols = this.dragMoveSource.endCol - this.dragMoveSource.startCol;
+        const preview: Selection = {
+          startRow: cellPosition.row,
+          startCol: cellPosition.col,
+          endRow: cellPosition.row + srcRows,
+          endCol: cellPosition.col + srcCols
+        };
+        this.renderer.setDragMovePreview(preview);
+        this.renderer.render();
+        this.canvas.style.cursor = 'move';
+      }
+      event.preventDefault();
+      return;
+    }
+
     // 【图表交互】将画布坐标转换为数据区域坐标，代理到 ChartOverlay
     const { headerWidth, headerHeight } = this.renderer.getConfig();
     const viewport = this.renderer.getViewport();
@@ -2143,6 +3265,10 @@ export class SpreadsheetApp {
       this.canvas.style.cursor = 'row-resize';
     } else if (colResizeInfo !== null) {
       this.canvas.style.cursor = 'col-resize';
+    } else if (this.renderer.isOnFillHandle(x, y)) {
+      this.canvas.style.cursor = 'crosshair';
+    } else if (this.isOnSelectionBorder(x, y)) {
+      this.canvas.style.cursor = 'move';
     } else if (!this.selectionStart) {
       this.canvas.style.cursor = 'default';
     }
@@ -2172,12 +3298,12 @@ export class SpreadsheetApp {
             const startCol = Math.min(actualStartCol, currentCellInfo.col);
             const endCol = Math.max(actualStartCol + startCellInfo.colSpan - 1, actualEndCol);
 
-            this.currentSelection = {
+            this.multiSelection.setSingle({
               startRow: this.selectionStart.row,
               startCol: this.selectionStart.col,
               endRow: cellPosition.row,
               endCol: cellPosition.col
-            };
+            });
 
             this.renderer.setSelection(startRow, startCol, endRow, endCol);
           }
@@ -2191,11 +3317,63 @@ export class SpreadsheetApp {
     // 【图表交互】通知图表浮动层鼠标释放
     this.chartOverlay.handleMouseUp();
 
+    // 处理拖拽移动完成
+    if (this.isDragMoving && this.dragMoveSource && this.dragMoveTarget) {
+      this.executeDragMove();
+      this.isDragMoving = false;
+      this.dragMoveSource = null;
+      this.dragMoveTarget = null;
+      this.renderer.setDragMovePreview(null);
+      this.canvas.style.cursor = 'default';
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+      return;
+    }
+
+    // 如果拖拽移动未产生有效目标，重置状态
+    if (this.isDragMoving) {
+      this.isDragMoving = false;
+      this.dragMoveSource = null;
+      this.dragMoveTarget = null;
+      this.renderer.setDragMovePreview(null);
+      this.canvas.style.cursor = 'default';
+      this.renderer.render();
+    }
+
+    // 处理填充柄拖拽完成
+    if (this.isFillDragging && this.fillDragSourceSelection && this.fillDragCurrentCell) {
+      this.executeFillDrag();
+      this.isFillDragging = false;
+      this.fillDragSourceSelection = null;
+      this.fillDragCurrentCell = null;
+      this.renderer.setFillDragPreview(null);
+      this.canvas.style.cursor = 'default';
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+      return;
+    }
+
+    // 如果填充拖拽未产生有效目标，重置状态
+    if (this.isFillDragging) {
+      this.isFillDragging = false;
+      this.fillDragSourceSelection = null;
+      this.fillDragCurrentCell = null;
+      this.renderer.setFillDragPreview(null);
+      this.canvas.style.cursor = 'default';
+      this.renderer.render();
+    }
+
     this.selectionStart = null;
 
+    // 重置行号/列号拖拽选择状态
+    this.isDraggingRowHeader = false;
+    this.rowHeaderDragStartRow = -1;
+    this.isDraggingColHeader = false;
+    this.colHeaderDragStartCol = -1;
+
     // 协同模式下广播最终选择区域
-    if (this.isCollaborationMode() && this.currentSelection) {
-      this.collaborationEngine!.sendCursor(this.currentSelection);
+    if (this.isCollaborationMode() && this.multiSelection.getActiveSelection()) {
+      this.collaborationEngine!.sendCursor(this.multiSelection.getActiveSelection());
     }
 
     // 重置行高/列宽调整状态，并在协同模式下提交操作
@@ -2247,6 +3425,261 @@ export class SpreadsheetApp {
   }
 
   /**
+   * 计算填充预览区域
+   * 根据源选区和当前拖拽位置，确定填充方向和目标范围
+   */
+  private calculateFillPreview(source: Selection, current: CellPosition): Selection | null {
+    const srcMinRow = Math.min(source.startRow, source.endRow);
+    const srcMaxRow = Math.max(source.startRow, source.endRow);
+    const srcMinCol = Math.min(source.startCol, source.endCol);
+    const srcMaxCol = Math.max(source.startCol, source.endCol);
+
+    // 计算拖拽偏移量（以行列为单位）
+    const deltaRow = current.row - srcMaxRow;
+    const deltaCol = current.col - srcMaxCol;
+    const absDeltaRow = Math.abs(current.row - (deltaRow >= 0 ? srcMaxRow : srcMinRow));
+    const absDeltaCol = Math.abs(current.col - (deltaCol >= 0 ? srcMaxCol : srcMinCol));
+
+    // 判断主要拖拽方向：取偏移量较大的方向
+    if (absDeltaRow === 0 && absDeltaCol === 0) {
+      return null;
+    }
+
+    if (absDeltaRow >= absDeltaCol) {
+      // 垂直方向填充
+      if (current.row > srcMaxRow) {
+        // 向下填充
+        return {
+          startRow: srcMaxRow + 1,
+          startCol: srcMinCol,
+          endRow: current.row,
+          endCol: srcMaxCol
+        };
+      } else if (current.row < srcMinRow) {
+        // 向上填充
+        return {
+          startRow: current.row,
+          startCol: srcMinCol,
+          endRow: srcMinRow - 1,
+          endCol: srcMaxCol
+        };
+      }
+    } else {
+      // 水平方向填充
+      if (current.col > srcMaxCol) {
+        // 向右填充
+        return {
+          startRow: srcMinRow,
+          startCol: srcMaxCol + 1,
+          endRow: srcMaxRow,
+          endCol: current.col
+        };
+      } else if (current.col < srcMinCol) {
+        // 向左填充
+        return {
+          startRow: srcMinRow,
+          startCol: current.col,
+          endRow: srcMaxRow,
+          endCol: srcMinCol - 1
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * 执行填充拖拽操作
+   * 调用 FillSeriesEngine 推断模式并通过 model.fillRange 填充数据
+   */
+  private executeFillDrag(): void {
+    if (!this.fillDragSourceSelection || !this.fillDragCurrentCell) return;
+
+    const source = this.fillDragSourceSelection;
+    const preview = this.calculateFillPreview(source, this.fillDragCurrentCell);
+    if (!preview) return;
+
+    const srcMinRow = Math.min(source.startRow, source.endRow);
+    const srcMaxRow = Math.max(source.startRow, source.endRow);
+    const srcMinCol = Math.min(source.startCol, source.endCol);
+    const srcMaxCol = Math.max(source.startCol, source.endCol);
+
+    // 确定填充方向
+    let direction: FillDirection;
+    if (preview.startRow > srcMaxRow) {
+      direction = 'down';
+    } else if (preview.endRow < srcMinRow) {
+      direction = 'up';
+    } else if (preview.startCol > srcMaxCol) {
+      direction = 'right';
+    } else {
+      direction = 'left';
+    }
+
+    // 确保目标区域在工作表范围内，必要时扩展
+    const maxTargetRow = Math.max(preview.endRow, srcMaxRow);
+    const maxTargetCol = Math.max(preview.endCol, srcMaxCol);
+    if (maxTargetRow >= this.model.getRowCount()) {
+      this.model.expandRows(maxTargetRow + 1);
+    }
+    if (maxTargetCol >= this.model.getColCount()) {
+      this.model.expandCols(maxTargetCol + 1);
+    }
+
+    // 调用 model.fillRange 执行填充并记录历史
+    this.model.fillRange(
+      srcMinRow, srcMinCol, srcMaxRow, srcMaxCol,
+      preview.startRow, preview.startCol, preview.endRow, preview.endCol,
+      direction
+    );
+
+    // 更新选区为源区域 + 填充区域的合并范围
+    const newSelection: Selection = {
+      startRow: Math.min(srcMinRow, preview.startRow),
+      startCol: Math.min(srcMinCol, preview.startCol),
+      endRow: Math.max(srcMaxRow, preview.endRow),
+      endCol: Math.max(srcMaxCol, preview.endCol)
+    };
+    this.multiSelection.setSingle(newSelection);
+    this.renderer.setSelection(newSelection.startRow, newSelection.startCol, newSelection.endRow, newSelection.endCol);
+    this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+    this.updateSelectedCellInfo();
+  }
+
+  /**
+   * 执行拖拽移动操作
+   * 将源区域数据移动到目标位置，处理重叠和非空目标确认
+   */
+  private executeDragMove(): void {
+    if (!this.dragMoveSource || !this.dragMoveTarget) return;
+
+    const source = this.dragMoveSource;
+    const target = this.dragMoveTarget;
+    const srcRows = source.endRow - source.startRow;
+    const srcCols = source.endCol - source.startCol;
+
+    const targetEndRow = target.row + srcRows;
+    const targetEndCol = target.col + srcCols;
+
+    // 如果目标位置与源位置相同，不执行操作
+    if (target.row === source.startRow && target.col === source.startCol) {
+      return;
+    }
+
+    // 确保目标区域在工作表范围内，必要时扩展
+    if (targetEndRow >= this.model.getRowCount()) {
+      this.model.expandRows(targetEndRow + 1);
+    }
+    if (targetEndCol >= this.model.getColCount()) {
+      this.model.expandCols(targetEndCol + 1);
+    }
+
+    // 检查目标区域是否有非空单元格
+    let hasNonEmptyTarget = false;
+    for (let r = target.row; r <= targetEndRow; r++) {
+      for (let c = target.col; c <= targetEndCol; c++) {
+        // 跳过与源区域重叠的单元格
+        if (r >= source.startRow && r <= source.endRow &&
+            c >= source.startCol && c <= source.endCol) {
+          continue;
+        }
+        const cell = this.model.getCell(r, c);
+        if (cell && cell.content !== '') {
+          hasNonEmptyTarget = true;
+          break;
+        }
+      }
+      if (hasNonEmptyTarget) break;
+    }
+
+    // 目标区域非空时弹出确认对话框
+    if (hasNonEmptyTarget) {
+      const confirmed = confirm('目标区域包含数据，是否替换？');
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    // 保存源区域和目标区域的原始数据（用于撤销）
+    const sourceData: { row: number; col: number; content: string; formulaContent?: string }[] = [];
+    const targetData: { row: number; col: number; content: string; formulaContent?: string }[] = [];
+
+    // 复制源区域数据到临时缓冲区（处理重叠情况）
+    const buffer: { content: string; formulaContent?: string }[][] = [];
+    for (let r = source.startRow; r <= source.endRow; r++) {
+      const rowBuf: { content: string; formulaContent?: string }[] = [];
+      for (let c = source.startCol; c <= source.endCol; c++) {
+        const cell = this.model.getCell(r, c);
+        const content = cell?.content ?? '';
+        const formulaContent = cell?.formulaContent;
+        sourceData.push({ row: r, col: c, content, formulaContent });
+        rowBuf.push({ content, formulaContent });
+      }
+      buffer.push(rowBuf);
+    }
+
+    // 保存目标区域原始数据
+    for (let r = target.row; r <= targetEndRow; r++) {
+      for (let c = target.col; c <= targetEndCol; c++) {
+        const cell = this.model.getCell(r, c);
+        targetData.push({
+          row: r,
+          col: c,
+          content: cell?.content ?? '',
+          formulaContent: cell?.formulaContent
+        });
+      }
+    }
+
+    // 记录到 HistoryManager
+    this.model.getHistoryManager().record({
+      type: 'dragMove',
+      data: {
+        sourceStartRow: source.startRow,
+        sourceStartCol: source.startCol,
+        sourceEndRow: source.endRow,
+        sourceEndCol: source.endCol,
+        targetStartRow: target.row,
+        targetStartCol: target.col,
+        targetEndRow: targetEndRow,
+        targetEndCol: targetEndCol
+      },
+      undoData: {
+        sourceCells: sourceData,
+        targetCells: targetData
+      }
+    });
+
+    // 清空源区域
+    for (let r = source.startRow; r <= source.endRow; r++) {
+      for (let c = source.startCol; c <= source.endCol; c++) {
+        this.model.setCellContentNoHistory(r, c, '');
+      }
+    }
+
+    // 写入目标区域（从临时缓冲区）
+    for (let r = 0; r <= srcRows; r++) {
+      for (let c = 0; c <= srcCols; c++) {
+        const cellData = buffer[r][c];
+        const writeContent = cellData.formulaContent ?? cellData.content;
+        this.model.setCellContentNoHistory(target.row + r, target.col + c, writeContent);
+      }
+    }
+
+    // 更新选区到目标位置
+    const newSelection: Selection = {
+      startRow: target.row,
+      startCol: target.col,
+      endRow: targetEndRow,
+      endCol: targetEndCol
+    };
+    this.multiSelection.setSingle(newSelection);
+    this.renderer.setSelection(newSelection.startRow, newSelection.startCol, newSelection.endRow, newSelection.endCol);
+    this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+    this.updateSelectedCellInfo();
+  }
+
+  /**
    * 处理合并单元格 - 完全参考Excel的实现
    *
    * Excel中的合并单元格行为：
@@ -2256,12 +3689,13 @@ export class SpreadsheetApp {
    * 4. 合并后，选择区域变为合并后的单元格
    */
   private handleMergeCells(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       alert('请先选择要合并的单元格');
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = activeSelection;
 
     // 确保选择区域的起始和结束位置正确
     const minRow = Math.min(startRow, endRow);
@@ -2289,12 +3723,12 @@ export class SpreadsheetApp {
         });
       }
       // 更新选择区域为合并后的单元格
-      this.currentSelection = {
+      this.multiSelection.setSingle({
         startRow: minRow,
         startCol: minCol,
         endRow: minRow,
         endCol: minCol
-      };
+      });
       this.renderer.setSelection(minRow, minCol, minRow, minCol);
 
       // 更新单元格信息显示
@@ -2317,12 +3751,13 @@ export class SpreadsheetApp {
    * 4. 拆分后，保持选择区域不变
    */
   private handleSplitCells(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       alert('请先选择要拆分的单元格');
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = activeSelection;
 
     // 确保选择区域的起始和结束位置正确
     const minRow = Math.min(startRow, endRow);
@@ -2554,17 +3989,22 @@ export class SpreadsheetApp {
 
   // 处理数字格式变更
   private handleNumberFormatChange(formatKey: string): void {
-    if (!this.currentSelection) return;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
 
     const format = SpreadsheetApp.NUMBER_FORMAT_MAP[formatKey];
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
 
-    if (format === undefined) {
-      // "常规"格式：清除选中区域的格式
-      this.model.clearRangeFormat(startRow, startCol, endRow, endCol);
-    } else {
-      // 设置选中区域的格式
-      this.model.setRangeFormat(startRow, startCol, endRow, endCol, format);
+    // 遍历所有选区应用数字格式
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      if (format === undefined) {
+        // "常规"格式：清除选中区域的格式
+        this.model.clearRangeFormat(startRow, startCol, endRow, endCol);
+      } else {
+        // 设置选中区域的格式
+        this.model.setRangeFormat(startRow, startCol, endRow, endCol, format);
+      }
     }
 
     // 更新 UI 显示
@@ -2579,7 +4019,8 @@ export class SpreadsheetApp {
 
   // 处理换行按钮点击
   private handleWrapTextChange(): void {
-    if (!this.currentSelection) return;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
 
     const wrapTextBtn = document.getElementById('wrap-text-btn');
     if (!wrapTextBtn) return;
@@ -2588,10 +4029,12 @@ export class SpreadsheetApp {
     const isWrap = !wrapTextBtn.classList.contains('active');
     wrapTextBtn.classList.toggle('active', isWrap);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
-
-    // 设置选中区域的换行属性
-    this.model.setRangeWrapText(startRow, startCol, endRow, endCol, isWrap);
+    // 遍历所有选区应用换行属性
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeWrapText(startRow, startCol, endRow, endCol, isWrap);
+    }
 
     // 重新渲染
     this.renderer.render();
@@ -2655,6 +4098,98 @@ export class SpreadsheetApp {
         sparklineDropdown.classList.remove('visible');
       });
     }
+
+    // 初始化冻结窗格菜单
+    this.initFreezeMenu();
+  }
+
+  /**
+   * 初始化冻结窗格下拉菜单事件
+   * 需求: 9.5, 9.6, 9.7, 9.8
+   */
+  private initFreezeMenu(): void {
+    const freezeBtn = document.getElementById('freeze-btn');
+    const freezeDropdown = document.getElementById('freeze-dropdown');
+    if (!freezeBtn || !freezeDropdown) return;
+
+    // 切换下拉菜单显示/隐藏
+    freezeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      freezeDropdown.classList.toggle('visible');
+    });
+
+    // 各冻结选项点击事件
+    const freezeOptions = freezeDropdown.querySelectorAll('.freeze-option');
+    freezeOptions.forEach((option) => {
+      option.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const freezeType = (option as HTMLElement).dataset.freeze;
+        if (freezeType) {
+          this.handleFreezeAction(freezeType);
+        }
+        freezeDropdown.classList.remove('visible');
+      });
+    });
+
+    // 点击其他地方关闭下拉框
+    document.addEventListener('click', () => {
+      freezeDropdown.classList.remove('visible');
+    });
+  }
+
+  /**
+   * 执行冻结窗格操作
+   * 需求: 9.5（冻结首行）, 9.6（冻结首列）, 9.7（冻结至当前单元格）, 9.8（取消冻结）
+   */
+  private handleFreezeAction(freezeType: string): void {
+    const oldFreezeRows = this.model.getFreezeRows();
+    const oldFreezeCols = this.model.getFreezeCols();
+
+    let newFreezeRows = 0;
+    let newFreezeCols = 0;
+
+    switch (freezeType) {
+      case 'firstRow':
+        // 冻结首行
+        newFreezeRows = 1;
+        newFreezeCols = 0;
+        break;
+      case 'firstCol':
+        // 冻结首列
+        newFreezeRows = 0;
+        newFreezeCols = 1;
+        break;
+      case 'currentCell': {
+        // 冻结至当前单元格
+        const activeSel = this.multiSelection.getActiveSelection();
+        if (activeSel) {
+          newFreezeRows = Math.min(activeSel.startRow, activeSel.endRow);
+          newFreezeCols = Math.min(activeSel.startCol, activeSel.endCol);
+        }
+        break;
+      }
+      case 'none':
+        // 取消冻结
+        newFreezeRows = 0;
+        newFreezeCols = 0;
+        break;
+      default:
+        return;
+    }
+
+    // 应用冻结设置
+    this.model.setFreezeRows(newFreezeRows);
+    this.model.setFreezeCols(newFreezeCols);
+
+    // 记录到历史管理器
+    this.model.getHistoryManager().record({
+      type: 'freeze',
+      data: { rows: newFreezeRows, cols: newFreezeCols },
+      undoData: { rows: oldFreezeRows, cols: oldFreezeCols },
+    });
+
+    this.renderer.render();
+    this.updateUndoRedoButtons();
   }
 
   /**
@@ -2663,12 +4198,13 @@ export class SpreadsheetApp {
    * 检查当前选区是否包含数据，有则调用 ChartOverlay.showTypeSelector()。
    */
   private handleInsertChart(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       alert('请先选择包含数据的单元格区域');
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = activeSelection;
 
     // 检查选区是否包含至少一个有内容的单元格
     let hasData = false;
@@ -2722,9 +4258,10 @@ export class SpreadsheetApp {
    * 弹出数据范围输入对话框，解析后在当前选中单元格创建 SparklineConfig。
    */
   private handleSparklineOption(type: SparklineType): void {
-    if (!this.currentSelection) return;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
 
-    const { startRow, startCol } = this.currentSelection;
+    const { startRow, startCol } = activeSelection;
 
     // 弹出数据范围输入对话框
     const rangeStr = prompt('请输入数据范围（例如 A1:A10）：');
@@ -2787,13 +4324,13 @@ export class SpreadsheetApp {
     const btn = document.getElementById('insert-chart-btn');
     if (!btn) return;
 
-    if (!this.currentSelection) {
+    if (!this.multiSelection.getActiveSelection()) {
       btn.setAttribute('disabled', '');
       btn.title = '请先选择数据区域';
       return;
     }
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = this.multiSelection.getActiveSelection()!;
 
     // 检查选区是否包含至少一个有内容的单元格
     let hasData = false;
@@ -2881,8 +4418,9 @@ export class SpreadsheetApp {
 
   // 获取当前选区的范围文本（如 "A1:C3"）
   private getSelectionRangeText(): string {
-    if (!this.currentSelection) return 'A1';
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return 'A1';
+    const { startRow, startCol, endRow, endCol } = activeSelection;
     const minRow = Math.min(startRow, endRow);
     const maxRow = Math.max(startRow, endRow);
     const minCol = Math.min(startCol, endCol);
@@ -2895,10 +4433,11 @@ export class SpreadsheetApp {
 
   // 获取当前选区的范围对象
   private getSelectionRange(): { startRow: number; startCol: number; endRow: number; endCol: number } {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return { startRow: 0, startCol: 0, endRow: 0, endCol: 0 };
     }
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    const { startRow, startCol, endRow, endCol } = activeSelection;
     return {
       startRow: Math.min(startRow, endRow),
       startCol: Math.min(startCol, endCol),
@@ -3436,33 +4975,36 @@ export class SpreadsheetApp {
 
   // 处理字体大小变更（应用到当前选中的单元格）
   private handleFontSizeChange(size: number): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
     // 更新按钮文本和下拉选项
     this.updateFontSizeUI(size);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用字体大小
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontSize(startRow, startCol, endRow, endCol, size);
 
-    // 设置选中区域的字体大小
-    this.model.setRangeFontSize(startRow, startCol, endRow, endCol, size);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontSize',
-            row: r,
-            col: c,
-            size,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontSize',
+              row: r,
+              col: c,
+              size,
+            });
+          }
         }
       }
     }
@@ -3476,7 +5018,8 @@ export class SpreadsheetApp {
 
   // 处理字体颜色变化
   private handleFontColorChange(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3484,26 +5027,29 @@ export class SpreadsheetApp {
     if (!fontColorInput) return;
 
     const color = fontColorInput.value;
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
 
-    // 设置选中区域的字体颜色
-    this.model.setRangeFontColor(startRow, startCol, endRow, endCol, color);
+    // 遍历所有选区应用字体颜色
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontColor(startRow, startCol, endRow, endCol, color);
 
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontColor',
-            row: r,
-            col: c,
-            color,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontColor',
+              row: r,
+              col: c,
+              color,
+            });
+          }
         }
       }
     }
@@ -3517,7 +5063,8 @@ export class SpreadsheetApp {
 
   // 处理背景颜色变化
   private handleBgColorChange(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3525,26 +5072,29 @@ export class SpreadsheetApp {
     if (!bgColorInput) return;
 
     const color = bgColorInput.value;
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
 
-    // 设置选中区域的背景颜色
-    this.model.setRangeBgColor(startRow, startCol, endRow, endCol, color);
+    // 遍历所有选区应用背景颜色
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeBgColor(startRow, startCol, endRow, endCol, color);
 
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'bgColor',
-            row: r,
-            col: c,
-            color,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'bgColor',
+              row: r,
+              col: c,
+              color,
+            });
+          }
         }
       }
     }
@@ -3558,7 +5108,8 @@ export class SpreadsheetApp {
 
   // 处理字体加粗变化
   private handleFontBoldChange(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3569,26 +5120,28 @@ export class SpreadsheetApp {
     const isBold = !fontBoldBtn.classList.contains('active');
     fontBoldBtn.classList.toggle('active', isBold);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用加粗
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontBold(startRow, startCol, endRow, endCol, isBold);
 
-    // 设置选中区域的字体加粗
-    this.model.setRangeFontBold(startRow, startCol, endRow, endCol, isBold);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontBold',
-            row: r,
-            col: c,
-            bold: isBold,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontBold',
+              row: r,
+              col: c,
+              bold: isBold,
+            });
+          }
         }
       }
     }
@@ -3602,7 +5155,8 @@ export class SpreadsheetApp {
 
   // 处理字体斜体变化
   private handleFontItalicChange(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3613,26 +5167,28 @@ export class SpreadsheetApp {
     const isItalic = !fontItalicBtn.classList.contains('active');
     fontItalicBtn.classList.toggle('active', isItalic);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用斜体
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontItalic(startRow, startCol, endRow, endCol, isItalic);
 
-    // 设置选中区域的字体斜体
-    this.model.setRangeFontItalic(startRow, startCol, endRow, endCol, isItalic);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontItalic',
-            row: r,
-            col: c,
-            italic: isItalic,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontItalic',
+              row: r,
+              col: c,
+              italic: isItalic,
+            });
+          }
         }
       }
     }
@@ -3646,7 +5202,8 @@ export class SpreadsheetApp {
 
   // 处理字体下划线变化
   private handleFontUnderlineChange(): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3657,26 +5214,28 @@ export class SpreadsheetApp {
     const isUnderline = !fontUnderlineBtn.classList.contains('active');
     fontUnderlineBtn.classList.toggle('active', isUnderline);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用下划线
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontUnderline(startRow, startCol, endRow, endCol, isUnderline);
 
-    // 设置选中区域的字体下划线
-    this.model.setRangeFontUnderline(startRow, startCol, endRow, endCol, isUnderline);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontUnderline',
-            row: r,
-            col: c,
-            underline: isUnderline,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontUnderline',
+              row: r,
+              col: c,
+              underline: isUnderline,
+            });
+          }
         }
       }
     }
@@ -3690,7 +5249,8 @@ export class SpreadsheetApp {
 
   // 处理字体对齐变化
   private handleFontAlignChange(align: 'left' | 'center' | 'right'): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
@@ -3706,26 +5266,28 @@ export class SpreadsheetApp {
     // 更新水平对齐按钮显示文本
     this.updateHorizontalAlignUI(align);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用字体对齐
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontAlign(startRow, startCol, endRow, endCol, align);
 
-    // 设置选中区域的字体对齐
-    this.model.setRangeFontAlign(startRow, startCol, endRow, endCol, align);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'fontAlign',
-            row: r,
-            col: c,
-            align,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'fontAlign',
+              row: r,
+              col: c,
+              align,
+            });
+          }
         }
       }
     }
@@ -3739,33 +5301,36 @@ export class SpreadsheetApp {
 
   // 处理垂直对齐变化
   private handleVerticalAlignChange(align: 'top' | 'middle' | 'bottom'): void {
-    if (!this.currentSelection) {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
       return;
     }
 
     // 更新按钮文本和下拉选项
     this.updateVerticalAlignUI(align);
 
-    const { startRow, startCol, endRow, endCol } = this.currentSelection;
+    // 遍历所有选区应用垂直对齐
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeVerticalAlign(startRow, startCol, endRow, endCol, align);
 
-    // 设置选中区域的垂直对齐
-    this.model.setRangeVerticalAlign(startRow, startCol, endRow, endCol, align);
-
-    // 协同模式下为每个单元格提交操作
-    if (this.isCollaborationMode()) {
-      const minRow = Math.min(startRow, endRow);
-      const maxRow = Math.max(startRow, endRow);
-      const minCol = Math.min(startCol, endCol);
-      const maxCol = Math.max(startCol, endCol);
-      for (let r = minRow; r <= maxRow; r++) {
-        for (let c = minCol; c <= maxCol; c++) {
-          this.submitCollabOperation({
-            ...this.createBaseOp(),
-            type: 'verticalAlign',
-            row: r,
-            col: c,
-            align,
-          });
+      // 协同模式下为每个单元格提交操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'verticalAlign',
+              row: r,
+              col: c,
+              align,
+            });
+          }
         }
       }
     }
@@ -3781,8 +5346,9 @@ export class SpreadsheetApp {
   private handleSetContent(): void {
     // 内联编辑器激活时不处理，避免用旧值覆盖编辑器保存的新值
     if (this.inlineEditor.isEditing()) return;
-    if (this.currentSelection) {
-      const { startRow, startCol } = this.currentSelection;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (activeSelection) {
+      const { startRow, startCol } = activeSelection;
 
       // 获取输入框内容
       const contentInput = document.getElementById('cell-content') as HTMLInputElement;
@@ -3885,13 +5451,14 @@ export class SpreadsheetApp {
 
   // 更新选中单元格信息
   private updateSelectedCellInfo(): void {
-    if (!this.currentSelection) return;
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
 
     const selectedCellElement = document.getElementById('selected-cell');
     const cellContentInput = document.getElementById('cell-content') as HTMLInputElement;
 
     if (selectedCellElement && cellContentInput) {
-      const { startRow, startCol } = this.currentSelection;
+      const { startRow, startCol } = activeSelection;
 
       // 获取单元格信息（考虑合并单元格）
       const cellInfo = this.model.getMergedCellInfo(startRow, startCol);
@@ -3950,13 +5517,14 @@ export class SpreadsheetApp {
     }
 
     // 协同模式下广播光标位置
-    if (this.isCollaborationMode() && this.currentSelection) {
-      this.collaborationEngine!.sendCursor(this.currentSelection);
+    if (this.isCollaborationMode() && this.multiSelection.getActiveSelection()) {
+      this.collaborationEngine!.sendCursor(this.multiSelection.getActiveSelection());
     }
 
     // 检查并显示输入提示 tooltip（需求 5.6）
-    if (this.currentSelection) {
-      const { startRow, startCol } = this.currentSelection;
+    const currentActive = this.multiSelection.getActiveSelection();
+    if (currentActive) {
+      const { startRow, startCol } = currentActive;
       this.showInputHintIfNeeded(startRow, startCol);
     }
 
@@ -4167,12 +5735,13 @@ export class SpreadsheetApp {
   private handleSheetSwitch(sheetId: string): void {
     // 保存当前视口状态
     const viewport = this.renderer.getViewport();
+    const activeSelection = this.multiSelection.getActiveSelection();
     this.sheetManager.saveViewportState({
       scrollX: viewport.scrollX,
       scrollY: viewport.scrollY,
-      selection: this.currentSelection,
-      activeCell: this.currentSelection
-        ? { row: this.currentSelection.startRow, col: this.currentSelection.startCol }
+      selection: activeSelection,
+      activeCell: activeSelection
+        ? { row: activeSelection.startRow, col: activeSelection.startCol }
         : null,
     });
 
@@ -4186,8 +5755,8 @@ export class SpreadsheetApp {
     const savedState = this.sheetManager.getViewportState(sheetId);
     if (savedState) {
       this.renderer.scrollTo(savedState.scrollX, savedState.scrollY);
-      this.currentSelection = savedState.selection;
       if (savedState.selection) {
+        this.multiSelection.setSingle(savedState.selection);
         this.renderer.setSelection(
           savedState.selection.startRow,
           savedState.selection.startCol,
@@ -4195,11 +5764,12 @@ export class SpreadsheetApp {
           savedState.selection.endCol
         );
       } else {
+        this.multiSelection.clear();
         this.renderer.clearSelection();
       }
     } else {
       this.renderer.scrollTo(0, 0);
-      this.currentSelection = null;
+      this.multiSelection.clear();
       this.renderer.clearSelection();
     }
 

@@ -1,4 +1,5 @@
 import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule, SparklineConfig } from './types';
+import type { RowColumnGroup, FillDirection } from './types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
 import { DataTypeDetector } from './type-detector';
@@ -7,6 +8,8 @@ import { ValidationEngine } from './validation';
 import { ConditionalFormatEngine } from './conditional-format';
 import { ChartModel } from './chart/chart-model';
 import { SortFilterModel } from './sort-filter/sort-filter-model';
+import { GroupManager } from './group-manager';
+import { FillSeriesEngine } from './fill-series';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -39,6 +42,17 @@ export class SpreadsheetModel {
 
   // 排序筛选数据模型
   public readonly sortFilterModel: SortFilterModel;
+
+  // 隐藏行列集合
+  private hiddenRows: Set<number> = new Set();
+  private hiddenCols: Set<number> = new Set();
+
+  // 冻结窗格配置
+  private freezeRowCount: number = 0;
+  private freezeColCount: number = 0;
+
+  // 分组管理器
+  private groupManager: GroupManager = new GroupManager();
 
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
@@ -1559,6 +1573,198 @@ export class SpreadsheetModel {
     return true;
   }
 
+  // ============================================================
+  // 隐藏行列管理
+  // ============================================================
+
+  /** 隐藏指定行 */
+  public hideRows(indices: number[]): void {
+    for (const idx of indices) {
+      this.hiddenRows.add(idx);
+    }
+  }
+
+  /** 隐藏指定列 */
+  public hideCols(indices: number[]): void {
+    for (const idx of indices) {
+      this.hiddenCols.add(idx);
+    }
+  }
+
+  /** 取消隐藏指定行 */
+  public unhideRows(indices: number[]): void {
+    for (const idx of indices) {
+      this.hiddenRows.delete(idx);
+    }
+  }
+
+  /** 取消隐藏指定列 */
+  public unhideCols(indices: number[]): void {
+    for (const idx of indices) {
+      this.hiddenCols.delete(idx);
+    }
+  }
+
+  /** 判断行是否隐藏 */
+  public isRowHidden(row: number): boolean {
+    return this.hiddenRows.has(row);
+  }
+
+  /** 判断列是否隐藏 */
+  public isColHidden(col: number): boolean {
+    return this.hiddenCols.has(col);
+  }
+
+  /** 获取所有隐藏行（返回副本） */
+  public getHiddenRows(): Set<number> {
+    return new Set(this.hiddenRows);
+  }
+
+  /** 获取所有隐藏列（返回副本） */
+  public getHiddenCols(): Set<number> {
+    return new Set(this.hiddenCols);
+  }
+
+  // ============================================================
+  // 冻结窗格管理
+  // ============================================================
+
+  /** 设置冻结行数 */
+  public setFreezeRows(count: number): void {
+    this.freezeRowCount = Math.max(0, count);
+  }
+
+  /** 设置冻结列数 */
+  public setFreezeCols(count: number): void {
+    this.freezeColCount = Math.max(0, count);
+  }
+
+  /** 获取冻结行数 */
+  public getFreezeRows(): number {
+    return this.freezeRowCount;
+  }
+
+  /** 获取冻结列数 */
+  public getFreezeCols(): number {
+    return this.freezeColCount;
+  }
+
+  // ============================================================
+  // 批量删除行/列
+  // ============================================================
+
+  /**
+   * 批量删除多行（支持不连续行，自动逆序处理）
+   * @param rowIndices 要删除的行索引数组
+   * @returns true 如果删除成功，false 如果删除会导致行数少于 1
+   */
+  public batchDeleteRows(rowIndices: number[]): boolean {
+    // 去重并升序排序
+    const uniqueIndices = [...new Set(rowIndices)]
+      .filter((idx) => idx >= 0 && idx < this.getRowCount())
+      .sort((a, b) => a - b);
+
+    if (uniqueIndices.length === 0) {
+      return false;
+    }
+
+    // 检查删除后是否至少保留 1 行
+    if (this.getRowCount() - uniqueIndices.length < 1) {
+      return false;
+    }
+
+    // 保存撤销数据：记录每行的完整单元格数据和行高
+    const undoData = {
+      indices: uniqueIndices,
+      rows: uniqueIndices.map((idx) => ({
+        index: idx,
+        cells: this.data.cells[idx] ? [...this.data.cells[idx]] : [],
+        height: this.data.rowHeights[idx]
+      }))
+    };
+
+    // 逆序删除前，先拆分受影响的合并单元格
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      const idx = uniqueIndices[i];
+      this.splitMergedCellsInRows(idx, 1);
+    }
+
+    // 从最大索引开始逆序删除，避免索引偏移
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      const idx = uniqueIndices[i];
+      this.data.cells.splice(idx, 1);
+      this.data.rowHeights.splice(idx, 1);
+    }
+
+    // 记录历史（作为单个操作）
+    this.historyManager.record({
+      type: 'batchDeleteRows',
+      data: { indices: uniqueIndices },
+      undoData
+    });
+
+    this.clearAllCache();
+    this.isDirty = true;
+    return true;
+  }
+
+  /**
+   * 批量删除多列（支持不连续列，自动逆序处理）
+   * @param colIndices 要删除的列索引数组
+   * @returns true 如果删除成功，false 如果删除会导致列数少于 1
+   */
+  public batchDeleteColumns(colIndices: number[]): boolean {
+    // 去重并升序排序
+    const uniqueIndices = [...new Set(colIndices)]
+      .filter((idx) => idx >= 0 && idx < this.getColCount())
+      .sort((a, b) => a - b);
+
+    if (uniqueIndices.length === 0) {
+      return false;
+    }
+
+    // 检查删除后是否至少保留 1 列
+    if (this.getColCount() - uniqueIndices.length < 1) {
+      return false;
+    }
+
+    // 保存撤销数据：记录每列的完整单元格数据和列宽
+    const undoData = {
+      indices: uniqueIndices,
+      cols: uniqueIndices.map((idx) => ({
+        index: idx,
+        cells: this.data.cells.map((row) => row[idx]),
+        width: this.data.colWidths[idx]
+      }))
+    };
+
+    // 逆序删除前，先拆分受影响的合并单元格
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      const idx = uniqueIndices[i];
+      this.splitMergedCellsInCols(idx, 1);
+    }
+
+    // 从最大索引开始逆序删除，避免索引偏移
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      const idx = uniqueIndices[i];
+      for (const row of this.data.cells) {
+        row.splice(idx, 1);
+      }
+      this.data.colWidths.splice(idx, 1);
+    }
+
+    // 记录历史（作为单个操作）
+    this.historyManager.record({
+      type: 'batchDeleteCols',
+      data: { indices: uniqueIndices },
+      undoData
+    });
+
+    this.clearAllCache();
+    this.isDirty = true;
+    return true;
+  }
+
   // 删除列后更新合并/拆分单元格引用
   private updateMergeReferencesAfterDeleteCols(colIndex: number, count: number): void {
     for (let i = 0; i < this.getRowCount(); i++) {
@@ -2040,7 +2246,16 @@ export class SpreadsheetModel {
         rowCount: this.getRowCount(),
         colCount: this.getColCount(),
         defaultRowHeight: DEFAULT_ROW_HEIGHT,
-        defaultColWidth: DEFAULT_COL_WIDTH
+        defaultColWidth: DEFAULT_COL_WIDTH,
+        // 隐藏行列（Set → 数组）
+        hiddenRows: Array.from(this.hiddenRows),
+        hiddenCols: Array.from(this.hiddenCols),
+        // 冻结窗格配置
+        freezeRows: this.freezeRowCount,
+        freezeCols: this.freezeColCount,
+        // 分组数据
+        rowGroups: this.groupManager.getRowGroups(),
+        colGroups: this.groupManager.getColGroups(),
       },
       data: {
         cells: [] as Record<string, unknown>[],
@@ -2297,6 +2512,49 @@ export class SpreadsheetModel {
         // 初始化列宽
         for (let j = 0; j < cols; j++) {
           this.data.colWidths[j] = DEFAULT_COL_WIDTH;
+        }
+
+        // 恢复隐藏行列
+        if (Array.isArray(metadata.hiddenRows)) {
+          this.hiddenRows = new Set(metadata.hiddenRows as number[]);
+        } else {
+          this.hiddenRows = new Set();
+        }
+        if (Array.isArray(metadata.hiddenCols)) {
+          this.hiddenCols = new Set(metadata.hiddenCols as number[]);
+        } else {
+          this.hiddenCols = new Set();
+        }
+
+        // 恢复冻结窗格配置
+        if (typeof metadata.freezeRows === 'number') {
+          this.freezeRowCount = metadata.freezeRows;
+        } else {
+          this.freezeRowCount = 0;
+        }
+        if (typeof metadata.freezeCols === 'number') {
+          this.freezeColCount = metadata.freezeCols;
+        } else {
+          this.freezeColCount = 0;
+        }
+
+        // 恢复分组数据
+        this.groupManager = new GroupManager();
+        if (Array.isArray(metadata.rowGroups)) {
+          for (const group of metadata.rowGroups as RowColumnGroup[]) {
+            this.groupManager.createRowGroup(group.start, group.end);
+            if (group.collapsed) {
+              this.groupManager.collapseGroup('row', group.start, group.end);
+            }
+          }
+        }
+        if (Array.isArray(metadata.colGroups)) {
+          for (const group of metadata.colGroups as RowColumnGroup[]) {
+            this.groupManager.createColGroup(group.start, group.end);
+            if (group.collapsed) {
+              this.groupManager.collapseGroup('col', group.start, group.end);
+            }
+          }
         }
       }
 
@@ -3065,6 +3323,308 @@ export class SpreadsheetModel {
         // 排序/筛选的撤销/重做：恢复快照
         this.sortFilterModel.restoreSnapshot(data);
         break;
+      case 'dragMove':
+        // 拖拽移动的撤销/重做：恢复源区域和目标区域的单元格数据
+        if (data.sourceCells && Array.isArray(data.sourceCells)) {
+          // 撤销：恢复源区域和目标区域的原始数据
+          for (const cellData of data.sourceCells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              const writeContent = cellData.formulaContent ?? cellData.content;
+              this.setCellContentNoHistory(cellData.row, cellData.col, writeContent);
+            }
+          }
+          if (data.targetCells && Array.isArray(data.targetCells)) {
+            for (const cellData of data.targetCells) {
+              if (this.isValidPosition(cellData.row, cellData.col)) {
+                const writeContent = cellData.formulaContent ?? cellData.content;
+                this.setCellContentNoHistory(cellData.row, cellData.col, writeContent);
+              }
+            }
+          }
+        } else if (data.sourceStartRow !== undefined) {
+          // 重做：重新执行移动操作
+          const srcRows = data.sourceEndRow - data.sourceStartRow;
+          const srcCols = data.sourceEndCol - data.sourceStartCol;
+          const buf: string[][] = [];
+          for (let r = data.sourceStartRow; r <= data.sourceEndRow; r++) {
+            const rowBuf: string[] = [];
+            for (let c = data.sourceStartCol; c <= data.sourceEndCol; c++) {
+              const cell = this.getCell(r, c);
+              rowBuf.push(cell?.formulaContent ?? cell?.content ?? '');
+            }
+            buf.push(rowBuf);
+          }
+          for (let r = data.sourceStartRow; r <= data.sourceEndRow; r++) {
+            for (let c = data.sourceStartCol; c <= data.sourceEndCol; c++) {
+              this.setCellContentNoHistory(r, c, '');
+            }
+          }
+          for (let r = 0; r <= srcRows; r++) {
+            for (let c = 0; c <= srcCols; c++) {
+              this.setCellContentNoHistory(data.targetStartRow + r, data.targetStartCol + c, buf[r][c]);
+            }
+          }
+        }
+        break;
+      case 'hideRows':
+        // 切换隐藏状态：撤销时取消隐藏，重做时隐藏
+        if (Array.isArray(data)) {
+          for (const idx of data) {
+            if (this.hiddenRows.has(idx)) {
+              this.hiddenRows.delete(idx);
+            } else {
+              this.hiddenRows.add(idx);
+            }
+          }
+        }
+        break;
+      case 'hideCols':
+        if (Array.isArray(data)) {
+          for (const idx of data) {
+            if (this.hiddenCols.has(idx)) {
+              this.hiddenCols.delete(idx);
+            } else {
+              this.hiddenCols.add(idx);
+            }
+          }
+        }
+        break;
+      case 'unhideRows':
+        // 切换：撤销时重新隐藏，重做时取消隐藏
+        if (Array.isArray(data)) {
+          for (const idx of data) {
+            if (this.hiddenRows.has(idx)) {
+              this.hiddenRows.delete(idx);
+            } else {
+              this.hiddenRows.add(idx);
+            }
+          }
+        }
+        break;
+      case 'unhideCols':
+        if (Array.isArray(data)) {
+          for (const idx of data) {
+            if (this.hiddenCols.has(idx)) {
+              this.hiddenCols.delete(idx);
+            } else {
+              this.hiddenCols.add(idx);
+            }
+          }
+        }
+        break;
+      case 'freeze':
+        // 直接应用冻结配置（撤销时恢复旧值，重做时应用新值）
+        if (data.rows !== undefined) {
+          this.freezeRowCount = Math.max(0, data.rows);
+        }
+        if (data.cols !== undefined) {
+          this.freezeColCount = Math.max(0, data.cols);
+        }
+        break;
+      case 'createGroup':
+        // 切换：撤销时移除分组，重做时创建分组
+        if (data.groupType && data.start !== undefined && data.end !== undefined) {
+          if (data.groupType === 'row') {
+            // 尝试移除，如果不存在则创建
+            if (!this.groupManager.removeGroup('row', data.start, data.end)) {
+              this.groupManager.createRowGroup(data.start, data.end);
+            }
+          } else {
+            if (!this.groupManager.removeGroup('col', data.start, data.end)) {
+              this.groupManager.createColGroup(data.start, data.end);
+            }
+          }
+        }
+        break;
+      case 'removeGroup':
+        // 切换：撤销时创建分组，重做时移除分组
+        if (data.groupType && data.start !== undefined && data.end !== undefined) {
+          if (data.groupType === 'row') {
+            if (!this.groupManager.createRowGroup(data.start, data.end)) {
+              this.groupManager.removeGroup('row', data.start, data.end);
+            }
+          } else {
+            if (!this.groupManager.createColGroup(data.start, data.end)) {
+              this.groupManager.removeGroup('col', data.start, data.end);
+            }
+          }
+        }
+        break;
+      case 'collapseGroup':
+        // 切换折叠/展开状态及隐藏行列
+        if (data.groupType && data.start !== undefined && data.end !== undefined) {
+          const groups = data.groupType === 'row'
+            ? this.groupManager.getRowGroups()
+            : this.groupManager.getColGroups();
+          const group = groups.find((g: { start: number; end: number }) => g.start === data.start && g.end === data.end);
+          if (group && group.collapsed) {
+            // 当前已折叠 → 展开并取消隐藏
+            this.groupManager.expandGroup(data.groupType, data.start, data.end);
+            if (data.hiddenIndices && Array.isArray(data.hiddenIndices)) {
+              if (data.groupType === 'row') {
+                this.unhideRows(data.hiddenIndices);
+              } else {
+                this.unhideCols(data.hiddenIndices);
+              }
+            }
+          } else {
+            // 当前展开 → 折叠并隐藏
+            this.groupManager.collapseGroup(data.groupType, data.start, data.end);
+            if (data.hiddenIndices && Array.isArray(data.hiddenIndices)) {
+              if (data.groupType === 'row') {
+                this.hideRows(data.hiddenIndices);
+              } else {
+                this.hideCols(data.hiddenIndices);
+              }
+            }
+          }
+        }
+        break;
+      case 'expandGroup':
+        // 切换展开/折叠状态及隐藏行列
+        if (data.groupType && data.start !== undefined && data.end !== undefined) {
+          const groups = data.groupType === 'row'
+            ? this.groupManager.getRowGroups()
+            : this.groupManager.getColGroups();
+          const group = groups.find((g: { start: number; end: number }) => g.start === data.start && g.end === data.end);
+          if (group && group.collapsed) {
+            // 当前已折叠 → 展开并取消隐藏
+            this.groupManager.expandGroup(data.groupType, data.start, data.end);
+            if (data.hiddenIndices && Array.isArray(data.hiddenIndices)) {
+              if (data.groupType === 'row') {
+                this.unhideRows(data.hiddenIndices);
+              } else {
+                this.unhideCols(data.hiddenIndices);
+              }
+            }
+          } else {
+            // 当前展开 → 折叠并隐藏
+            this.groupManager.collapseGroup(data.groupType, data.start, data.end);
+            if (data.hiddenIndices && Array.isArray(data.hiddenIndices)) {
+              if (data.groupType === 'row') {
+                this.hideRows(data.hiddenIndices);
+              } else {
+                this.hideCols(data.hiddenIndices);
+              }
+            }
+          }
+        }
+        break;
+      case 'batchDeleteRows':
+        // 撤销：undoData 包含 rows 数组，恢复已删除的行
+        // 重做：data 只包含 indices，重新删除
+        if (data.rows && Array.isArray(data.rows)) {
+          // 撤销：按索引升序插入恢复行
+          const sortedRows = [...data.rows].sort(
+            (a: { index: number }, b: { index: number }) => a.index - b.index
+          );
+          for (const rowData of sortedRows) {
+            this.data.cells.splice(rowData.index, 0, rowData.cells);
+            this.data.rowHeights.splice(rowData.index, 0, rowData.height);
+          }
+          this.clearAllCache();
+        } else if (data.indices && Array.isArray(data.indices)) {
+          // 重做：逆序删除
+          const sorted = [...data.indices].sort((a: number, b: number) => b - a);
+          for (const idx of sorted) {
+            if (idx >= 0 && idx < this.data.cells.length) {
+              this.data.cells.splice(idx, 1);
+              this.data.rowHeights.splice(idx, 1);
+            }
+          }
+          this.clearAllCache();
+        }
+        break;
+      case 'batchDeleteCols':
+        // 撤销：undoData 包含 cols 数组，恢复已删除的列
+        // 重做：data 只包含 indices，重新删除
+        if (data.cols && Array.isArray(data.cols)) {
+          // 撤销：按索引升序插入恢复列
+          const sortedCols = [...data.cols].sort(
+            (a: { index: number }, b: { index: number }) => a.index - b.index
+          );
+          for (const colData of sortedCols) {
+            for (let r = 0; r < this.data.cells.length; r++) {
+              this.data.cells[r].splice(colData.index, 0, colData.cells[r]);
+            }
+            this.data.colWidths.splice(colData.index, 0, colData.width);
+          }
+          this.clearAllCache();
+        } else if (data.indices && Array.isArray(data.indices)) {
+          // 重做：逆序删除
+          const sorted = [...data.indices].sort((a: number, b: number) => b - a);
+          for (const idx of sorted) {
+            for (const row of this.data.cells) {
+              if (idx < row.length) {
+                row.splice(idx, 1);
+              }
+            }
+            if (idx < this.data.colWidths.length) {
+              this.data.colWidths.splice(idx, 1);
+            }
+          }
+          this.clearAllCache();
+        }
+        break;
+      case 'fill':
+        // 撤销：undoData 是 [{row, col, oldContent}] 数组，恢复原始内容
+        // 重做：data 包含 source/target/direction，重新执行填充
+        if (Array.isArray(data)) {
+          // 撤销：恢复原始单元格内容
+          for (const cellData of data) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.setCellContentNoHistory(cellData.row, cellData.col, cellData.oldContent);
+            }
+          }
+        } else if (data.source && data.target && data.direction) {
+          // 重做：重新执行填充
+          this.fillRange(
+            data.source.startRow, data.source.startCol,
+            data.source.endRow, data.source.endCol,
+            data.target.startRow, data.target.startCol,
+            data.target.endRow, data.target.endCol,
+            data.direction
+          );
+        }
+        break;
+      case 'pasteSpecial':
+        // 撤销：undoData.cells 包含原始单元格数据
+        // 重做：data 包含粘贴参数，重新执行
+        if (data.cells && Array.isArray(data.cells)) {
+          // 撤销：恢复原始单元格内容和格式
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              const cell = this.data.cells[cellData.row][cellData.col];
+              cell.content = cellData.content ?? '';
+              if (cellData.fontBold !== undefined) cell.fontBold = cellData.fontBold;
+              if (cellData.fontItalic !== undefined) cell.fontItalic = cellData.fontItalic;
+              if (cellData.fontUnderline !== undefined) cell.fontUnderline = cellData.fontUnderline;
+              if (cellData.fontSize !== undefined) cell.fontSize = cellData.fontSize;
+              if (cellData.fontColor !== undefined) cell.fontColor = cellData.fontColor;
+              if (cellData.bgColor !== undefined) cell.bgColor = cellData.bgColor;
+              if (cellData.fontAlign !== undefined) cell.fontAlign = cellData.fontAlign;
+              if (cellData.format !== undefined) cell.format = cellData.format;
+              this.contentCache[`${cellData.row}-${cellData.col}`] = cell.content;
+            }
+          }
+        }
+        break;
+      case 'replace':
+        // 替换单个单元格：data/undoData 都是 {row, col, content}
+        if (data.row !== undefined && data.col !== undefined && data.content !== undefined) {
+          this.setCellContentNoHistory(data.row, data.col, data.content);
+        }
+        break;
+      case 'replaceAll':
+        // 全部替换：data/undoData 都是 {cells: [{row, col, content}]}
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.setCellContentNoHistory(cellData.row, cellData.col, cellData.content);
+            }
+          }
+        }
+        break;
     }
     this.isDirty = true;
   }
@@ -3715,6 +4275,143 @@ export class SpreadsheetModel {
    */
   public getConditionalFormatEngine(): ConditionalFormatEngine {
     return this.conditionalFormatEngine;
+  }
+
+  // ============================================================
+  // 分组管理（委托给 GroupManager）
+  // ============================================================
+
+  /** 创建行分组 */
+  public createRowGroup(startRow: number, endRow: number): boolean {
+    return this.groupManager.createRowGroup(startRow, endRow);
+  }
+
+  /** 创建列分组 */
+  public createColGroup(startCol: number, endCol: number): boolean {
+    return this.groupManager.createColGroup(startCol, endCol);
+  }
+
+  /** 移除分组 */
+  public removeGroup(type: 'row' | 'col', start: number, end: number): boolean {
+    return this.groupManager.removeGroup(type, start, end);
+  }
+
+  /** 折叠分组 */
+  public collapseGroup(type: 'row' | 'col', start: number, end: number): void {
+    this.groupManager.collapseGroup(type, start, end);
+  }
+
+  /** 展开分组 */
+  public expandGroup(type: 'row' | 'col', start: number, end: number): void {
+    this.groupManager.expandGroup(type, start, end);
+  }
+
+  /** 获取指定位置的分组信息 */
+  public getGroupsAt(type: 'row' | 'col', index: number): RowColumnGroup[] {
+    return this.groupManager.getGroupsAt(type, index);
+  }
+
+  /** 获取最大嵌套层级 */
+  public getMaxGroupLevel(type: 'row' | 'col'): number {
+    return this.groupManager.getMaxLevel(type);
+  }
+
+  /** 获取所有行分组 */
+  public getRowGroups(): RowColumnGroup[] {
+    return this.groupManager.getRowGroups();
+  }
+
+  /** 获取所有列分组 */
+  public getColGroups(): RowColumnGroup[] {
+    return this.groupManager.getColGroups();
+  }
+
+  // ============================================================
+  // 填充操作
+  // ============================================================
+
+  /**
+   * 填充指定范围
+   * @param sourceStartRow 源区域起始行
+   * @param sourceStartCol 源区域起始列
+   * @param sourceEndRow 源区域结束行
+   * @param sourceEndCol 源区域结束列
+   * @param targetStartRow 目标区域起始行
+   * @param targetStartCol 目标区域起始列
+   * @param targetEndRow 目标区域结束行
+   * @param targetEndCol 目标区域结束列
+   * @param direction 填充方向
+   */
+  public fillRange(
+    sourceStartRow: number, sourceStartCol: number,
+    sourceEndRow: number, sourceEndCol: number,
+    targetStartRow: number, targetStartCol: number,
+    targetEndRow: number, targetEndCol: number,
+    direction: FillDirection
+  ): void {
+    // 保存目标区域原始数据用于撤销
+    const undoData: { row: number; col: number; oldContent: string }[] = [];
+
+    if (direction === 'down' || direction === 'up') {
+      // 按列填充
+      for (let col = sourceStartCol; col <= sourceEndCol; col++) {
+        // 收集源列数据
+        const sourceValues: string[] = [];
+        for (let row = sourceStartRow; row <= sourceEndRow; row++) {
+          sourceValues.push(this.getCell(row, col)?.content || '');
+        }
+
+        const pattern = FillSeriesEngine.inferPattern(sourceValues);
+        const targetCount = targetEndRow - targetStartRow + 1;
+        const fillValues = FillSeriesEngine.generate(pattern, targetCount, direction);
+
+        // 写入目标单元格
+        for (let i = 0; i < fillValues.length; i++) {
+          const targetRow = targetStartRow + i;
+          undoData.push({
+            row: targetRow,
+            col,
+            oldContent: this.getCell(targetRow, col)?.content || ''
+          });
+          this.setCellContentNoHistory(targetRow, col, fillValues[i]);
+        }
+      }
+    } else {
+      // 按行填充（left/right）
+      for (let row = sourceStartRow; row <= sourceEndRow; row++) {
+        const sourceValues: string[] = [];
+        for (let col = sourceStartCol; col <= sourceEndCol; col++) {
+          sourceValues.push(this.getCell(row, col)?.content || '');
+        }
+
+        const pattern = FillSeriesEngine.inferPattern(sourceValues);
+        const targetCount = targetEndCol - targetStartCol + 1;
+        const fillValues = FillSeriesEngine.generate(pattern, targetCount, direction);
+
+        for (let i = 0; i < fillValues.length; i++) {
+          const targetCol = targetStartCol + i;
+          undoData.push({
+            row,
+            col: targetCol,
+            oldContent: this.getCell(row, targetCol)?.content || ''
+          });
+          this.setCellContentNoHistory(row, targetCol, fillValues[i]);
+        }
+      }
+    }
+
+    // 记录历史
+    this.historyManager.record({
+      type: 'fill',
+      data: {
+        source: { startRow: sourceStartRow, startCol: sourceStartCol, endRow: sourceEndRow, endCol: sourceEndCol },
+        target: { startRow: targetStartRow, startCol: targetStartCol, endRow: targetEndRow, endCol: targetEndCol },
+        direction
+      },
+      undoData
+    });
+
+    this.isDirty = true;
   }
 
 }
