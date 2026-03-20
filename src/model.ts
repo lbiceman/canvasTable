@@ -438,6 +438,21 @@ export class SpreadsheetModel {
       cell.formulaContent = undefined;
       cell.content = content;
       this.contentCache[`${row}-${col}`] = content;
+
+      // 自动类型检测：更新 rawValue 和 format（与 setCellContent 保持一致）
+      if (!cell.format || cell.isAutoFormat) {
+        const detection = DataTypeDetector.detect(content);
+        cell.dataType = detection.dataType;
+        cell.rawValue = detection.rawValue;
+        if (detection.format) {
+          cell.format = detection.format;
+          cell.isAutoFormat = true;
+        } else {
+          // 内容不再是可格式化的类型，清除自动格式
+          cell.format = undefined;
+          cell.isAutoFormat = undefined;
+        }
+      }
     }
 
     this.isDirty = true;
