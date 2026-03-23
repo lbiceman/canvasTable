@@ -267,8 +267,8 @@ export class FormulaBar {
     input.style.position = 'relative';
     input.style.zIndex = '1';
     input.style.background = 'transparent';
-    input.style.color = 'transparent';
-    input.style.caretColor = 'black';
+    input.style.color = 'var(--theme-foreground)';
+    input.style.caretColor = 'var(--theme-foreground)';
     return input;
   }
 

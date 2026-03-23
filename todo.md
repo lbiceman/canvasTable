@@ -19,17 +19,17 @@
 
 ## 二、公式与计算
 
-- [ ] **基础数学函数扩展**：ABS、ROUND、CEILING、FLOOR、MOD、POWER、SQRT、MAX、MIN、AVERAGE
-- [ ] **统计函数**：COUNT、COUNTA、COUNTIF、COUNTIFS、SUMIF、SUMIFS、AVERAGEIF
-- [ ] **文本函数**：LEFT、RIGHT、MID、LEN、TRIM、UPPER、LOWER、CONCATENATE、SUBSTITUTE、FIND、SEARCH、TEXT
-- [ ] **逻辑函数**：IF、AND、OR、NOT、IFERROR、IFS、SWITCH
-- [ ] **查找引用函数**：VLOOKUP、HLOOKUP、INDEX、MATCH、OFFSET、INDIRECT
-- [ ] **日期函数**：TODAY、NOW、DATE、YEAR、MONTH、DAY、DATEDIF、EDATE、EOMONTH
-- [ ] **公式栏增强**：语法高亮、自动补全、函数提示、参数说明
-- [ ] **数组公式**：支持 Ctrl+Shift+Enter 数组公式
+- [x] **基础数学函数扩展**：ABS、ROUND、CEILING、FLOOR、MOD、POWER、SQRT、MAX、MIN、AVERAGE
+- [x] **统计函数**：COUNT、COUNTA、COUNTIF、COUNTIFS、SUMIF、SUMIFS、AVERAGEIF
+- [x] **文本函数**：LEFT、RIGHT、MID、LEN、TRIM、UPPER、LOWER、CONCATENATE、SUBSTITUTE、FIND、SEARCH、TEXT
+- [x] **逻辑函数**：IF、AND、OR、NOT、IFERROR、IFS、SWITCH
+- [x] **查找引用函数**：VLOOKUP、HLOOKUP、INDEX、MATCH、OFFSET、INDIRECT
+- [x] **日期函数**：TODAY、NOW、DATE、YEAR、MONTH、DAY、DATEDIF、EDATE、EOMONTH
+- [x] **公式栏增强**：语法高亮、自动补全、函数提示、参数说明
+- [x] **数组公式**：支持 Ctrl+Shift+Enter 数组公式
 - [x] **跨 Sheet 引用**：`Sheet2!A1` 格式的跨工作表引用
-- [ ] **命名范围**：定义和使用命名区域（如 `=SUM(Sales)`）
-- [ ] **循环引用检测与提示**
+- [x] **命名范围**：定义和使用命名区域（如 `=SUM(Sales)`）
+- [x] **循环引用检测与提示**
 
 ---
 
@@ -157,7 +157,7 @@
 | 格式化 | 字体颜色、背景色、字号、加粗、斜体、下划线、水平/垂直对齐 |
 | 合并单元格 | 合并、拆分、合并区域渲染 |
 | 行列操作 | 插入/删除行列、拖拽调整行高列宽、右键菜单 |
-| 公式 | SUM、SUBTRACT、MULTIPLY、DIVIDE（基础四则运算 + 区域引用） |
+| 公式 | SUM、SUBTRACT、MULTIPLY、DIVIDE、ABS、ROUND、CEILING、FLOOR、MOD、POWER、SQRT、MAX、MIN、AVERAGE、COUNT、COUNTA、COUNTIF、COUNTIFS、SUMIF、SUMIFS、AVERAGEIF、LEFT、RIGHT、MID、LEN、TRIM、UPPER、LOWER、CONCATENATE、SUBSTITUTE、FIND、SEARCH、TEXT、IF、AND、OR、NOT、IFERROR、IFS、SWITCH、VLOOKUP、HLOOKUP、INDEX、MATCH、OFFSET、INDIRECT、TODAY、NOW、DATE、YEAR、MONTH、DAY、DATEDIF、EDATE、EOMONTH、数组公式、命名范围、循环引用检测、公式栏语法高亮与自动补全 |
 | 剪贴板 | 复制、粘贴、剪切（系统剪贴板 + 内部剪贴板） |
 | 撤销/重做 | 完整的 undo/redo 栈，支持多种操作类型 |
 | 搜索 | Ctrl+F 查找，上/下导航 |

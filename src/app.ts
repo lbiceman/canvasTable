@@ -271,15 +271,17 @@ export class SpreadsheetApp {
       oldInput.style.display = 'none';
     }
 
+    // 隐藏原有的 #selected-cell（FormulaBar 的 nameBox 替代其功能）
+    const selectedCellEl = document.getElementById('selected-cell');
+    if (selectedCellEl) {
+      selectedCellEl.style.display = 'none';
+    }
+
     // 在 #selected-cell 后面创建 FormulaBar 挂载容器
     const mountPoint = document.createElement('div');
     mountPoint.className = 'formula-bar-mount';
-    mountPoint.style.flex = '1';
-    mountPoint.style.display = 'flex';
-    mountPoint.style.minWidth = '0';
 
-    // 插入到 #selected-cell 之后
-    const selectedCellEl = document.getElementById('selected-cell');
+    // 插入到 .cell-info 中（在隐藏元素之后）
     if (selectedCellEl && selectedCellEl.nextSibling) {
       cellInfoEl.insertBefore(mountPoint, selectedCellEl.nextSibling);
     } else {

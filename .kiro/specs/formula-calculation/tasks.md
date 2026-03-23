@@ -460,7 +460,7 @@
     - 双击 B7，输入 `=MIN(B1:B5)` 并按 Enter，截图验证显示 `1`
     - 在 C1:C5 填入 `10, 20, 30, 40, 50`，双击 C6，输入 `=AVERAGE(C1:C5)` 并按 Enter，截图验证显示 `30`
 
-  - [~] 19.3 验证所有统计函数（7 个：COUNT, COUNTA, COUNTIF, COUNTIFS, SUMIF, SUMIFS, AVERAGEIF）
+  - [x] 19.3 验证所有统计函数（7 个：COUNT, COUNTA, COUNTIF, COUNTIFS, SUMIF, SUMIFS, AVERAGEIF）
     - 清空工作表，在 A1:A5 填入 `1, "文本", 3, , 5`（A4 留空）
     - 双击 D1，输入 `=COUNT(A1:A5)` 并按 Enter，截图验证显示 `3`
     - 双击 D2，输入 `=COUNTA(A1:A5)` 并按 Enter，截图验证显示 `4`
@@ -471,7 +471,7 @@
     - 双击 D6，输入 `=SUMIFS(B1:B5, A1:A5, ">3", B1:B5, ">200")` 并按 Enter，截图验证结果正确
     - 双击 D7，输入 `=AVERAGEIF(A1:A5, ">5", B1:B5)` 并按 Enter，截图验证显示 `400`
 
-  - [~] 19.4 验证所有文本函数（12 个：LEFT, RIGHT, MID, LEN, TRIM, UPPER, LOWER, CONCATENATE, SUBSTITUTE, FIND, SEARCH, TEXT）
+  - [x] 19.4 验证所有文本函数（12 个：LEFT, RIGHT, MID, LEN, TRIM, UPPER, LOWER, CONCATENATE, SUBSTITUTE, FIND, SEARCH, TEXT）
     - 双击 E1，输入 `=LEFT("Hello", 3)` 并按 Enter，截图验证显示 `Hel`
     - 双击 E2，输入 `=RIGHT("Hello", 3)` 并按 Enter，截图验证显示 `llo`
     - 双击 E3，输入 `=MID("Hello", 2, 3)` 并按 Enter，截图验证显示 `ell`
@@ -485,7 +485,7 @@
     - 双击 E11，输入 `=SEARCH("LO", "Hello")` 并按 Enter，截图验证显示 `4`（不区分大小写）
     - 双击 E12，输入 `=TEXT(1234.5, "#,##0.00")` 并按 Enter，截图验证显示 `1,234.50`
 
-  - [~] 19.5 验证所有逻辑函数（7 个：IF, AND, OR, NOT, IFERROR, IFS, SWITCH）
+  - [x] 19.5 验证所有逻辑函数（7 个：IF, AND, OR, NOT, IFERROR, IFS, SWITCH）
     - 双击 F1，输入 `=IF(1>0, "是", "否")` 并按 Enter，截图验证显示 `是`
     - 双击 F2，输入 `=AND(TRUE, TRUE)` 并按 Enter，截图验证显示 `TRUE`
     - 双击 F3，输入 `=AND(TRUE, FALSE)` 并按 Enter，截图验证显示 `FALSE`
@@ -497,7 +497,7 @@
     - 双击 F9，输入 `=SWITCH(2, 1, "一", 2, "二", "其他")` 并按 Enter，截图验证显示 `二`
     - 双击 F10，输入 `=SWITCH(9, 1, "一", 2, "二", "其他")` 并按 Enter，截图验证显示 `其他`
 
-  - [~] 19.6 验证所有查找引用函数（6 个：VLOOKUP, HLOOKUP, INDEX, MATCH, OFFSET, INDIRECT）
+  - [x] 19.6 验证所有查找引用函数（6 个：VLOOKUP, HLOOKUP, INDEX, MATCH, OFFSET, INDIRECT）
     - 清空工作表，构建数据表：A1:C4 填入（A 列：张三/李四/王五/赵六，B 列：销售/技术/销售/财务，C 列：5000/8000/6000/7000）
     - 双击 G1，输入 `=VLOOKUP("李四", A1:C4, 3, FALSE)` 并按 Enter，截图验证显示 `8000`
     - 双击 G2，输入 `=VLOOKUP("不存在", A1:C4, 3, FALSE)` 并按 Enter，截图验证显示 `#N/A`
@@ -509,7 +509,7 @@
     - 双击 G8，输入 `=INDIRECT("H1")` 并按 Enter，截图验证显示 `42`
     - 双击 G9，输入 `=INDIRECT("无效引用")` 并按 Enter，截图验证显示 `#REF!`
 
-  - [~] 19.7 验证所有日期函数（9 个：TODAY, NOW, DATE, YEAR, MONTH, DAY, DATEDIF, EDATE, EOMONTH）
+  - [x] 19.7 验证所有日期函数（9 个：TODAY, NOW, DATE, YEAR, MONTH, DAY, DATEDIF, EDATE, EOMONTH）
     - 双击 H2，输入 `=TODAY()` 并按 Enter，截图验证显示当前日期
     - 双击 H3，输入 `=NOW()` 并按 Enter，截图验证显示当前日期和时间
     - 双击 H4，输入 `=DATE(2024, 1, 15)` 并按 Enter，截图验证显示 `2024-01-15`
@@ -520,7 +520,7 @@
     - 双击 H9，输入 `=EDATE("2024-01-15", 3)` 并按 Enter，截图验证显示 `2024-04-15`
     - 双击 H10，输入 `=EOMONTH("2024-01-15", 0)` 并按 Enter，截图验证显示 `2024-01-31`
 
-  - [~] 19.8 验证公式栏交互（语法高亮、自动补全、参数提示）
+  - [x] 19.8 验证公式栏交互（语法高亮、自动补全、参数提示）
     - 双击单元格进入编辑模式，输入 `=SU`，截图验证自动补全候选列表出现且包含 SUM
     - 按上下方向键移动选中项，截图验证选中项变化
     - 按 Tab 确认选中 SUM，截图验证公式栏显示 `=SUM(`
@@ -528,7 +528,7 @@
     - 输入完整公式 `=SUM(A1:A5)` 后，截图验证语法高亮：函数名、引用、运算符颜色不同
     - 按 Escape 验证候选列表关闭
 
-  - [~] 19.9 验证错误处理与循环引用
+  - [x] 19.9 验证错误处理与循环引用
     - 双击空单元格，输入 `=SQRT(-1)` 并按 Enter，截图验证显示 `#NUM!`
     - 双击空单元格，输入 `=1/0` 并按 Enter，截图验证显示 `#DIV/0!`
     - 双击空单元格，输入 `=ABS("文本")` 并按 Enter，截图验证显示 `#VALUE!`
@@ -538,7 +538,7 @@
     - 验证 I1 内容未被修改（循环引用阻止写入）
     - 在 J1 输入 `=K1`，在 K1 输入 `=J1`，截图验证间接循环引用被检测并阻止
 
-  - [~] 19.10 验证嵌套公式与复杂场景
+  - [x] 19.10 验证嵌套公式与复杂场景
     - 在 A1:A5 填入 `10, 20, 30, 40, 50`
     - 双击 L1，输入 `=IF(SUM(A1:A5)>100, "大", "小")` 并按 Enter，截图验证显示 `大`
     - 双击 L2，输入 `=ROUND(AVERAGE(A1:A5), 0)` 并按 Enter，截图验证显示 `30`
