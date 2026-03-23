@@ -30,7 +30,7 @@
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --header-height: 28px;
   --header-width: 40px;
-  --toolbar-height: 44px;
+  --toolbar-height: 76px;
   --status-height: 24px;
   --sheet-tab-height: 32px;
 
@@ -73,13 +73,39 @@ body {
 /* Toolbar styles */
 .toolbar {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 6px 12px;
+  flex-direction: column;
+  padding: 0;
   background-color: var(--theme-toolbar-bg);
   border-bottom: 1px solid var(--theme-toolbar-border);
   height: var(--toolbar-height);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  height: 36px;
+}
+
+.toolbar-row-1 {
+  border-bottom: 1px solid var(--theme-toolbar-border);
+}
+
+.toolbar-row-2 {
+  gap: 8px;
+}
+
+.toolbar-row-2 .cell-info {
+  flex: 1;
+}
+
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .toolbar-group {
@@ -124,7 +150,8 @@ body {
   border: none;
   outline: none;
   padding: 0 8px;
-  width: 420px;
+  flex: 1;
+  min-width: 200px;
   font-size: 13px;
   height: 100%;
   background: var(--theme-input-bg);

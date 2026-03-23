@@ -106,7 +106,7 @@ export class SpreadsheetRenderer {
 
     // 设置画布大小
     this.canvasWidth = window.innerWidth;
-    this.canvasHeight = window.innerHeight - (config.headerHeight + 44 + 24);
+    this.canvasHeight = window.innerHeight - (config.headerHeight + 76 + 24);
     this.canvas.width = this.canvasWidth;
     this.canvas.height = this.canvasHeight;
 
