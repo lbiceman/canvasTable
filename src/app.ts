@@ -20,6 +20,8 @@ import { SheetContextMenu } from './sheet-context-menu';
 import { FilterDropdown } from './sort-filter/filter-dropdown';
 import type { SortDirection, ColumnFilter } from './sort-filter/types';
 import { MultiSelectionManager } from './multi-selection';
+import { FormulaBar } from './formula-bar/formula-bar';
+import { FormulaEngine } from './formula-engine';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -110,6 +112,9 @@ export class SpreadsheetApp {
   // 排序筛选下拉菜单
   private filterDropdown: FilterDropdown;
 
+  // 公式栏组件
+  private formulaBar: FormulaBar | null = null;
+
   constructor(_containerId: string) {
     // 初始化多工作表管理器（默认创建 Sheet1）
     this.sheetManager = new SheetManager();
@@ -136,6 +141,11 @@ export class SpreadsheetApp {
 
     // 创建内联编辑器
     this.inlineEditor = new InlineEditor();
+
+    // 注册数组公式保存回调（Ctrl+Shift+Enter）
+    this.inlineEditor.setArrayFormulaSaveCallback((value: string) => {
+      this.handleArrayFormulaFromEditor(value);
+    });
 
     // 创建数据管理器
     this.dataManager = new DataManager(this.model);
@@ -231,6 +241,12 @@ export class SpreadsheetApp {
     // 初始化事件监听
     this.initEventListeners();
 
+    // 初始化公式栏
+    this.initFormulaBar();
+
+    // 初始化名称框交互（命名范围管理）
+    this.initNameBoxInteraction();
+
     // 初始化状态显示
     this.updateStatusBar();
 
@@ -239,6 +255,168 @@ export class SpreadsheetApp {
 
     // 更新滚动条
     this.updateScrollbars();
+  }
+
+  /**
+   * 初始化公式栏组件
+   * 在 .cell-info 区域中创建 FormulaBar 挂载点，替代原有 #cell-content 输入框功能
+   */
+  private initFormulaBar(): void {
+    const cellInfoEl = document.querySelector('.cell-info');
+    if (!cellInfoEl) return;
+
+    // 隐藏原有的 #cell-content 输入框（保留 DOM 以保持向后兼容）
+    const oldInput = document.getElementById('cell-content') as HTMLInputElement | null;
+    if (oldInput) {
+      oldInput.style.display = 'none';
+    }
+
+    // 在 #selected-cell 后面创建 FormulaBar 挂载容器
+    const mountPoint = document.createElement('div');
+    mountPoint.className = 'formula-bar-mount';
+    mountPoint.style.flex = '1';
+    mountPoint.style.display = 'flex';
+    mountPoint.style.minWidth = '0';
+
+    // 插入到 #selected-cell 之后
+    const selectedCellEl = document.getElementById('selected-cell');
+    if (selectedCellEl && selectedCellEl.nextSibling) {
+      cellInfoEl.insertBefore(mountPoint, selectedCellEl.nextSibling);
+    } else {
+      cellInfoEl.appendChild(mountPoint);
+    }
+
+    // 获取 FormulaEngine 实例及其注册表和命名范围管理器
+    const engine = FormulaEngine.getInstance();
+    const registry = engine.getRegistry();
+    const namedRangeManager = engine.getNamedRangeManager();
+
+    // 创建 FormulaBar 实例
+    this.formulaBar = new FormulaBar(mountPoint, registry, namedRangeManager);
+
+    // 设置回调：输入变化时同步到隐藏的 #cell-content（保持向后兼容）
+    this.formulaBar.onInput((value: string) => {
+      if (oldInput) {
+        oldInput.value = value;
+      }
+    });
+
+    // 设置回调：确认（Enter）时执行 handleSetContent 逻辑
+    this.formulaBar.onConfirm(() => {
+      this.handleSetContent();
+    });
+
+    // 设置回调：取消（Escape）时恢复原始值
+    this.formulaBar.onCancel(() => {
+      this.updateSelectedCellInfo();
+    });
+  }
+
+  /**
+   * 初始化名称框交互
+   * 用户可在名称框中输入名称来跳转到命名范围、单元格地址，或创建新的命名范围
+   * Requirements: 9.1-9.3
+   */
+  private initNameBoxInteraction(): void {
+    if (!this.formulaBar) return;
+
+    const nameBoxEl = this.formulaBar.getNameBoxElement();
+    if (!nameBoxEl) return;
+
+    // 让名称框可编辑
+    nameBoxEl.readOnly = false;
+
+    nameBoxEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.handleNameBoxEntry(nameBoxEl.value.trim());
+        this.canvas.focus();
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        // 恢复当前单元格地址
+        this.updateSelectedCellInfo();
+        this.canvas.focus();
+      }
+    });
+  }
+
+  /**
+   * 处理名称框输入
+   * 1. 已有命名范围 → 跳转到该范围
+   * 2. 有效单元格地址 → 跳转到该地址
+   * 3. 有效名称 → 将当前选区创建为命名范围
+   * Requirements: 9.1-9.3
+   */
+  private handleNameBoxEntry(input: string): void {
+    if (!input) return;
+
+    const namedRangeMgr = this.model.getNamedRangeManager();
+
+    // 1. 检查是否为已有命名范围
+    const resolved = namedRangeMgr.resolve(input);
+    if (resolved) {
+      const { startRow, startCol, endRow, endCol } = resolved.range;
+      const sel = { startRow, startCol, endRow, endCol };
+      this.multiSelection.setSingle(sel);
+      this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+      this.renderer.scrollToCell(startRow, startCol);
+      this.updateSelectedCellInfo();
+      this.renderer.render();
+      return;
+    }
+
+    // 2. 检查是否为单元格地址（如 A1 或 A1:B10）
+    const rangeMatch = input.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/i);
+    if (rangeMatch) {
+      const startCol = this.colLettersToIndex(rangeMatch[1].toUpperCase());
+      const startRow = parseInt(rangeMatch[2], 10) - 1;
+      const endCol = this.colLettersToIndex(rangeMatch[3].toUpperCase());
+      const endRow = parseInt(rangeMatch[4], 10) - 1;
+      if (startRow >= 0 && startCol >= 0 && endRow >= 0 && endCol >= 0) {
+        const sel = { startRow, startCol, endRow, endCol };
+        this.multiSelection.setSingle(sel);
+        this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+        this.renderer.scrollToCell(startRow, startCol);
+        this.updateSelectedCellInfo();
+        this.renderer.render();
+        return;
+      }
+    }
+
+    const cellMatch = input.match(/^([A-Z]+)(\d+)$/i);
+    if (cellMatch) {
+      const col = this.colLettersToIndex(cellMatch[1].toUpperCase());
+      const row = parseInt(cellMatch[2], 10) - 1;
+      if (row >= 0 && col >= 0) {
+        const sel = { startRow: row, startCol: col, endRow: row, endCol: col };
+        this.multiSelection.setSingle(sel);
+        this.renderer.setMultiSelection(this.multiSelection.getSelections(), 0);
+        this.renderer.scrollToCell(row, col);
+        this.updateSelectedCellInfo();
+        this.renderer.render();
+        return;
+      }
+    }
+
+    // 3. 创建新的命名范围
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    const result = namedRangeMgr.create(input, {
+      range: {
+        type: 'RangeReference',
+        startRow: activeSelection.startRow,
+        startCol: activeSelection.startCol,
+        endRow: activeSelection.endRow,
+        endCol: activeSelection.endCol,
+      }
+    });
+
+    if (!result.success) {
+      this.showFormulaError(result.message || '命名范围创建失败');
+      this.updateSelectedCellInfo();
+    }
   }
 
   // 创建滚动条
@@ -1682,6 +1860,13 @@ export class SpreadsheetApp {
       return;
     }
 
+    // 数组公式 Ctrl+Shift+Enter / Cmd+Shift+Enter
+    if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'Enter') {
+      event.preventDefault();
+      this.handleArrayFormulaEntry();
+      return;
+    }
+
     // 粘贴 Ctrl+V / Cmd+V
     if ((event.ctrlKey || event.metaKey) && event.key === 'v') {
       event.preventDefault();
@@ -1822,6 +2007,15 @@ export class SpreadsheetApp {
     const cellInfo = this.model.getMergedCellInfo(dataRow, startCol);
     if (!cellInfo) {
       return;
+    }
+
+    // 数组公式区域保护：非起始单元格不允许编辑
+    if (this.model.isInArrayFormula(dataRow, startCol)) {
+      const arrayInfo = this.model.getArrayFormulaInfo(dataRow, startCol);
+      if (arrayInfo && (arrayInfo.originRow !== dataRow || arrayInfo.originCol !== startCol)) {
+        this.showFormulaError('不能更改数组的一部分');
+        return;
+      }
     }
 
     // 获取单元格在画布上的位置
@@ -2042,6 +2236,62 @@ export class SpreadsheetApp {
     this.updateSelectedCellInfo();
   }
 
+  // 处理数组公式输入（Ctrl+Shift+Enter）
+  private handleArrayFormulaEntry(): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    // 获取公式内容（优先从公式栏获取）
+    const content = this.formulaBar
+      ? this.formulaBar.getValue()
+      : (document.getElementById('cell-content') as HTMLInputElement).value;
+
+    if (!content.startsWith('=')) {
+      // 非公式不支持数组公式
+      return;
+    }
+
+    const { startRow, startCol, endRow, endCol } = activeSelection;
+
+    // 调用 model.setArrayFormula
+    const success = this.model.setArrayFormula(startRow, startCol, content, endRow, endCol);
+
+    if (success) {
+      // 更新公式栏显示（数组公式带花括号）
+      this.updateSelectedCellInfo();
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  // 处理从 inline-editor 触发的数组公式输入（Ctrl+Shift+Enter）
+  private handleArrayFormulaFromEditor(content: string): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    if (!content.startsWith('=')) return;
+
+    let { startRow, startCol, endRow, endCol } = activeSelection;
+
+    // 如果选区只有一个单元格，先求值获取结果维度来确定数组范围
+    if (startRow === endRow && startCol === endCol) {
+      const results = FormulaEngine.getInstance().evaluateArrayFormula(content, startRow, startCol);
+      if (results.length > 0) {
+        endRow = startRow + results.length - 1;
+        endCol = startCol + (results[0].length || 1) - 1;
+      }
+    }
+
+    // 调用 model.setArrayFormula
+    const success = this.model.setArrayFormula(startRow, startCol, content, endRow, endCol);
+
+    if (success) {
+      this.updateSelectedCellInfo();
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    }
+  }
+
   // 处理 Delete 键
   private handleDeleteKey(): void {
     const activeSelection = this.multiSelection.getActiveSelection();
@@ -2049,12 +2299,39 @@ export class SpreadsheetApp {
       return;
     }
 
+    // 数组公式区域保护：检查选区是否包含数组公式的部分单元格
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const minRow = Math.min(sel.startRow, sel.endRow);
+      const maxRow = Math.max(sel.startRow, sel.endRow);
+      const minCol = Math.min(sel.startCol, sel.endCol);
+      const maxCol = Math.max(sel.startCol, sel.endCol);
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          if (this.model.isInArrayFormula(r, c)) {
+            const arrayInfo = this.model.getArrayFormulaInfo(r, c);
+            if (arrayInfo) {
+              const { range } = arrayInfo;
+              // 检查选区是否完全覆盖数组公式区域
+              const fullyCovers = minRow <= range.startRow &&
+                maxRow >= range.endRow &&
+                minCol <= range.startCol &&
+                maxCol >= range.endCol;
+              if (!fullyCovers) {
+                this.showFormulaError('不能更改数组的一部分');
+                return;
+              }
+            }
+          }
+        }
+      }
+    }
+
     // 多选区模式：清除所有选区内单元格内容
     const allCells = this.multiSelection.getAllCells();
     if (allCells.length === 0) return;
 
     // 计算所有选区的边界范围（用于 clearRangeContent 的历史记录）
-    const selections = this.multiSelection.getSelections();
     for (const sel of selections) {
       const minRow = Math.min(sel.startRow, sel.endRow);
       const maxRow = Math.max(sel.startRow, sel.endRow);
@@ -3078,6 +3355,16 @@ export class SpreadsheetApp {
 
         // 更新单元格信息显示
         this.updateSelectedCellInfo();
+
+        // 数组公式区域保护：非起始单元格不允许编辑
+        if (this.model.isInArrayFormula(cellInfo.row, cellInfo.col)) {
+          const arrayInfo = this.model.getArrayFormulaInfo(cellInfo.row, cellInfo.col);
+          if (arrayInfo && (arrayInfo.originRow !== cellInfo.row || arrayInfo.originCol !== cellInfo.col)) {
+            this.showFormulaError('不能更改数组的一部分');
+            this.renderer.render();
+            return;
+          }
+        }
 
         // 获取单元格在画布上的位置和大小
         const cellRect = this.renderer.getCellRect(cellInfo.row, cellInfo.col);
@@ -5351,9 +5638,10 @@ export class SpreadsheetApp {
     if (activeSelection) {
       const { startRow, startCol } = activeSelection;
 
-      // 获取输入框内容
-      const contentInput = document.getElementById('cell-content') as HTMLInputElement;
-      const content = contentInput.value;
+      // 获取输入框内容（优先从公式栏获取，保持向后兼容）
+      const content = this.formulaBar
+        ? this.formulaBar.getValue()
+        : (document.getElementById('cell-content') as HTMLInputElement).value;
 
       // 验证公式
       if (this.model.validateFormula) {
@@ -5471,6 +5759,17 @@ export class SpreadsheetApp {
 
         // 更新单元格内容输入框 - 如果是公式则显示原始公式
         cellContentInput.value = cellInfo.formulaContent || cellInfo.content || '';
+
+        // 同步公式栏显示
+        if (this.formulaBar) {
+          const address = `${colLetter}${cellInfo.row + 1}`;
+          this.formulaBar.setNameBox(address);
+          const displayValue = cellInfo.formulaContent || cellInfo.content || '';
+          // 检查是否为数组公式
+          const cell = this.model.getCell(cellInfo.row, cellInfo.col);
+          const isArrayFormula = cell?.isArrayFormula ?? false;
+          this.formulaBar.setValue(displayValue, isArrayFormula);
+        }
 
         // 更新字体大小按钮显示为当前单元格的字体大小
         this.updateFontSizeUI(cellInfo.fontSize || 12);

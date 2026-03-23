@@ -138,6 +138,10 @@ export interface Cell {
   wrapText?: boolean;              // 是否自动换行
   validation?: ValidationRule;     // 数据验证规则
   sparkline?: SparklineConfig;     // 迷你图配置
+
+  // === 数组公式相关字段 ===
+  isArrayFormula?: boolean;        // 是否为数组公式
+  arrayFormulaOrigin?: CellPosition; // 数组公式起始单元格位置
 }
 
 // 表格数据结构

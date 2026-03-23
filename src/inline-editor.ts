@@ -10,6 +10,7 @@ export class InlineEditor {
   private currentCol: number = -1;
   private saveCallback: ((value: string) => void) | null = null;
   private richTextSaveCallback: ((segments: RichTextSegment[]) => void) | null = null;
+  private arrayFormulaSaveCallback: ((value: string) => void) | null = null;
   private isSaving: boolean = false;
   private isComposing: boolean = false;
 
@@ -58,6 +59,13 @@ export class InlineEditor {
       if (event.key === 'Enter' && event.altKey) {
         event.preventDefault();
         this.insertNewlineAtCursor();
+      } else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && event.shiftKey) {
+        // Ctrl+Shift+Enter：数组公式，保存内容并通知 app.ts
+        event.preventDefault();
+        if (this.arrayFormulaSaveCallback) {
+          this.arrayFormulaSaveCallback(this.inputElement.value);
+        }
+        this.hide();
       } else if (event.key === 'Enter') {
         event.preventDefault();
         this.save();
@@ -189,6 +197,11 @@ export class InlineEditor {
   // 判断编辑器是否处于编辑状态
   public isEditing(): boolean {
     return this.isActive;
+  }
+
+  // 设置数组公式保存回调（Ctrl+Shift+Enter 时触发）
+  public setArrayFormulaSaveCallback(callback: (value: string) => void): void {
+    this.arrayFormulaSaveCallback = callback;
   }
 
   // 获取当前编辑的行列

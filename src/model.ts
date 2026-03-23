@@ -1,5 +1,6 @@
 import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule, SparklineConfig } from './types';
 import type { RowColumnGroup, FillDirection } from './types';
+import type { ArrayFormulaInfo } from './formula/types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
 import { DataTypeDetector } from './type-detector';
@@ -10,6 +11,7 @@ import { ChartModel } from './chart/chart-model';
 import { SortFilterModel } from './sort-filter/sort-filter-model';
 import { GroupManager } from './group-manager';
 import { FillSeriesEngine } from './fill-series';
+import { NamedRangeManager } from './formula/named-range';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -221,12 +223,157 @@ export class SpreadsheetModel {
     return this.formulaEngine.validateFormula(formula);
   }
 
+  // ============================================================
+  // 命名范围管理
+  // ============================================================
+
+  /** 获取命名范围管理器 */
+  public getNamedRangeManager(): NamedRangeManager {
+    return this.formulaEngine.getNamedRangeManager();
+  }
+
+  // ============================================================
+  // 数组公式管理
+  // ============================================================
+
+  /**
+   * 设置数组公式（Ctrl+Shift+Enter）
+   * @param row 起始行
+   * @param col 起始列
+   * @param formula 公式字符串（含 = 前缀）
+   * @param endRow 结果区域结束行
+   * @param endCol 结果区域结束列
+   */
+  public setArrayFormula(row: number, col: number, formula: string, endRow: number, endCol: number): boolean {
+    if (!this.isValidPosition(row, col) || !this.isValidPosition(endRow, endCol)) {
+      return false;
+    }
+
+    // 验证公式
+    const validation = this.formulaEngine.validateFormula(formula);
+    if (!validation.valid) {
+      this.notifyFormulaError(validation.error || '公式错误');
+      return false;
+    }
+
+    // 数组公式跳过循环引用检测：数组公式引用自身结果区域是合法的
+    // （Excel 对 CSE 数组公式也不做循环引用检测）
+
+    const arrayMgr = this.formulaEngine.getArrayFormulaManager();
+    const resultRange = { startRow: row, startCol: col, endRow, endCol };
+
+    // 检查结果区域是否与已有非空数据重叠（排除起始单元格自身）
+    const overlapping = arrayMgr.checkOverlap(resultRange, (r: number, c: number) => {
+      if (r === row && c === col) return '';
+      const cell = this.getCell(r, c);
+      return cell?.content ?? '';
+    });
+    if (overlapping.length > 0) {
+      // 有重叠数据，通知 UI（由调用方决定是否覆盖）
+      this.notifyFormulaError('数组公式结果区域与已有数据重叠');
+      return false;
+    }
+
+    // 注册数组公式
+    arrayMgr.register({ row, col }, formula, resultRange);
+
+    // 求值数组公式
+    const results = this.formulaEngine.evaluateArrayFormula(formula, row, col);
+
+    // 填充结果单元格
+    for (let r = row; r <= endRow; r++) {
+      for (let c = col; c <= endCol; c++) {
+        const resultRow = r - row;
+        const resultCol = c - col;
+        const value = (results[resultRow] && results[resultRow][resultCol] !== undefined)
+          ? String(results[resultRow][resultCol])
+          : '';
+
+        const cell = this.data.cells[r][c];
+        cell.content = value;
+        cell.isArrayFormula = true;
+        cell.arrayFormulaOrigin = { row, col };
+        this.contentCache[`${r}-${c}`] = value;
+
+        // 起始单元格保存公式内容
+        if (r === row && c === col) {
+          cell.formulaContent = formula;
+        }
+      }
+    }
+
+    this.isDirty = true;
+    this.clearCacheIfNeeded();
+    return true;
+  }
+
+  /**
+   * 删除数组公式（需要选中整个区域）
+   */
+  public deleteArrayFormula(originRow: number, originCol: number): void {
+    const arrayMgr = this.formulaEngine.getArrayFormulaManager();
+    const info = arrayMgr.getArrayFormula(originRow, originCol);
+    if (!info) return;
+
+    const { startRow, startCol, endRow, endCol } = info.range;
+
+    // 清除区域内所有单元格
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        if (this.isValidPosition(r, c)) {
+          const cell = this.data.cells[r][c];
+          cell.content = '';
+          cell.formulaContent = undefined;
+          cell.isArrayFormula = undefined;
+          cell.arrayFormulaOrigin = undefined;
+          this.contentCache[`${r}-${c}`] = '';
+        }
+      }
+    }
+
+    // 从管理器中删除
+    arrayMgr.delete(info.originRow, info.originCol);
+
+    this.isDirty = true;
+  }
+
+  /**
+   * 检查单元格是否在数组公式区域内（用于编辑保护）
+   */
+  public isInArrayFormula(row: number, col: number): boolean {
+    return this.formulaEngine.getArrayFormulaManager().isInArrayFormula(row, col);
+  }
+
+  /**
+   * 获取数组公式信息
+   */
+  public getArrayFormulaInfo(row: number, col: number): ArrayFormulaInfo | null {
+    return this.formulaEngine.getArrayFormulaManager().getArrayFormula(row, col);
+  }
+
   // 批量清除范围内单元格内容
   public clearRangeContent(startRow: number, startCol: number, endRow: number, endCol: number): void {
     const minRow = Math.min(startRow, endRow);
     const maxRow = Math.max(startRow, endRow);
     const minCol = Math.min(startCol, endCol);
     const maxCol = Math.max(startCol, endCol);
+
+    // 数组公式区域保护：检查是否有数组公式部分在选区内、部分在选区外
+    const arrayMgr = this.formulaEngine.getArrayFormulaManager();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const arrInfo = arrayMgr.getArrayFormula(i, j);
+        if (arrInfo) {
+          const { startRow: asr, startCol: asc, endRow: aer, endCol: aec } = arrInfo.range;
+          // 如果数组公式区域未被选区完全包含，阻止操作
+          const fullyContained = asr >= minRow && aer <= maxRow && asc >= minCol && aec <= maxCol;
+          if (!fullyContained) {
+            this.notifyFormulaError('不能更改数组的一部分');
+            return;
+          }
+        }
+      }
+    }
 
     const processedCells = new Set<string>();
     const cellsData: { row: number; col: number; content: string }[] = [];
@@ -313,6 +460,13 @@ export class SpreadsheetModel {
       oldContent = cell.content;
     }
 
+    // 数组公式区域保护：阻止编辑数组公式区域中的非起始单元格
+    const arrayInfo = this.formulaEngine.getArrayFormulaManager().getArrayFormula(targetRow, targetCol);
+    if (arrayInfo && (targetRow !== arrayInfo.originRow || targetCol !== arrayInfo.originCol)) {
+      this.notifyFormulaError('不能更改数组的一部分');
+      return { success: false };
+    }
+
     // 如果内容没有变化，直接返回
     if (oldContent === content) {
       return { success: true };
@@ -352,31 +506,39 @@ export class SpreadsheetModel {
         return { success: false };
       }
 
-      const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
-
-      if (result.isError) {
-        console.error('公式计算错误:', result.errorMessage);
-        this.notifyFormulaError(result.errorMessage || '公式计算错误');
+      // 循环引用检测
+      const circularPath = this.formulaEngine.checkCircularReference(targetRow, targetCol, content);
+      if (circularPath !== null) {
+        const pathStr = circularPath.join(' → ');
+        this.notifyFormulaError(`循环引用: ${pathStr}`);
         return { success: false };
       }
 
+      const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
+
+      // 错误值（#VALUE!, #NUM! 等）也应写入单元格并显示，不阻止写入
+      const displayValue = result.value.toString();
+
       if (cell.isMerged && cell.mergeParent) {
         this.data.cells[targetRow][targetCol].formulaContent = content;
-        this.data.cells[targetRow][targetCol].content = result.value.toString();
-        this.contentCache[`${targetRow}-${targetCol}`] = result.value.toString();
+        this.data.cells[targetRow][targetCol].content = displayValue;
+        this.contentCache[`${targetRow}-${targetCol}`] = displayValue;
       } else {
         cell.formulaContent = content;
-        cell.content = result.value.toString();
-        this.contentCache[cacheKey] = result.value.toString();
+        cell.content = displayValue;
+        this.contentCache[cacheKey] = displayValue;
       }
 
-      this.notifyFormulaChange(targetRow, targetCol, result.value.toString());
+      this.notifyFormulaChange(targetRow, targetCol, displayValue);
 
       const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
       for (const affected of affectedCells) {
         this.recalculateCell(affected.row, affected.col);
       }
     } else {
+      // 非公式内容：清除依赖图中该单元格的依赖关系
+      this.formulaEngine.clearCellDependencies(targetRow, targetCol);
+
       if (cell.isMerged && cell.mergeParent) {
         this.data.cells[targetRow][targetCol].formulaContent = undefined;
         this.data.cells[targetRow][targetCol].content = content;
@@ -435,6 +597,9 @@ export class SpreadsheetModel {
       cell.content = result.value.toString();
       this.contentCache[`${row}-${col}`] = result.value.toString();
     } else {
+      // 非公式内容：清除依赖图中该单元格的依赖关系
+      this.formulaEngine.clearCellDependencies(row, col);
+
       cell.formulaContent = undefined;
       cell.content = content;
       this.contentCache[`${row}-${col}`] = content;
@@ -1448,6 +1613,11 @@ export class SpreadsheetModel {
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterInsertRows(rowIndex, count);
 
+    // 更新命名范围的区域引用
+    for (let i = 0; i < count; i++) {
+      this.formulaEngine.getNamedRangeManager().adjustForRowColChange('insertRow', rowIndex);
+    }
+
     // 通知图表模型调整数据范围
     this.chartModel.adjustDataRanges('rowInsert', rowIndex, count);
 
@@ -1477,6 +1647,11 @@ export class SpreadsheetModel {
 
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterDeleteRows(rowIndex, actualCount);
+
+    // 更新命名范围的区域引用
+    for (let i = 0; i < actualCount; i++) {
+      this.formulaEngine.getNamedRangeManager().adjustForRowColChange('deleteRow', rowIndex);
+    }
 
     // 通知图表模型调整数据范围
     this.chartModel.adjustDataRanges('rowDelete', rowIndex, actualCount);
@@ -1519,6 +1694,11 @@ export class SpreadsheetModel {
 
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterInsertCols(colIndex, count);
+
+    // 更新命名范围的区域引用
+    for (let i = 0; i < count; i++) {
+      this.formulaEngine.getNamedRangeManager().adjustForRowColChange('insertCol', colIndex);
+    }
 
     // 通知图表模型调整数据范围
     this.chartModel.adjustDataRanges('colInsert', colIndex, count);
@@ -1579,6 +1759,11 @@ export class SpreadsheetModel {
 
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterDeleteCols(colIndex, actualCount);
+
+    // 更新命名范围的区域引用
+    for (let i = 0; i < actualCount; i++) {
+      this.formulaEngine.getNamedRangeManager().adjustForRowColChange('deleteCol', colIndex);
+    }
 
     // 通知图表模型调整数据范围
     this.chartModel.adjustDataRanges('colDelete', colIndex, actualCount);
