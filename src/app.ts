@@ -1206,14 +1206,30 @@ export class SpreadsheetApp {
     if (!range) return;
 
     const { startRow, endRow } = range;
+
+    // 移除前检查分组是否折叠，如果是则需要取消隐藏
+    const groups = this.model.getRowGroups();
+    const targetGroup = groups.find((g) => g.start === startRow && g.end === endRow);
+    const wasCollapsed = targetGroup?.collapsed ?? false;
+
     const success = this.model.removeGroup('row', startRow, endRow);
     if (success) {
+      // 如果分组之前是折叠状态，取消隐藏被折叠的行
+      if (wasCollapsed) {
+        const indices: number[] = [];
+        for (let i = startRow; i <= endRow; i++) {
+          indices.push(i);
+        }
+        this.model.unhideRows(indices);
+      }
+
       this.model.getHistoryManager().record({
         type: 'removeGroup',
-        data: { groupType: 'row' as const, start: startRow, end: endRow },
-        undoData: { groupType: 'row' as const, start: startRow, end: endRow },
+        data: { groupType: 'row' as const, start: startRow, end: endRow, wasCollapsed },
+        undoData: { groupType: 'row' as const, start: startRow, end: endRow, wasCollapsed },
       });
       this.renderer.render();
+      this.updateScrollbars();
       this.updateUndoRedoButtons();
     }
   }
@@ -1246,14 +1262,30 @@ export class SpreadsheetApp {
     if (!range) return;
 
     const { startCol, endCol } = range;
+
+    // 移除前检查分组是否折叠，如果是则需要取消隐藏
+    const groups = this.model.getColGroups();
+    const targetGroup = groups.find((g) => g.start === startCol && g.end === endCol);
+    const wasCollapsed = targetGroup?.collapsed ?? false;
+
     const success = this.model.removeGroup('col', startCol, endCol);
     if (success) {
+      // 如果分组之前是折叠状态，取消隐藏被折叠的列
+      if (wasCollapsed) {
+        const indices: number[] = [];
+        for (let i = startCol; i <= endCol; i++) {
+          indices.push(i);
+        }
+        this.model.unhideCols(indices);
+      }
+
       this.model.getHistoryManager().record({
         type: 'removeGroup',
-        data: { groupType: 'col' as const, start: startCol, end: endCol },
-        undoData: { groupType: 'col' as const, start: startCol, end: endCol },
+        data: { groupType: 'col' as const, start: startCol, end: endCol, wasCollapsed },
+        undoData: { groupType: 'col' as const, start: startCol, end: endCol, wasCollapsed },
       });
       this.renderer.render();
+      this.updateScrollbars();
       this.updateUndoRedoButtons();
     }
   }

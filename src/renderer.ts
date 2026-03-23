@@ -319,6 +319,9 @@ export class SpreadsheetRenderer {
       );
     }
 
+    // 绘制冻结窗格（在行列标题之前，覆盖滚动区域的单元格）
+    this.renderFrozenPanes();
+
     // 绘制行标题（在单元格之上）
     this.renderRowHeaders();
 
@@ -449,6 +452,239 @@ export class SpreadsheetRenderer {
     this.ctx.restore();
   }
 
+  /**
+   * 冻结窗格渲染
+   * 将画布分为最多 4 个区域：
+   * - 左上角（冻结行+冻结列交叉区域）
+   * - 顶部（冻结行，水平滚动）
+   * - 左侧（冻结列，垂直滚动）
+   * - 正常滚动区域（已由 renderCells 处理）
+   * 冻结区域的单元格在固定位置重新绘制，不受对应方向的滚动影响
+   */
+  private renderFrozenPanes(): void {
+    const freezeRows = this.model.getFreezeRows();
+    const freezeCols = this.model.getFreezeCols();
+    if (freezeRows === 0 && freezeCols === 0) return;
+
+    const { headerWidth, headerHeight, cellPadding, fontFamily } = this.config;
+
+    // 计算冻结区域的像素尺寸
+    let frozenRowHeight = 0;
+    for (let r = 0; r < freezeRows; r++) {
+      frozenRowHeight += this.model.getRowHeight(r);
+    }
+    let frozenColWidth = 0;
+    for (let c = 0; c < freezeCols; c++) {
+      frozenColWidth += this.model.getColWidth(c);
+    }
+
+    // 获取条件格式引擎
+    const cfEngine = this.model.getConditionalFormatEngine();
+
+    // 辅助方法：渲染单个冻结单元格
+    const renderFrozenCell = (row: number, col: number, cellX: number, cellY: number): void => {
+      const cellInfo = this.model.getMergedCellInfo(row, col);
+      if (!cellInfo || cellInfo.row !== row || cellInfo.col !== col) return;
+
+      const colWidth = this.model.getColWidth(col);
+      const rowHeight = this.model.getRowHeight(row);
+
+      // 绘制背景（先用默认背景覆盖滚动区域的内容）
+      this.ctx.fillStyle = this.themeColors.background;
+      this.ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+
+      // 条件格式
+      const rawCell = this.model.getCell(row, col);
+      const cfResult = rawCell ? cfEngine.evaluate(row, col, rawCell) : null;
+      const effectiveBgColor = cfResult?.bgColor || cellInfo.bgColor;
+      if (effectiveBgColor) {
+        this.ctx.fillStyle = effectiveBgColor;
+        this.ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+      }
+
+      // 显示文本
+      const displayText = this.getFormattedDisplayText(cellInfo);
+      if (!displayText) return;
+
+      const fontWeight = cellInfo.fontBold ? 'bold ' : '';
+      let fontStyle = cellInfo.fontItalic ? 'italic ' : '';
+      if (cellInfo.formulaContent) fontStyle = 'italic ';
+      const fontSize = cellInfo.fontSize || this.cellFontSize;
+      this.ctx.font = `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
+
+      const effectiveFontColor = cfResult?.fontColor || cellInfo.fontColor || this.themeColors.cellText;
+      const align = cellInfo.fontAlign || 'left';
+      const verticalAlign = cellInfo.verticalAlign || 'middle';
+
+      // 裁剪到单元格区域
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(cellX, cellY, colWidth, rowHeight);
+      this.ctx.clip();
+
+      // 计算文本位置
+      this.ctx.textAlign = align;
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillStyle = effectiveFontColor;
+
+      let textX: number;
+      switch (align) {
+        case 'center': textX = cellX + colWidth / 2; break;
+        case 'right': textX = cellX + colWidth - cellPadding; break;
+        default: textX = cellX + cellPadding;
+      }
+
+      let textY: number;
+      switch (verticalAlign) {
+        case 'top': textY = cellY + fontSize / 2 + cellPadding; break;
+        case 'bottom': textY = cellY + rowHeight - fontSize / 2 - cellPadding; break;
+        default: textY = cellY + rowHeight / 2;
+      }
+
+      this.ctx.fillText(displayText, textX, textY);
+
+      // 下划线
+      if (cellInfo.fontUnderline) {
+        const textWidth = this.ctx.measureText(displayText).width;
+        const underlineY = textY + 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(cellX + cellPadding, underlineY);
+        this.ctx.lineTo(cellX + cellPadding + textWidth, underlineY);
+        this.ctx.strokeStyle = effectiveFontColor;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+      }
+
+      this.ctx.restore();
+
+      // 绘制网格线
+      this.ctx.strokeStyle = this.themeColors.gridLine;
+      this.ctx.lineWidth = 1;
+      this.ctx.beginPath();
+      this.ctx.moveTo(cellX + colWidth, cellY);
+      this.ctx.lineTo(cellX + colWidth, cellY + rowHeight);
+      this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(cellX, cellY + rowHeight);
+      this.ctx.lineTo(cellX + colWidth, cellY + rowHeight);
+      this.ctx.stroke();
+    };
+
+    // === 1. 渲染冻结行区域（顶部，水平随滚动，垂直固定） ===
+    if (freezeRows > 0) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, frozenRowHeight);
+      this.ctx.clip();
+
+      // 先用背景色清除该区域
+      this.ctx.fillStyle = this.themeColors.background;
+      this.ctx.fillRect(headerWidth, headerHeight, this.canvasWidth - headerWidth, frozenRowHeight);
+
+      let cellY = headerHeight;
+      for (let row = 0; row < freezeRows; row++) {
+        const rowHeight = this.model.getRowHeight(row);
+        let cellX = headerWidth + this.viewport.offsetX;
+        for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+          if (this.model.isColHidden(col)) continue;
+          // 跳过冻结列区域（由左上角交叉区域处理）
+          if (col < freezeCols) {
+            cellX += this.model.getColWidth(col);
+            continue;
+          }
+          renderFrozenCell(row, col, cellX, cellY);
+          cellX += this.model.getColWidth(col);
+        }
+        cellY += rowHeight;
+      }
+
+      this.ctx.restore();
+    }
+
+    // === 2. 渲染冻结列区域（左侧，垂直随滚动，水平固定） ===
+    if (freezeCols > 0) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(headerWidth, headerHeight, frozenColWidth, this.canvasHeight - headerHeight);
+      this.ctx.clip();
+
+      // 先用背景色清除该区域
+      this.ctx.fillStyle = this.themeColors.background;
+      this.ctx.fillRect(headerWidth, headerHeight, frozenColWidth, this.canvasHeight - headerHeight);
+
+      let cellY = headerHeight + this.viewport.offsetY;
+      for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+        if (this.model.isRowHidden(row)) continue;
+        // 跳过冻结行区域（由左上角交叉区域处理）
+        if (row < freezeRows) {
+          cellY += this.model.getRowHeight(row);
+          continue;
+        }
+        const rowHeight = this.model.getRowHeight(row);
+        let cellX = headerWidth;
+        for (let col = 0; col < freezeCols; col++) {
+          if (this.model.isColHidden(col)) continue;
+          renderFrozenCell(row, col, cellX, cellY);
+          cellX += this.model.getColWidth(col);
+        }
+        cellY += rowHeight;
+      }
+
+      this.ctx.restore();
+    }
+
+    // === 3. 渲染左上角交叉区域（行列都固定） ===
+    if (freezeRows > 0 && freezeCols > 0) {
+      this.ctx.save();
+      this.ctx.beginPath();
+      this.ctx.rect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+      this.ctx.clip();
+
+      // 先用背景色清除该区域
+      this.ctx.fillStyle = this.themeColors.background;
+      this.ctx.fillRect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+
+      let cellY = headerHeight;
+      for (let row = 0; row < freezeRows; row++) {
+        const rowHeight = this.model.getRowHeight(row);
+        let cellX = headerWidth;
+        for (let col = 0; col < freezeCols; col++) {
+          if (this.model.isColHidden(col)) continue;
+          renderFrozenCell(row, col, cellX, cellY);
+          cellX += this.model.getColWidth(col);
+        }
+        cellY += rowHeight;
+      }
+
+      this.ctx.restore();
+    }
+
+    // === 4. 绘制冻结分隔线 ===
+    this.ctx.save();
+    this.ctx.strokeStyle = '#4a86c8';
+    this.ctx.lineWidth = 2;
+
+    // 水平冻结线（冻结行下方）
+    if (freezeRows > 0) {
+      const freezeLineY = headerHeight + frozenRowHeight;
+      this.ctx.beginPath();
+      this.ctx.moveTo(headerWidth, freezeLineY);
+      this.ctx.lineTo(this.canvasWidth, freezeLineY);
+      this.ctx.stroke();
+    }
+
+    // 垂直冻结线（冻结列右侧）
+    if (freezeCols > 0) {
+      const freezeLineX = headerWidth + frozenColWidth;
+      this.ctx.beginPath();
+      this.ctx.moveTo(freezeLineX, headerHeight);
+      this.ctx.lineTo(freezeLineX, this.canvasHeight);
+      this.ctx.stroke();
+    }
+
+    this.ctx.restore();
+  }
+
   // 绘制行标题
   private renderRowHeaders(): void {
     const { headerWidth, headerHeight, fontSize, fontFamily } = this.config;
@@ -518,6 +754,39 @@ export class SpreadsheetRenderer {
       }
 
       currentY += rowHeight;
+    }
+
+    // === 冻结行的行头：在固定位置覆盖绘制（在滚动行头之后） ===
+    const freezeRows = this.model.getFreezeRows();
+    if (freezeRows > 0) {
+      let frozenY = headerHeight;
+      for (let row = 0; row < freezeRows; row++) {
+        if (this.model.isRowHidden(row)) continue;
+        const rowHeight = this.model.getRowHeight(row);
+
+        if (frozenY + rowHeight > headerHeight && frozenY < this.canvasHeight) {
+          // 绘制行号背景
+          if (this.highlightedRow === row || this.highlightAllHeaders) {
+            this.ctx.fillStyle = this.themeColors.highlightHeaderBackground;
+          } else {
+            this.ctx.fillStyle = this.themeColors.headerBackground;
+          }
+          this.ctx.fillRect(0, frozenY, headerWidth, rowHeight);
+
+          // 绘制行号
+          this.ctx.fillStyle = this.themeColors.headerText;
+          this.ctx.fillText((row + 1).toString(), headerWidth / 2, frozenY + rowHeight / 2);
+
+          // 绘制边框
+          this.ctx.strokeStyle = this.themeColors.gridLine;
+          this.ctx.lineWidth = 1;
+          this.ctx.beginPath();
+          this.ctx.moveTo(0, frozenY + rowHeight);
+          this.ctx.lineTo(headerWidth, frozenY + rowHeight);
+          this.ctx.stroke();
+        }
+        frozenY += rowHeight;
+      }
     }
 
     // 绘制右边框
@@ -595,6 +864,9 @@ export class SpreadsheetRenderer {
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
 
+    // === 冻结列的列头：在固定位置绘制 ===
+    const freezeCols = this.model.getFreezeCols();
+
     let currentX = headerWidth + offsetX;
 
     // 绘制列标题
@@ -661,6 +933,41 @@ export class SpreadsheetRenderer {
       }
 
       currentX += colWidth;
+    }
+
+    // 冻结列的列头覆盖绘制（在固定位置，覆盖滚动的列头）
+    if (freezeCols > 0) {
+      let frozenX = headerWidth;
+      for (let col = 0; col < freezeCols; col++) {
+        if (this.model.isColHidden(col)) continue;
+        const colWidth = this.model.getColWidth(col);
+
+        // 绘制列号背景
+        if (this.highlightedCol === col || this.highlightAllHeaders) {
+          this.ctx.fillStyle = this.themeColors.highlightHeaderBackground;
+        } else {
+          this.ctx.fillStyle = this.themeColors.headerBackground;
+        }
+        this.ctx.fillRect(frozenX, colGroupHeight, colWidth, headerHeight);
+
+        // 绘制列号
+        this.ctx.fillStyle = this.themeColors.headerText;
+        this.ctx.fillText(
+          this.columnIndexToLetter(col),
+          frozenX + colWidth / 2,
+          colGroupHeight + headerHeight / 2
+        );
+
+        // 绘制边框
+        this.ctx.strokeStyle = this.themeColors.gridLine;
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(frozenX + colWidth, colGroupHeight);
+        this.ctx.lineTo(frozenX + colWidth, colGroupHeight + headerHeight);
+        this.ctx.stroke();
+
+        frozenX += colWidth;
+      }
     }
 
     // 绘制底边框

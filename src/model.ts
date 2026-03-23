@@ -3454,13 +3454,43 @@ export class SpreadsheetModel {
       case 'removeGroup':
         // 切换：撤销时创建分组，重做时移除分组
         if (data.groupType && data.start !== undefined && data.end !== undefined) {
-          if (data.groupType === 'row') {
-            if (!this.groupManager.createRowGroup(data.start, data.end)) {
-              this.groupManager.removeGroup('row', data.start, data.end);
+          const existingGroup = this.groupManager.getGroupsAt(data.groupType, data.start)
+            .find((g: RowColumnGroup) => g.start === data.start && g.end === data.end);
+
+          if (existingGroup) {
+            // 分组存在 → 移除（重做方向）
+            // 如果之前是折叠状态，先取消隐藏
+            if (data.wasCollapsed) {
+              const indices: number[] = [];
+              for (let i = data.start; i <= data.end; i++) {
+                indices.push(i);
+              }
+              if (data.groupType === 'row') {
+                this.unhideRows(indices);
+              } else {
+                this.unhideCols(indices);
+              }
             }
+            this.groupManager.removeGroup(data.groupType, data.start, data.end);
           } else {
-            if (!this.groupManager.createColGroup(data.start, data.end)) {
-              this.groupManager.removeGroup('col', data.start, data.end);
+            // 分组不存在 → 创建（撤销方向）
+            if (data.groupType === 'row') {
+              this.groupManager.createRowGroup(data.start, data.end);
+            } else {
+              this.groupManager.createColGroup(data.start, data.end);
+            }
+            // 如果之前是折叠状态，恢复折叠并隐藏
+            if (data.wasCollapsed) {
+              this.groupManager.collapseGroup(data.groupType, data.start, data.end);
+              const indices: number[] = [];
+              for (let i = data.start; i <= data.end; i++) {
+                indices.push(i);
+              }
+              if (data.groupType === 'row') {
+                this.hideRows(indices);
+              } else {
+                this.hideCols(indices);
+              }
             }
           }
         }
