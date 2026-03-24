@@ -22,6 +22,19 @@ import type { SortDirection, ColumnFilter } from './sort-filter/types';
 import { MultiSelectionManager } from './multi-selection';
 import { FormulaBar } from './formula-bar/formula-bar';
 import { FormulaEngine } from './formula-engine';
+import { HyperlinkManager } from './hyperlink-manager';
+import { ImageManager } from './image-manager';
+import { FormatPainter } from './format-painter';
+import { DropdownSelector } from './dropdown-selector';
+import { RowColReorder } from './row-col-reorder';
+import { CellContextMenu } from './cell-context-menu';
+import type { CellContextMenuCallbacks } from './cell-context-menu';
+import { PivotTable } from './pivot-table/pivot-table';
+import { PivotTablePanel } from './pivot-table/pivot-table-panel';
+import { ScriptEngine } from './script/script-engine';
+import { ScriptEditor } from './script/script-editor';
+import { PluginManager } from './plugin/plugin-manager';
+import type { PluginAPICallbacks } from './plugin/plugin-api';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -114,6 +127,19 @@ export class SpreadsheetApp {
 
   // 公式栏组件
   private formulaBar: FormulaBar | null = null;
+
+  // 扩展功能模块
+  private hyperlinkManager!: HyperlinkManager;
+  private imageManager!: ImageManager;
+  private formatPainter!: FormatPainter;
+  private dropdownSelector!: DropdownSelector;
+  private rowColReorder!: RowColReorder;
+  private cellContextMenu!: CellContextMenu;
+  private pivotTable!: PivotTable;
+  private pivotTablePanel!: PivotTablePanel;
+  private scriptEngine!: ScriptEngine;
+  private scriptEditor!: ScriptEditor;
+  private pluginManager!: PluginManager;
 
   constructor(_containerId: string) {
     // 初始化多工作表管理器（默认创建 Sheet1）
@@ -255,6 +281,9 @@ export class SpreadsheetApp {
 
     // 更新滚动条
     this.updateScrollbars();
+
+    // 初始化扩展功能模块
+    this.initExtensionModules();
   }
 
   /**
@@ -3025,6 +3054,22 @@ export class SpreadsheetApp {
       event.preventDefault();
       this.hideContextMenu();
       this.showColContextMenu(event.clientX, event.clientY, clickedCol);
+      return;
+    }
+
+    // 检查是否在单元格区域右键
+    const cellPos = this.renderer.getCellAtPosition(x, y);
+    if (cellPos) {
+      event.preventDefault();
+      // 如果右键的单元格不在当前选区内，先选中该单元格
+      const sel = this.multiSelection.getActiveSelection();
+      if (!sel || cellPos.row < sel.startRow || cellPos.row > sel.endRow || cellPos.col < sel.startCol || cellPos.col > sel.endCol) {
+        this.multiSelection.setSingle({ startRow: cellPos.row, startCol: cellPos.col, endRow: cellPos.row, endCol: cellPos.col });
+        this.renderer.setSelection(cellPos.row, cellPos.col, cellPos.row, cellPos.col);
+        this.updateSelectedCellInfo();
+      }
+      this.cellContextMenu.show(event.clientX, event.clientY, cellPos.row, cellPos.col);
+      return;
     }
   }
 
@@ -3053,6 +3098,41 @@ export class SpreadsheetApp {
     const rect = this.canvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
+
+    // 格式刷模式下的点击处理
+    if (this.formatPainter.getMode() !== 'off') {
+      const fpCellPos = this.renderer.getCellAtPosition(x, y);
+      if (fpCellPos) {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.formatPainter.applyToRange(fpCellPos.row, fpCellPos.col, fpCellPos.row, fpCellPos.col);
+          this.renderer.render();
+          if (this.formatPainter.getMode() === 'off') {
+            this.canvas.style.cursor = '';
+            const fpBtn = document.getElementById('format-painter-btn');
+            if (fpBtn) fpBtn.classList.remove('toolbar-btn-active');
+          }
+        }
+        return;
+      }
+    }
+
+    // 图片层鼠标事件
+    if (this.imageManager.handleMouseDown(x, y)) {
+      return; // 图片层处理了事件
+    }
+
+    // Ctrl+点击超链接打开
+    if (event.ctrlKey || event.metaKey) {
+      const hlCellPos = this.renderer.getCellAtPosition(x, y);
+      if (hlCellPos) {
+        const hyperlink = this.hyperlinkManager.getHyperlink(hlCellPos.row, hlCellPos.col);
+        if (hyperlink) {
+          this.hyperlinkManager.openHyperlink(hlCellPos.row, hlCellPos.col);
+          return;
+        }
+      }
+    }
 
     // 检查是否在行高调整区域
     const rowResizeInfo = this.renderer.getRowResizeAtPosition(x, y);
@@ -3446,6 +3526,25 @@ export class SpreadsheetApp {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
+    // 图片层拖拽
+    if (this.imageManager.getSelectedImageId()) {
+      this.imageManager.handleMouseMove(x, y);
+      this.renderer.render();
+      const ctx = this.canvas.getContext('2d');
+      if (ctx) {
+        const vp = this.renderer.getViewport();
+        this.imageManager.renderAll(ctx, vp.scrollX, vp.scrollY);
+      }
+      return;
+    }
+
+    // 行列拖拽重排序
+    if (this.rowColReorder.getDragState()) {
+      this.rowColReorder.updateDrag(x, y);
+      this.renderer.render();
+      return;
+    }
+
     // 处理行高调整拖拽
     if (this.isResizingRow) {
       const deltaY = event.clientY - this.resizeStartY;
@@ -3604,6 +3703,16 @@ export class SpreadsheetApp {
 
   // 处理鼠标松开事件
   private handleMouseUp(): void {
+    // 图片层鼠标释放
+    this.imageManager.handleMouseUp();
+
+    // 行列拖拽结束
+    if (this.rowColReorder.getDragState()) {
+      this.rowColReorder.endDrag();
+      this.renderer.render();
+      return;
+    }
+
     // 【图表交互】通知图表浮动层鼠标释放
     this.chartOverlay.handleMouseUp();
 
@@ -6088,6 +6197,295 @@ export class SpreadsheetApp {
   }
 
   // ============================================================
+  // 扩展功能模块初始化与事件绑定
+  // ============================================================
+
+  /**
+   * 初始化所有扩展功能模块
+   * 包括超链接、图片、格式刷、下拉选择器、行列重排序、右键菜单、
+   * 数据透视表、脚本引擎、插件管理器
+   */
+  private initExtensionModules(): void {
+    const historyManager = this.model.getHistoryManager();
+
+    // 超链接管理器
+    this.hyperlinkManager = new HyperlinkManager(this.model, this.renderer, historyManager);
+
+    // 图片管理器
+    this.imageManager = new ImageManager(this.renderer, historyManager);
+
+    // 格式刷
+    this.formatPainter = new FormatPainter(this.model, historyManager);
+
+    // 下拉选择器
+    this.dropdownSelector = new DropdownSelector(this.model);
+    this.dropdownSelector.onSelect((value: string) => {
+      // 选择后设置单元格内容
+      const row = this.dropdownSelector.getCurrentRow();
+      const col = this.dropdownSelector.getCurrentCol();
+      if (row >= 0 && col >= 0) {
+        this.model.setCellContent(row, col, value);
+        this.renderer.render();
+      }
+    });
+
+    // 行列拖拽重排序
+    this.rowColReorder = new RowColReorder(this.model, historyManager);
+
+    // 单元格右键菜单
+    const contextMenuCallbacks: CellContextMenuCallbacks = {
+      onCut: () => this.handleCut(),
+      onCopy: () => this.handleCopy(),
+      onPaste: () => { this.handlePaste(); },
+      onPasteSpecial: () => { this.pasteSpecialDialog.show(); },
+      onInsertHyperlink: (row: number, col: number) => this.hyperlinkManager.showDialog(row, col),
+      onEditHyperlink: (row: number, col: number) => this.hyperlinkManager.showDialog(row, col),
+      onRemoveHyperlink: (row: number, col: number) => {
+        this.hyperlinkManager.removeHyperlink(row, col);
+        this.renderer.render();
+      },
+      hasHyperlink: (row: number, col: number) => this.hyperlinkManager.getHyperlink(row, col) !== null,
+      onInsertRowAbove: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuRow = sel.startRow;
+          this.insertRows(1);
+        }
+      },
+      onInsertRowBelow: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuRow = sel.endRow;
+          // insertRows 在 contextMenuRow + 1 处插入
+          this.insertRows(1);
+        }
+      },
+      onInsertColLeft: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuCol = sel.startCol;
+          this.insertColumns(1);
+        }
+      },
+      onInsertColRight: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuCol = sel.endCol;
+          // insertColumns 在 contextMenuCol 处插入
+          this.insertColumns(1);
+        }
+      },
+      onDeleteRow: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuRow = sel.startRow;
+          this.deleteCurrentRow();
+        }
+      },
+      onDeleteCol: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.contextMenuCol = sel.startCol;
+          this.deleteCurrentCol();
+        }
+      },
+      onFormatPainter: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.formatPainter.activate(sel.startRow, sel.startCol);
+          this.canvas.style.cursor = 'crosshair';
+        }
+      },
+      onClearFormat: () => this.clearSelectionFormat(),
+      onSort: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) this.handleSort(sel.startCol, 'asc');
+      },
+      onFilter: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          const cellRect = this.renderer.getCellRect(sel.startRow, sel.startCol);
+          if (cellRect) {
+            const canvasRect = this.canvas.getBoundingClientRect();
+            this.filterDropdown.show(canvasRect.left + cellRect.x, canvasRect.top + cellRect.y + cellRect.height, sel.startCol);
+          }
+        }
+      },
+      hasClipboardData: () => this.internalClipboard !== null && this.internalClipboard !== undefined,
+    };
+    this.cellContextMenu = new CellContextMenu(contextMenuCallbacks);
+
+    // 数据透视表
+    this.pivotTable = new PivotTable(this.model);
+    this.pivotTablePanel = new PivotTablePanel(this.pivotTable, this.model);
+
+    // 脚本引擎和编辑器
+    this.scriptEngine = new ScriptEngine(this.model, historyManager);
+    this.scriptEditor = new ScriptEditor(this.scriptEngine);
+
+    // 插件管理器
+    const pluginCallbacks: PluginAPICallbacks = {
+      getModel: () => this.model,
+      addToolbarButton: (config: { label: string; icon?: string; onClick: () => void }) => {
+        const btn = document.createElement('button');
+        btn.className = 'toolbar-btn plugin-toolbar-btn';
+        btn.textContent = config.icon ? `${config.icon} ${config.label}` : config.label;
+        btn.title = config.label;
+        btn.addEventListener('click', config.onClick);
+        const toolbar = document.querySelector('.toolbar');
+        if (toolbar) toolbar.appendChild(btn);
+        return btn;
+      },
+      removeToolbarButton: (button: HTMLButtonElement) => {
+        if (button.parentNode) button.parentNode.removeChild(button);
+      },
+      addContextMenuItem: (config: { label: string; action: () => void }) => {
+        return this.cellContextMenu.registerExtraItem({
+          label: config.label,
+          action: config.action,
+        });
+      },
+      removeContextMenuItem: (id: string) => {
+        this.cellContextMenu.removeExtraItem(id);
+      },
+    };
+    this.pluginManager = new PluginManager(pluginCallbacks);
+
+    // 绑定工具栏按钮事件
+    this.bindExtensionToolbarEvents();
+
+    // 监听透视表写入工作表事件
+    document.addEventListener('pivot-write', ((e: CustomEvent) => {
+      const result = e.detail?.result;
+      if (result) {
+        this.pivotTablePanel.writeResultToSheet(result, this.sheetManager);
+        this.pivotTablePanel.hide();
+        this.sheetTabBar.render();
+        this.renderer.render();
+      }
+    }) as EventListener);
+  }
+
+  /**
+   * 清除选中区域的格式（保留内容和公式）
+   */
+  private clearSelectionFormat(): void {
+    const sel = this.multiSelection.getActiveSelection();
+    if (!sel) return;
+
+    const historyManager = this.model.getHistoryManager();
+    historyManager.record({
+      type: 'clearFormat',
+      data: { startRow: sel.startRow, startCol: sel.startCol, endRow: sel.endRow, endCol: sel.endCol },
+      undoData: { startRow: sel.startRow, startCol: sel.startCol, endRow: sel.endRow, endCol: sel.endCol },
+    });
+
+    historyManager.pauseRecording();
+    try {
+      for (let r = sel.startRow; r <= sel.endRow; r++) {
+        for (let c = sel.startCol; c <= sel.endCol; c++) {
+          const cell = this.model.getCell(r, c);
+          if (cell) {
+            cell.fontColor = undefined;
+            cell.bgColor = undefined;
+            cell.fontSize = undefined;
+            cell.fontBold = undefined;
+            cell.fontItalic = undefined;
+            cell.fontUnderline = undefined;
+            cell.fontAlign = undefined;
+            cell.verticalAlign = undefined;
+            cell.format = undefined;
+          }
+        }
+      }
+    } finally {
+      historyManager.resumeRecording();
+    }
+    this.renderer.render();
+  }
+
+  /**
+   * 绑定扩展功能工具栏按钮事件
+   */
+  private bindExtensionToolbarEvents(): void {
+    // 格式刷按钮
+    const formatPainterBtn = document.getElementById('format-painter-btn');
+    if (formatPainterBtn) {
+      let clickTimer: ReturnType<typeof setTimeout> | null = null;
+      formatPainterBtn.addEventListener('click', () => {
+        if (clickTimer) {
+          // 双击：锁定模式
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          const sel = this.multiSelection.getActiveSelection();
+          if (sel) {
+            this.formatPainter.activateLocked(sel.startRow, sel.startCol);
+            formatPainterBtn.classList.add('toolbar-btn-active');
+            this.canvas.style.cursor = 'crosshair';
+          }
+        } else {
+          // 单击：延迟判断是否为双击
+          clickTimer = setTimeout(() => {
+            clickTimer = null;
+            const sel = this.multiSelection.getActiveSelection();
+            if (sel) {
+              this.formatPainter.activate(sel.startRow, sel.startCol);
+              formatPainterBtn.classList.add('toolbar-btn-active');
+              this.canvas.style.cursor = 'crosshair';
+            }
+          }, 250);
+        }
+      });
+    }
+
+    // 插入超链接按钮
+    const hyperlinkBtn = document.getElementById('hyperlink-btn');
+    if (hyperlinkBtn) {
+      hyperlinkBtn.addEventListener('click', () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.hyperlinkManager.showDialog(sel.startRow, sel.startCol);
+        }
+      });
+    }
+
+    // 插入图片按钮
+    const imageBtn = document.getElementById('image-btn');
+    if (imageBtn) {
+      imageBtn.addEventListener('click', () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          const rect = this.renderer.getCellRect(sel.startRow, sel.startCol);
+          if (rect) {
+            this.imageManager.insertImage(rect.x, rect.y);
+          }
+        }
+      });
+    }
+
+    // 数据透视表按钮
+    const pivotBtn = document.getElementById('pivot-table-btn');
+    if (pivotBtn) {
+      pivotBtn.addEventListener('click', () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.pivotTablePanel.show(sel);
+        }
+      });
+    }
+
+    // 脚本编辑器按钮
+    const scriptBtn = document.getElementById('script-editor-btn');
+    if (scriptBtn) {
+      scriptBtn.addEventListener('click', () => {
+        // 同步当前选区到脚本引擎
+        this.scriptEngine.setSelection(this.multiSelection.getActiveSelection());
+        this.scriptEditor.show();
+      });
+    }
+  }
+
+  // ============================================================
   // 公共 getter 方法
   // ============================================================
 
@@ -6105,4 +6503,19 @@ export class SpreadsheetApp {
   public getSheetContextMenu(): SheetContextMenu {
     return this.sheetContextMenu;
   }
+
+  /** 获取超链接管理器 */
+  public getHyperlinkManager(): HyperlinkManager { return this.hyperlinkManager; }
+
+  /** 获取图片管理器 */
+  public getImageManager(): ImageManager { return this.imageManager; }
+
+  /** 获取格式刷 */
+  public getFormatPainter(): FormatPainter { return this.formatPainter; }
+
+  /** 获取单元格右键菜单 */
+  public getCellContextMenu(): CellContextMenu { return this.cellContextMenu; }
+
+  /** 获取插件管理器 */
+  public getPluginManager(): PluginManager { return this.pluginManager; }
 }

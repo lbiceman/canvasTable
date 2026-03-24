@@ -2792,3 +2792,500 @@ h1 {
   font-size: 13px;
   font-weight: 500;
 }
+
+/* ============================================================
+   超链接对话框样式
+   ============================================================ */
+
+/* 对话框标签 */
+.hyperlink-dialog-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-foreground);
+  margin-bottom: 4px;
+  margin-top: 12px;
+}
+
+.hyperlink-dialog-label:first-child {
+  margin-top: 0;
+}
+
+/* 错误提示 */
+.hyperlink-dialog-error {
+  font-size: 12px;
+  color: #dc3545;
+  margin-top: 4px;
+}
+
+/* ============================================================
+   透视表配置面板样式
+   ============================================================ */
+
+.pivot-table-panel {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  width: 380px;
+  max-height: 80vh;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 1500;
+  overflow-y: auto;
+  display: none;
+}
+
+.pivot-table-panel.visible {
+  display: block;
+}
+
+.pivot-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+.pivot-panel-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+}
+
+.pivot-panel-close {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--theme-status-text);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pivot-panel-close:hover {
+  background: var(--theme-button-hover-bg);
+  color: #dc3545;
+}
+
+.pivot-panel-body {
+  padding: 12px 16px;
+}
+
+.pivot-field-list {
+  margin-bottom: 12px;
+}
+
+.pivot-field-list-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--theme-foreground);
+  margin-bottom: 6px;
+}
+
+.pivot-field-item {
+  padding: 4px 8px;
+  font-size: 13px;
+  color: var(--theme-foreground);
+  background: var(--theme-header-bg);
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 4px;
+  margin-bottom: 4px;
+  cursor: grab;
+  transition: background-color 0.15s ease;
+}
+
+.pivot-field-item:hover {
+  background: var(--theme-highlight-bg);
+}
+
+.pivot-field-item.dragging {
+  opacity: 0.5;
+}
+
+.pivot-drop-zone {
+  min-height: 60px;
+  border: 2px dashed var(--theme-grid-line);
+  border-radius: 6px;
+  padding: 8px;
+  margin-bottom: 12px;
+  transition: border-color 0.15s ease;
+}
+
+.pivot-drop-zone.drag-over {
+  border-color: #007bff;
+  background: rgba(0, 123, 255, 0.05);
+}
+
+.pivot-drop-zone-label {
+  font-size: 12px;
+  color: var(--theme-status-text);
+  margin-bottom: 4px;
+}
+
+.pivot-panel-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--theme-grid-line);
+}
+
+.pivot-panel-actions button {
+  flex: 1;
+}
+
+.pivot-error {
+  color: #dc3545;
+  font-size: 12px;
+  padding: 8px;
+  background: #fee2e2;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+/* ============================================================
+   脚本编辑器面板样式
+   ============================================================ */
+
+.script-editor-panel {
+  position: fixed;
+  bottom: 40px;
+  right: 20px;
+  width: 520px;
+  height: 420px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 1500;
+  display: none;
+  flex-direction: column;
+}
+
+.script-editor-panel.visible {
+  display: flex;
+}
+
+.script-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--theme-grid-line);
+  flex-shrink: 0;
+}
+
+.script-editor-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+}
+
+.script-editor-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.script-editor-actions button {
+  height: 26px;
+  font-size: 12px;
+  padding: 0 10px;
+}
+
+.script-editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.script-editor-sidebar {
+  width: 140px;
+  border-right: 1px solid var(--theme-grid-line);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.script-sidebar-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--theme-status-text);
+  padding: 8px;
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+.script-list-item {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--theme-foreground);
+  cursor: pointer;
+  border-bottom: 1px solid var(--theme-grid-line);
+  transition: background-color 0.15s ease;
+}
+
+.script-list-item:hover {
+  background: var(--theme-highlight-bg);
+}
+
+.script-list-item.active {
+  background: var(--theme-selection-bg);
+  font-weight: 500;
+}
+
+.script-editor-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.script-code-area {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  position: relative;
+}
+
+.script-line-numbers {
+  width: 36px;
+  background: var(--theme-header-bg);
+  color: var(--theme-status-text);
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 4px;
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+  flex-shrink: 0;
+  border-right: 1px solid var(--theme-grid-line);
+}
+
+.script-code-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  tab-size: 2;
+}
+
+/* 语法高亮颜色 */
+.script-highlight-overlay {
+  position: absolute;
+  top: 0;
+  left: 36px;
+  right: 0;
+  bottom: 0;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px;
+  pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: hidden;
+}
+
+.script-keyword { color: #0000ff; }
+.script-string { color: #a31515; }
+.script-comment { color: #008000; }
+.script-number { color: #098658; }
+
+.script-output-panel {
+  height: 100px;
+  border-top: 1px solid var(--theme-grid-line);
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.script-output-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--theme-status-text);
+  padding: 4px 8px;
+  background: var(--theme-header-bg);
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+.script-output-content {
+  padding: 6px 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  color: var(--theme-foreground);
+  white-space: pre-wrap;
+}
+
+.script-output-error {
+  color: #dc3545;
+}
+
+.script-output-success {
+  color: #28a745;
+}
+
+/* ============================================================
+   单元格右键菜单增强样式
+   ============================================================ */
+
+.cell-context-menu {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 180px;
+  padding: 4px 0;
+}
+
+.cell-context-menu-item {
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--theme-foreground);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.15s ease;
+}
+
+.cell-context-menu-item:hover {
+  background-color: var(--theme-highlight-bg);
+}
+
+.cell-context-menu-item.disabled {
+  color: var(--theme-status-text);
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.cell-context-menu-separator {
+  height: 1px;
+  background-color: var(--theme-grid-line);
+  margin: 4px 0;
+}
+
+/* ============================================================
+   格式刷按钮激活状态
+   ============================================================ */
+
+#format-painter-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: #007bff;
+  color: #007bff;
+}
+
+#format-painter-btn.locked {
+  background-color: rgba(0, 123, 255, 0.15);
+  border-color: #007bff;
+  color: #007bff;
+}
+
+/* ============================================================
+   下拉选择器增强样式
+   ============================================================ */
+
+.dropdown-selector {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.dropdown-selector-item {
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--theme-foreground);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.dropdown-selector-item:hover,
+.dropdown-selector-item.highlighted {
+  background-color: var(--theme-highlight-bg);
+}
+
+.dropdown-selector-item.selected {
+  font-weight: 600;
+  background-color: var(--theme-selection-bg);
+}
+
+/* 自定义滚动条（下拉选择器内） */
+.dropdown-selector::-webkit-scrollbar {
+  width: 6px;
+}
+
+.dropdown-selector::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdown-selector::-webkit-scrollbar-thumb {
+  background: var(--theme-scrollbar-thumb);
+  border-radius: 3px;
+}
+
+.dropdown-selector::-webkit-scrollbar-thumb:hover {
+  background: var(--theme-scrollbar-thumb-hover);
+}
+
+/* ============================================================
+   图片浮动层样式
+   ============================================================ */
+
+.image-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 2px solid #007bff;
+  border-radius: 50%;
+  cursor: nwse-resize;
+  z-index: 1100;
+}
+
+.image-handle.ne,
+.image-handle.sw {
+  cursor: nesw-resize;
+}
+
+/* ============================================================
+   行列拖拽重排序指示线样式
+   ============================================================ */
+
+.reorder-drag-indicator {
+  position: absolute;
+  background-color: #007bff;
+  z-index: 1200;
+  pointer-events: none;
+}
+
+.reorder-drag-indicator.horizontal {
+  height: 2px;
+  left: 0;
+  right: 0;
+}
+
+.reorder-drag-indicator.vertical {
+  width: 2px;
+  top: 0;
+  bottom: 0;
+}

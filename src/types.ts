@@ -108,6 +108,28 @@ export interface SetCellContentResult {
 }
 
 // ============================================================
+// 超链接与浮动图片类型定义
+// ============================================================
+
+// 超链接数据
+export interface HyperlinkData {
+  url: string;                     // 链接地址
+  displayText?: string;            // 显示文本（为空时使用 URL）
+}
+
+// 浮动图片数据
+export interface FloatingImage {
+  id: string;                      // 唯一标识
+  base64Data: string;              // Base64 编码图片数据
+  x: number;                       // 画布 X 坐标
+  y: number;                       // 画布 Y 坐标
+  width: number;                   // 显示宽度
+  height: number;                  // 显示高度
+  originalWidth: number;           // 原始宽度
+  originalHeight: number;          // 原始高度
+}
+
+// ============================================================
 // 单元格数据结构
 // ============================================================
 
@@ -139,6 +161,9 @@ export interface Cell {
   validation?: ValidationRule;     // 数据验证规则
   sparkline?: SparklineConfig;     // 迷你图配置
 
+  // === 超链接字段 ===
+  hyperlink?: HyperlinkData;       // 超链接数据（URL + 显示文本）
+
   // === 数组公式相关字段 ===
   isArrayFormula?: boolean;        // 是否为数组公式
   arrayFormulaOrigin?: CellPosition; // 数组公式起始单元格位置
@@ -150,6 +175,7 @@ export interface SpreadsheetData {
   rowHeights: number[];
   colWidths: number[];
   charts?: ChartConfig[];          // 图表配置列表
+  images?: FloatingImage[];        // 浮动图片列表
 }
 
 // 视口位置

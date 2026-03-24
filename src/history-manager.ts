@@ -46,7 +46,19 @@ export type ActionType =
   | 'pasteSpecial'
   // 查找替换
   | 'replace'
-  | 'replaceAll';
+  | 'replaceAll'
+  // 扩展功能操作类型
+  | 'setHyperlink'       // 设置/编辑超链接
+  | 'removeHyperlink'    // 移除超链接
+  | 'insertImage'        // 插入图片
+  | 'deleteImage'        // 删除图片
+  | 'moveImage'          // 移动图片
+  | 'resizeImage'        // 缩放图片
+  | 'formatPainter'      // 格式刷应用
+  | 'reorderRows'        // 行重排序
+  | 'reorderCols'        // 列重排序
+  | 'clearFormat'        // 清除格式
+  | 'scriptExecution';   // 脚本执行（批量修改）
 
 
 // 历史记录项

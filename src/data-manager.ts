@@ -1,11 +1,14 @@
 import { SpreadsheetModel } from './model';
 import { Modal } from './modal';
 import type { SheetManager } from './sheet-manager';
+import type { ImageManager } from './image-manager';
+import type { FloatingImage } from './types';
 
 // Hook测试 - 2026-02-06
 export class DataManager {
   private model: SpreadsheetModel;
   private sheetManager: SheetManager | null = null;
+  private imageManager: ImageManager | null = null;
 
   constructor(model: SpreadsheetModel) {
     this.model = model;
@@ -16,12 +19,21 @@ export class DataManager {
     this.sheetManager = sheetManager;
   }
 
+  /** 设置 ImageManager 引用（图片导入/导出使用） */
+  public setImageManager(imageManager: ImageManager): void {
+    this.imageManager = imageManager;
+  }
+
   // 导出数据到文件
   public exportToFile(filename?: string): void {
     // 多工作表模式：导出 WorkbookData 格式
-    const jsonData = this.sheetManager
+    let jsonData = this.sheetManager
       ? JSON.stringify(this.sheetManager.serializeWorkbook(), null, 2)
       : this.model.exportToJSON();
+
+    // 附加图片数据到导出 JSON
+    jsonData = this.attachImagesToJson(jsonData);
+
     const blob = new Blob([jsonData], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
 
@@ -95,6 +107,12 @@ export class DataManager {
             }
 
             const success = this.model.importFromJSON(jsonData);
+
+            // 导入成功后还原图片数据
+            if (success) {
+              this.restoreImagesFromJson(jsonData);
+            }
+
             resolve({ success, errors: validation.errors, warnings: validation.warnings });
           } catch (error) {
             console.error('读取文件失败:', error);
@@ -211,6 +229,12 @@ export class DataManager {
       }
 
       const success = this.model.importFromJSON(jsonData);
+
+      // 导入成功后还原图片数据
+      if (success) {
+        this.restoreImagesFromJson(jsonData);
+      }
+
       return { success, errors: validation.errors, warnings: validation.warnings };
     } catch (error) {
       console.error('从URL导入数据失败:', error);
@@ -222,9 +246,13 @@ export class DataManager {
   public saveToLocalStorage(key: string = 'spreadsheet-data'): boolean {
     try {
       // 多工作表模式：保存 WorkbookData 格式
-      const jsonData = this.sheetManager
+      let jsonData = this.sheetManager
         ? JSON.stringify(this.sheetManager.serializeWorkbook())
         : this.model.exportToJSON();
+
+      // 附加图片数据到保存 JSON
+      jsonData = this.attachImagesToJson(jsonData);
+
       localStorage.setItem(key, jsonData);
       return true;
     } catch (error) {
@@ -247,16 +275,34 @@ export class DataManager {
           const parsed = JSON.parse(jsonData) as Record<string, unknown>;
           if (parsed.version === '2.0' && Array.isArray(parsed.sheets)) {
             // WorkbookData 格式
-            return this.sheetManager.deserializeWorkbook(jsonData);
+            const result = this.sheetManager.deserializeWorkbook(jsonData);
+            // 还原图片数据
+            if (result) {
+              this.restoreImagesFromJson(jsonData);
+            }
+            return result;
           }
           // 旧版格式，尝试迁移
-          return this.sheetManager.migrateFromLegacy(jsonData);
+          const result = this.sheetManager.migrateFromLegacy(jsonData);
+          if (result) {
+            this.restoreImagesFromJson(jsonData);
+          }
+          return result;
         } catch {
-          return this.model.importFromJSON(jsonData);
+          const result = this.model.importFromJSON(jsonData);
+          if (result) {
+            this.restoreImagesFromJson(jsonData);
+          }
+          return result;
         }
       }
 
-      return this.model.importFromJSON(jsonData);
+      const result = this.model.importFromJSON(jsonData);
+      // 还原图片数据
+      if (result) {
+        this.restoreImagesFromJson(jsonData);
+      }
+      return result;
     } catch (error) {
       console.error('从本地存储加载失败:', error);
       return false;
@@ -283,5 +329,44 @@ export class DataManager {
     }
 
     return preview;
+  }
+
+  // ============================================================
+  // 图片数据辅助方法
+  // ============================================================
+
+  /**
+   * 将图片数据附加到 JSON 字符串中
+   * 解析 JSON，添加 images 字段后重新序列化
+   */
+  private attachImagesToJson(jsonData: string): string {
+    if (!this.imageManager) return jsonData;
+
+    const images = this.imageManager.exportImages();
+    if (images.length === 0) return jsonData;
+
+    try {
+      const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+      parsed.images = images;
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return jsonData;
+    }
+  }
+
+  /**
+   * 从 JSON 字符串中还原图片数据到 ImageManager
+   */
+  private restoreImagesFromJson(jsonData: string): void {
+    if (!this.imageManager) return;
+
+    try {
+      const parsed = JSON.parse(jsonData) as Record<string, unknown>;
+      if (Array.isArray(parsed.images) && parsed.images.length > 0) {
+        this.imageManager.importImages(parsed.images as FloatingImage[]);
+      }
+    } catch {
+      // 解析失败时静默忽略，不影响主流程
+    }
   }
 }

@@ -10,6 +10,7 @@ import { CHART_COLORS_LIGHT, CHART_COLORS_DARK } from './chart/types';
 import type { ChartOverlay } from './chart/chart-overlay';
 import type { SortFilterModel } from './sort-filter/sort-filter-model';
 import { ColumnHeaderIndicator } from './sort-filter/column-header-indicator';
+import type { ReorderDragState } from './row-col-reorder';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -47,6 +48,12 @@ export class SpreadsheetRenderer {
 
   // 排序筛选模型（排序筛选模块初始化后设置）
   private sortFilterModel: SortFilterModel | null = null;
+
+  // 行列拖拽重排序状态（拖拽过程中绘制指示线）
+  private reorderDragState: ReorderDragState | null = null;
+
+  // 格式刷模式是否激活
+  private formatPainterActive: boolean = false;
 
   // 主题颜色
   private themeColors: {
@@ -318,6 +325,9 @@ export class SpreadsheetRenderer {
         this.viewport.scrollY - headerHeight
       );
     }
+
+    // 绘制行列拖拽重排序指示线
+    this.renderReorderDragIndicator();
 
     // 绘制冻结窗格（在行列标题之前，覆盖滚动区域的单元格）
     this.renderFrozenPanes();
@@ -1353,7 +1363,7 @@ export class SpreadsheetRenderer {
           this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
 
           // 记录是否需要绘制下划线
-          const needUnderline = cellInfo.fontUnderline;
+          let needUnderline = cellInfo.fontUnderline;
 
           // 【条件格式】评估条件格式规则，获取样式覆盖和可视化效果
           const rawCell = this.model.getCell(cellInfo.row, cellInfo.col);
@@ -1378,7 +1388,13 @@ export class SpreadsheetRenderer {
           const displayText = this.getFormattedDisplayText(cellInfo);
 
           // 确定最终字体颜色：条件格式覆盖 > 单元格自定义颜色 > 主题默认颜色
-          const effectiveFontColor = cfResult?.fontColor || cellInfo.fontColor || this.themeColors.cellText;
+          let effectiveFontColor = cfResult?.fontColor || cellInfo.fontColor || this.themeColors.cellText;
+
+          // 【超链接】超链接单元格强制蓝色字体 + 下划线
+          if (rawCell?.hyperlink) {
+            effectiveFontColor = '#0563C1';
+            needUnderline = true;
+          }
 
           // 【富文本】优先使用 richText 渲染（需求 6.5：richText 优先于 content）
           if (cellInfo.richText && cellInfo.richText.length > 0) {
@@ -2861,5 +2877,82 @@ export class SpreadsheetRenderer {
     }
 
     return null;
+  }
+
+  /**
+   * 设置行列拖拽重排序状态（供 RowColReorder 模块调用）
+   * @param state 拖拽状态，null 表示无拖拽
+   */
+  public setReorderDragState(state: ReorderDragState | null): void {
+    this.reorderDragState = state;
+  }
+
+  /**
+   * 绘制行列拖拽重排序指示线
+   * 在拖拽过程中，在目标插入位置绘制一条蓝色指示线
+   */
+  private renderReorderDragIndicator(): void {
+    if (!this.reorderDragState) return;
+
+    const { type, targetIndex } = this.reorderDragState;
+    const { headerWidth, headerHeight } = this.config;
+    const { offsetX, offsetY } = this.viewport;
+
+    this.ctx.save();
+
+    // 指示线样式：蓝色，2px 宽
+    this.ctx.strokeStyle = '#007bff';
+    this.ctx.lineWidth = 2;
+
+    if (type === 'row') {
+      // 水平插入指示线：计算目标行的 Y 坐标
+      let lineY = headerHeight + offsetY;
+      for (let r = this.viewport.startRow; r < targetIndex && r <= this.viewport.endRow; r++) {
+        lineY += this.model.getRowHeight(r);
+      }
+
+      // 绘制水平线（从行标题右侧到画布右侧）
+      this.ctx.beginPath();
+      this.ctx.moveTo(headerWidth, lineY);
+      this.ctx.lineTo(this.canvasWidth, lineY);
+      this.ctx.stroke();
+    } else {
+      // 垂直插入指示线：计算目标列的 X 坐标
+      let lineX = headerWidth + offsetX;
+      for (let c = this.viewport.startCol; c < targetIndex && c <= this.viewport.endCol; c++) {
+        lineX += this.model.getColWidth(c);
+      }
+
+      // 绘制垂直线（从列标题下方到画布底部）
+      this.ctx.beginPath();
+      this.ctx.moveTo(lineX, headerHeight);
+      this.ctx.lineTo(lineX, this.canvasHeight);
+      this.ctx.stroke();
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 设置格式刷模式激活状态
+   * 激活时光标变为十字准星，退出时恢复默认
+   * @param active 是否激活格式刷模式
+   */
+  public setFormatPainterActive(active: boolean): void {
+    this.formatPainterActive = active;
+    this.canvas.style.cursor = active ? 'crosshair' : 'cell';
+  }
+
+  /**
+   * 设置超链接悬停状态（Ctrl+悬停时光标变为 pointer）
+   * @param isHovering 是否正在 Ctrl+悬停超链接单元格
+   */
+  public setHyperlinkHover(isHovering: boolean): void {
+    if (isHovering) {
+      this.canvas.style.cursor = 'pointer';
+    } else {
+      // 恢复光标：格式刷模式下恢复为十字准星，否则恢复为默认
+      this.canvas.style.cursor = this.formatPainterActive ? 'crosshair' : 'cell';
+    }
   }
 }
