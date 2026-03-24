@@ -1956,6 +1956,10 @@ export class SpreadsheetRenderer {
 
     let { startRow, startCol, endRow, endCol } = sel;
 
+    // 确保 start <= end，支持向左/上拖拽选择
+    if (startRow > endRow) { [startRow, endRow] = [endRow, startRow]; }
+    if (startCol > endCol) { [startCol, endCol] = [endCol, startCol]; }
+
     // 排序筛选激活时，将数据行转换为显示行
     const sfActive = this.sortFilterModel && this.sortFilterModel.isActive();
     if (sfActive) {
