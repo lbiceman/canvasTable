@@ -6,6 +6,7 @@
 
 import { ScriptEngine } from './script-engine';
 import type { ScriptResult, SavedScript } from './script-engine';
+import { Modal } from '../modal';
 
 /** 语法高亮关键字集合 */
 const KEYWORDS = new Set([
@@ -409,7 +410,7 @@ export class ScriptEditor {
   }
 
   /** 保存当前脚本 */
-  private saveScript(): void {
+  private async saveScript(): Promise<void> {
     if (!this.textarea) return;
 
     const code = this.textarea.value.trim();
@@ -418,7 +419,7 @@ export class ScriptEditor {
       return;
     }
 
-    const name = prompt('请输入脚本名称:');
+    const name = await Modal.prompt('请输入脚本名称:');
     if (!name || name.trim() === '') return;
 
     this.scriptEngine.saveScript(name.trim(), code);
@@ -495,8 +496,8 @@ export class ScriptEditor {
   }
 
   /** 删除已保存的脚本 */
-  private deleteScript(name: string): void {
-    if (!confirm(`确定要删除脚本「${name}」吗？`)) return;
+  private async deleteScript(name: string): Promise<void> {
+    if (!await Modal.confirm(`确定要删除脚本「${name}」吗？`)) return;
 
     this.scriptEngine.deleteScript(name);
     this.refreshScriptList();

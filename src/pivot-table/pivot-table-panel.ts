@@ -16,6 +16,7 @@ import type {
 import { SpreadsheetModel } from '../model';
 import type { Selection } from '../types';
 import type { SheetManager } from '../sheet-manager';
+import { Modal } from '../modal';
 
 /** 聚合方式中文标签映射 */
 const AGG_LABELS: Record<AggregateFunction, string> = {
@@ -69,7 +70,7 @@ export class PivotTablePanel {
     // 验证源数据区域
     const validation = this.pivotTable.validateSourceRange(sourceRange);
     if (!validation.valid) {
-      alert(validation.error ?? '数据区域无效');
+      Modal.alert(validation.error ?? '数据区域无效');
       return;
     }
 
@@ -207,7 +208,7 @@ export class PivotTablePanel {
     writeBtn.textContent = '写入工作表';
     writeBtn.addEventListener('click', () => {
       if (!this.currentResult) {
-        alert('请先配置透视表字段');
+        Modal.alert('请先配置透视表字段');
         return;
       }
       // 写入工作表需要 SheetManager，通过自定义事件通知外部

@@ -28,6 +28,7 @@ import { FormatPainter } from './format-painter';
 import { DropdownSelector } from './dropdown-selector';
 import { RowColReorder } from './row-col-reorder';
 import { CellContextMenu } from './cell-context-menu';
+import { Modal } from './modal';
 import type { CellContextMenuCallbacks } from './cell-context-menu';
 import { PivotTable } from './pivot-table/pivot-table';
 import { PivotTablePanel } from './pivot-table/pivot-table-panel';
@@ -3949,7 +3950,7 @@ export class SpreadsheetApp {
    * 执行拖拽移动操作
    * 将源区域数据移动到目标位置，处理重叠和非空目标确认
    */
-  private executeDragMove(): void {
+  private async executeDragMove(): Promise<void> {
     if (!this.dragMoveSource || !this.dragMoveTarget) return;
 
     const source = this.dragMoveSource;
@@ -3993,7 +3994,7 @@ export class SpreadsheetApp {
 
     // 目标区域非空时弹出确认对话框
     if (hasNonEmptyTarget) {
-      const confirmed = confirm('目标区域包含数据，是否替换？');
+      const confirmed = await Modal.confirm('目标区域包含数据，是否替换？');
       if (!confirmed) {
         return;
       }
@@ -4090,7 +4091,7 @@ export class SpreadsheetApp {
   private handleMergeCells(): void {
     const activeSelection = this.multiSelection.getActiveSelection();
     if (!activeSelection) {
-      alert('请先选择要合并的单元格');
+      Modal.alert('请先选择要合并的单元格');
       return;
     }
 
@@ -4104,7 +4105,7 @@ export class SpreadsheetApp {
 
     // 如果只选择了一个单元格
     if (minRow === maxRow && minCol === maxCol) {
-      alert('请选择多个单元格进行合并');
+      Modal.alert('请选择多个单元格进行合并');
       return;
     }
 
@@ -4136,7 +4137,7 @@ export class SpreadsheetApp {
       // 更新撤销/重做按钮状态
       this.updateUndoRedoButtons();
     } else {
-      alert('无法合并选定的单元格');
+      Modal.alert('无法合并选定的单元格');
     }
   }
 
@@ -4152,7 +4153,7 @@ export class SpreadsheetApp {
   private handleSplitCells(): void {
     const activeSelection = this.multiSelection.getActiveSelection();
     if (!activeSelection) {
-      alert('请先选择要拆分的单元格');
+      Modal.alert('请先选择要拆分的单元格');
       return;
     }
 
@@ -4202,7 +4203,7 @@ export class SpreadsheetApp {
       }
 
       // 如果不是合并单元格
-      alert('选中的单元格不是合并单元格');
+      Modal.alert('选中的单元格不是合并单元格');
       return;
     }
 
@@ -4258,7 +4259,7 @@ export class SpreadsheetApp {
       // 更新撤销/重做按钮状态
       this.updateUndoRedoButtons();
     } else {
-      alert('选择区域中没有可拆分的合并单元格');
+      Modal.alert('选择区域中没有可拆分的合并单元格');
     }
   }
 
@@ -4599,7 +4600,7 @@ export class SpreadsheetApp {
   private handleInsertChart(): void {
     const activeSelection = this.multiSelection.getActiveSelection();
     if (!activeSelection) {
-      alert('请先选择包含数据的单元格区域');
+      Modal.alert('请先选择包含数据的单元格区域');
       return;
     }
 
@@ -4617,7 +4618,7 @@ export class SpreadsheetApp {
     }
 
     if (!hasData) {
-      alert('选中的区域没有数据，请选择包含数据的区域');
+      Modal.alert('选中的区域没有数据，请选择包含数据的区域');
       return;
     }
 
@@ -4656,19 +4657,19 @@ export class SpreadsheetApp {
    *
    * 弹出数据范围输入对话框，解析后在当前选中单元格创建 SparklineConfig。
    */
-  private handleSparklineOption(type: SparklineType): void {
+  private async handleSparklineOption(type: SparklineType): Promise<void> {
     const activeSelection = this.multiSelection.getActiveSelection();
     if (!activeSelection) return;
 
     const { startRow, startCol } = activeSelection;
 
     // 弹出数据范围输入对话框
-    const rangeStr = prompt('请输入数据范围（例如 A1:A10）：');
+    const rangeStr = await Modal.prompt('请输入数据范围（例如 A1:A10）：');
     if (!rangeStr || rangeStr.trim() === '') return;
 
     const parsed = this.parseRangeString(rangeStr.trim());
     if (!parsed) {
-      alert('无效的数据范围格式，请使用如 A1:A10 的格式。');
+      Modal.alert('无效的数据范围格式，请使用如 A1:A10 的格式。');
       return;
     }
 
@@ -5140,12 +5141,12 @@ export class SpreadsheetApp {
     switch (conditionType) {
       case 'greaterThan': {
         const val = parseFloat(getInputValue('value'));
-        if (isNaN(val)) { alert('请输入有效的数值'); return null; }
+        if (isNaN(val)) { Modal.alert('请输入有效的数值'); return null; }
         return { type: 'greaterThan', value: val };
       }
       case 'lessThan': {
         const val = parseFloat(getInputValue('value'));
-        if (isNaN(val)) { alert('请输入有效的数值'); return null; }
+        if (isNaN(val)) { Modal.alert('请输入有效的数值'); return null; }
         return { type: 'lessThan', value: val };
       }
       case 'equals': {
@@ -5156,22 +5157,22 @@ export class SpreadsheetApp {
       case 'between': {
         const min = parseFloat(getInputValue('min'));
         const max = parseFloat(getInputValue('max'));
-        if (isNaN(min) || isNaN(max)) { alert('请输入有效的最小值和最大值'); return null; }
+        if (isNaN(min) || isNaN(max)) { Modal.alert('请输入有效的最小值和最大值'); return null; }
         return { type: 'between', min, max };
       }
       case 'textContains': {
         const text = getInputValue('text');
-        if (!text) { alert('请输入文本'); return null; }
+        if (!text) { Modal.alert('请输入文本'); return null; }
         return { type: 'textContains', text };
       }
       case 'textStartsWith': {
         const text = getInputValue('text');
-        if (!text) { alert('请输入文本'); return null; }
+        if (!text) { Modal.alert('请输入文本'); return null; }
         return { type: 'textStartsWith', text };
       }
       case 'textEndsWith': {
         const text = getInputValue('text');
-        if (!text) { alert('请输入文本'); return null; }
+        if (!text) { Modal.alert('请输入文本'); return null; }
         return { type: 'textEndsWith', text };
       }
       case 'dataBar': {
@@ -5805,7 +5806,7 @@ export class SpreadsheetApp {
       this.renderer.render();
       this.updateUndoRedoButtons();
     } else {
-      alert('请先选择要设置内容的单元格');
+      Modal.alert('请先选择要设置内容的单元格');
     }
   }
 
@@ -5820,7 +5821,7 @@ export class SpreadsheetApp {
         errorElement.style.display = 'none';
       }, 3000);
     } else {
-      alert(message);
+      Modal.alert(message);
     }
   }
 
