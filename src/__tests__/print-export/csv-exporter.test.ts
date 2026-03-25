@@ -180,7 +180,7 @@ describe('CsvExporter', () => {
 
     it('合并单元格仅在左上角输出内容', () => {
       const parentCell = cell('Merged', { rowSpan: 2, colSpan: 2 });
-      const childCell = (r: number, c: number) => cell('', {
+      const childCell = (_r: number, _c: number) => cell('', {
         isMerged: true,
         mergeParent: { row: 0, col: 0 },
       });

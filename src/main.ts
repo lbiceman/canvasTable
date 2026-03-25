@@ -1,6 +1,6 @@
 import './style.css';
 import { SpreadsheetApp } from './app';
-import { UIControls } from './ui-controls';
+import { UIControls, renderToolbar } from './ui-controls';
 import { CollaborationEngine, CollaborationCallbacks } from './collaboration/collaboration-engine';
 import { CollabOperation, SheetAddOp, SheetDeleteOp, SheetRenameOp, SheetReorderOp, SheetDuplicateOp, SheetVisibilityOp, SheetTabColorOp } from './collaboration/types';
 import { SpreadsheetModel } from './model';
@@ -369,6 +369,15 @@ const initCollaboration = (app: SpreadsheetApp): void => {
 
 // 等待DOM加载完成
 document.addEventListener('DOMContentLoaded', () => {
+  // 获取 #app 容器，不存在时抛出错误
+  const appContainer = document.getElementById('app');
+  if (!appContainer) {
+    throw new Error('找不到 #app 容器元素');
+  }
+
+  // 在 SpreadsheetApp 实例化之前，动态创建所有工具栏 DOM 结构
+  renderToolbar(appContainer);
+
   // 初始化应用
   const app = new SpreadsheetApp('app');
 

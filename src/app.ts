@@ -141,7 +141,6 @@ export class SpreadsheetApp {
   private embeddedImageResizing = false;
   private embeddedImageResizeHandle = '';
   private embeddedImageResizeStartX = 0;
-  private embeddedImageResizeStartY = 0;
   private embeddedImageResizeStartW = 0;
   private embeddedImageResizeStartH = 0;
 
@@ -3193,7 +3192,6 @@ export class SpreadsheetApp {
         this.embeddedImageResizing = true;
         this.embeddedImageResizeHandle = embImgHandle;
         this.embeddedImageResizeStartX = x;
-        this.embeddedImageResizeStartY = y;
         this.embeddedImageResizeStartW = imgRect.width;
         this.embeddedImageResizeStartH = imgRect.height;
         this.canvas.style.cursor = embImgHandle === 'nw' || embImgHandle === 'se' ? 'nwse-resize' : 'nesw-resize';

@@ -868,8 +868,8 @@ h1 {
 }
 
 .font-color-picker input[type="color"] {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border: none;
   padding: 0;
   background: none;
@@ -919,8 +919,8 @@ h1 {
 }
 
 .bg-color-picker input[type="color"] {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border: none;
   padding: 0;
   background: none;

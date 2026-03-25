@@ -151,6 +151,7 @@
 | Canvas 渲染 | 虚拟滚动、无限扩展行列、行列标题、网格线 |
 | 单元格编辑 | 内联编辑器、内容输入、双击编辑、F2 编辑 |
 | 格式化 | 字体颜色、背景色、字号、加粗、斜体、下划线、删除线、水平/垂直对齐、字体族选择、单元格边框（8种位置+4种线型+自定义颜色） |
+| 工具栏架构 | 工具栏 HTML 已迁移至 TypeScript 动态渲染（`renderToolbar`），index.html 仅保留 `<div id="app"></div>` |
 | 合并单元格 | 合并、拆分、合并区域渲染 |
 | 行列操作 | 插入/删除行列、拖拽调整行高列宽、右键菜单 |
 | 公式 | SUM、SUBTRACT、MULTIPLY、DIVIDE、ABS、ROUND、CEILING、FLOOR、MOD、POWER、SQRT、MAX、MIN、AVERAGE、COUNT、COUNTA、COUNTIF、COUNTIFS、SUMIF、SUMIFS、AVERAGEIF、LEFT、RIGHT、MID、LEN、TRIM、UPPER、LOWER、CONCATENATE、SUBSTITUTE、FIND、SEARCH、TEXT、IF、AND、OR、NOT、IFERROR、IFS、SWITCH、VLOOKUP、HLOOKUP、INDEX、MATCH、OFFSET、INDIRECT、TODAY、NOW、DATE、YEAR、MONTH、DAY、DATEDIF、EDATE、EOMONTH、数组公式、命名范围、循环引用检测、公式栏语法高亮与自动补全 |
