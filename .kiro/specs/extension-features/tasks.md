@@ -300,7 +300,7 @@
 - [x] 16. 最终检查点 - 确保所有测试通过
   - 确保所有测试通过，ask the user if questions arise.
 
-- [ ] 17. E2E 测试（Playwright）
+- [x] 17. E2E 测试（Playwright）
   - [x] 17.1 创建 `e2e/hyperlink.spec.ts`，超链接 E2E 测试
     - 测试通过右键菜单插入超链接（输入 URL 和显示文本）
     - 测试超链接单元格渲染为蓝色下划线样式（截图对比）
