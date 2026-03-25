@@ -61,6 +61,16 @@ export class UIControls {
     const themeGroup = this.createThemeSelector();
     controlPanel.appendChild(themeGroup);
 
+    // 打印与导出按钮组
+    const printExportGroup = this.createButtonGroup('打印与导出', [
+      { text: '🖨️ 打印预览', action: () => this.app.openPrintPreview() },
+      { text: '📊 导出 XLSX', action: () => this.app.exportXlsx() },
+      { text: '📂 导入 XLSX', action: () => this.app.importXlsx() },
+      { text: '📄 导出 CSV', action: () => this.app.exportCsv() },
+      { text: '📑 导出 PDF', action: () => this.app.exportPdf() }
+    ]);
+    controlPanel.appendChild(printExportGroup);
+
     // 导出按钮组
     const exportGroup = this.createButtonGroup('导出数据', [
       { text: '导出完整数据', action: () => this.app.exportToFile() },

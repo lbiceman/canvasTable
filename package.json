@@ -20,5 +20,9 @@
     "vite": "^6.4.1",
     "vite-node": "^5.3.0",
     "vitest": "^4.0.18"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "jspdf": "^4.2.1"
   }
 }

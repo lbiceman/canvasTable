@@ -1,6 +1,10 @@
 import { SpreadsheetModel } from './model';
 import { Modal } from './modal';
 import type { SheetManager } from './sheet-manager';
+import type { CsvExportOptions } from './print-export/types';
+import type { PageConfig } from './print-export/page-config';
+import type { HeaderFooter } from './print-export/header-footer';
+import type { PrintArea } from './print-export/print-area';
 
 // Hook测试 - 2026-02-06
 export class DataManager {
@@ -297,5 +301,98 @@ export class DataManager {
     }
 
     return preview;
+  }
+
+  // ============================================================
+  // 打印与导出方法
+  // ============================================================
+
+  /**
+   * 导出为 XLSX 文件并触发浏览器下载
+   *
+   * @param filename - 自定义文件名（可选）
+   */
+  public async exportToXlsx(filename?: string): Promise<void> {
+    const { XlsxExporter } = await import('./print-export/xlsx-exporter');
+    const exporter = new XlsxExporter(this.sheetManager, this.model);
+    await exporter.export(filename);
+  }
+
+  /**
+   * 从 .xlsx 文件导入数据
+   *
+   * 解析文件后，如果导入成功且包含 workbookData，
+   * 则通过 SheetManager 加载工作簿数据。
+   *
+   * @param file - 用户选择的 .xlsx 文件
+   * @returns 导入结果（成功/失败、错误列表、警告列表）
+   */
+  public async importFromXlsx(file: File): Promise<{ success: boolean; errors: string[]; warnings: string[] }> {
+    const { XlsxImporter } = await import('./print-export/xlsx-importer');
+    const importer = new XlsxImporter(this.sheetManager, this.model);
+    const result = await importer.import(file);
+
+    // 导入成功且包含工作簿数据时，通过 SheetManager 加载
+    if (result.success && this.sheetManager) {
+      const resultWithData = result as { success: boolean; errors: string[]; warnings: string[]; workbookData?: Record<string, unknown> };
+      if (resultWithData.workbookData) {
+        const json = JSON.stringify(resultWithData.workbookData);
+        this.sheetManager.deserializeWorkbook(json);
+      }
+    }
+
+    return { success: result.success, errors: result.errors, warnings: result.warnings };
+  }
+
+  /**
+   * 导出为 CSV 文件并触发浏览器下载
+   *
+   * @param options - CSV 导出选项（文件名、是否使用打印区域）
+   * @param printArea - 打印区域实例（可选）
+   * @param sheetName - 工作表名称，用于默认文件名
+   */
+  public async exportToCsv(
+    options?: CsvExportOptions,
+    printArea?: PrintArea,
+    sheetName?: string
+  ): Promise<void> {
+    const { CsvExporter } = await import('./print-export/csv-exporter');
+    // CsvExporter 使用 SpreadsheetModelLike 接口（需要 cells 属性）
+    // 通过 getData().cells 适配实际的 SpreadsheetModel
+    const modelLike = {
+      cells: this.model.getData().cells,
+      getRowCount: () => this.model.getRowCount(),
+      getColCount: () => this.model.getColCount(),
+    };
+    const exporter = new CsvExporter(modelLike);
+    exporter.export(options, printArea, sheetName);
+  }
+
+  /**
+   * 导出为 PDF 文件并触发浏览器下载
+   *
+   * @param pageConfig - 页面配置（纸张大小、方向、边距）
+   * @param headerFooter - 页眉页脚配置
+   * @param printArea - 打印区域
+   * @param filename - 自定义文件名（可选）
+   */
+  public async exportToPdf(
+    pageConfig: PageConfig,
+    headerFooter: HeaderFooter,
+    printArea: PrintArea,
+    filename?: string
+  ): Promise<void> {
+    const { PdfExporter } = await import('./print-export/pdf-exporter');
+    // PdfExporter 使用 SpreadsheetModelLike 接口（需要 cells 属性）
+    // 通过 getData().cells 适配实际的 SpreadsheetModel
+    const modelLike = {
+      cells: this.model.getData().cells,
+      getRowCount: () => this.model.getRowCount(),
+      getColCount: () => this.model.getColCount(),
+      getRowHeight: (row: number) => this.model.getRowHeight(row),
+      getColWidth: (col: number) => this.model.getColWidth(col),
+    };
+    const exporter = new PdfExporter(modelLike, pageConfig, headerFooter, printArea);
+    await exporter.export(filename);
   }
 }

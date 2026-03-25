@@ -280,7 +280,7 @@
               <rect x="6" y="5" width="3" height="8" rx="0.5" fill="currentColor"></rect>
               <rect x="10" y="2" width="3" height="11" rx="0.5" fill="currentColor"></rect>
             </svg>
-            <span>插入图表</span>
+            <span>图表</span>
           </button>
           <!-- 迷你图下拉按钮 -->
           <div class="sparkline-picker" title="迷你图">
@@ -319,31 +319,6 @@
             </svg>
             <span>格式刷</span>
           </button>
-          <!-- 插入超链接按钮 -->
-          <button id="hyperlink-btn" title="插入超链接">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M8.51 7.5a2.5 2.5 0 0 1-2.5 2.5H4.5a2.5 2.5 0 0 1 0-5h1M6.49 7.5a2.5 2.5 0 0 1 2.5-2.5h1.51a2.5 2.5 0 0 1 0 5h-1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-            <span>超链接</span>
-          </button>
-          <!-- 插入图片按钮 -->
-          <button id="image-btn" title="插入图片">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="2" y="2" width="11" height="11" rx="1" stroke="currentColor" stroke-width="1.2"></rect>
-              <circle cx="5.5" cy="5.5" r="1" fill="currentColor"></circle>
-              <path d="M2 10l3-3 2 2 3-3 3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
-            </svg>
-            <span>图片</span>
-          </button>
-          <!-- 数据透视表按钮 -->
-          <button id="pivot-table-btn" title="数据透视表">
-            <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="1.5" y="1.5" width="12" height="12" rx="0.5" stroke="currentColor" stroke-width="1"></rect>
-              <line x1="1.5" y1="5" x2="13.5" y2="5" stroke="currentColor" stroke-width="1"></line>
-              <line x1="5" y1="5" x2="5" y2="13.5" stroke="currentColor" stroke-width="1"></line>
-            </svg>
-            <span>透视表</span>
-          </button>
           <!-- 脚本编辑器按钮 -->
           <button id="script-editor-btn" title="脚本编辑器">
             <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -351,19 +326,6 @@
             </svg>
             <span>脚本</span>
           </button>
-        </div>
-        </div>
-        <div class="toolbar-row toolbar-row-2">
-          <div class="cell-info">
-            <span id="selected-cell">A1</span>
-            <input id="cell-content" type="text" autocomplete="off" placeholder="单元格内容（=SUM/SUBTRACT/MULTIPLY/DIVIDE 支持）" />
-            <button id="set-content" title="确认输入">
-              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M11.4669 3.72684C11.7558 3.91574 11.8369 4.30308 11.648 4.59198L7.39799 11.092C7.29783 11.2452 7.13556 11.3467 6.95402 11.3699C6.77247 11.3931 6.58989 11.3355 6.45446 11.2124L3.70446 8.71241C3.44905 8.48022 3.43023 8.08494 3.66242 7.82953C3.89461 7.57412 4.28989 7.55529 4.5453 7.78749L6.75292 9.79441L10.6018 3.90792C10.7907 3.61902 11.178 3.53795 11.4669 3.72684Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
-              </svg>
-            </button>
-            <div id="formula-error" class="formula-error"></div>
-          </div>
           <div class="toolbar-right">
           <div class="status">
             <span id="viewport-info">视图: 行 1-20, 列 A-Z</span>
@@ -391,6 +353,47 @@
               </svg>
             </span>
           </div>
+          </div>
+        </div>
+        </div>
+        <div class="toolbar-row toolbar-row-2">
+          <div class="cell-info">
+            <span id="selected-cell">A1</span>
+            <input id="cell-content" type="text" autocomplete="off" placeholder="单元格内容（=SUM/SUBTRACT/MULTIPLY/DIVIDE 支持）" />
+            <button id="set-content" title="确认输入">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.4669 3.72684C11.7558 3.91574 11.8369 4.30308 11.648 4.59198L7.39799 11.092C7.29783 11.2452 7.13556 11.3467 6.95402 11.3699C6.77247 11.3931 6.58989 11.3355 6.45446 11.2124L3.70446 8.71241C3.44905 8.48022 3.43023 8.08494 3.66242 7.82953C3.89461 7.57412 4.28989 7.55529 4.5453 7.78749L6.75292 9.79441L10.6018 3.90792C10.7907 3.61902 11.178 3.53795 11.4669 3.72684Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path>
+              </svg>
+            </button>
+            <div id="formula-error" class="formula-error"></div>
+          </div>
+          <div class="toolbar-group">
+            <!-- 插入超链接按钮 -->
+            <button id="hyperlink-btn" title="插入超链接">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8.51 7.5a2.5 2.5 0 0 1-2.5 2.5H4.5a2.5 2.5 0 0 1 0-5h1M6.49 7.5a2.5 2.5 0 0 1 2.5-2.5h1.51a2.5 2.5 0 0 1 0 5h-1" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+              <span>链接</span>
+            </button>
+            <!-- 插入图片按钮 -->
+            <button id="image-btn" title="插入图片">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="11" height="11" rx="1" stroke="currentColor" stroke-width="1.2"></rect>
+                <circle cx="5.5" cy="5.5" r="1" fill="currentColor"></circle>
+                <path d="M2 10l3-3 2 2 3-3 3 3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+              <span>图片</span>
+            </button>
+            <!-- 数据透视表按钮 -->
+            <button id="pivot-table-btn" title="数据透视表">
+              <svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1.5" y="1.5" width="12" height="12" rx="0.5" stroke="currentColor" stroke-width="1"></rect>
+                <line x1="1.5" y1="5" x2="13.5" y2="5" stroke="currentColor" stroke-width="1"></line>
+                <line x1="5" y1="5" x2="5" y2="13.5" stroke="currentColor" stroke-width="1"></line>
+              </svg>
+              <span>透视表</span>
+            </button>
+            <div class="separator"></div>
           </div>
         </div>
       </div>

@@ -35,6 +35,11 @@ import { ScriptEngine } from './script/script-engine';
 import { ScriptEditor } from './script/script-editor';
 import { PluginManager } from './plugin/plugin-manager';
 import type { PluginAPICallbacks } from './plugin/plugin-api';
+import { PageConfig } from './print-export/page-config';
+import { PrintArea } from './print-export/print-area';
+import { HeaderFooter } from './print-export/header-footer';
+import type { SheetPrintMetadata } from './print-export/print-metadata';
+import { PrintPreviewDialog } from './print-export/print-preview-dialog';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -148,6 +153,11 @@ export class SpreadsheetApp {
   private scriptEngine!: ScriptEngine;
   private scriptEditor!: ScriptEditor;
   private pluginManager!: PluginManager;
+
+  // 打印与导出相关配置
+  private pageConfig: PageConfig = new PageConfig();
+  private printArea: PrintArea = new PrintArea();
+  private headerFooter: HeaderFooter = new HeaderFooter();
 
   // 边框选择器当前状态
   private currentBorderStyle: BorderStyle = 'solid';
@@ -6366,6 +6376,8 @@ export class SpreadsheetApp {
 
   // 导出数据到JSON文件
   public exportToFile(filename?: string): void {
+    // 导出前同步当前工作表的打印配置
+    this.syncPrintConfigToSheetManager();
     this.dataManager.exportToFile(filename);
   }
 
@@ -6378,6 +6390,10 @@ export class SpreadsheetApp {
   public async importFromFile(): Promise<boolean> {
     const result = await this.dataManager.importFromFile();
     if (result.success) {
+      // 导入后恢复活动工作表的打印配置
+      if (this.sheetManager) {
+        this.restorePrintConfigFromSheetManager(this.sheetManager.getActiveSheet().id);
+      }
       this.renderer.render();
     }
     return result.success;
@@ -6396,6 +6412,10 @@ export class SpreadsheetApp {
   public async importFromURL(url: string): Promise<boolean> {
     const result = await this.dataManager.importFromURL(url);
     if (result.success) {
+      // 导入后恢复活动工作表的打印配置
+      if (this.sheetManager) {
+        this.restorePrintConfigFromSheetManager(this.sheetManager.getActiveSheet().id);
+      }
       this.renderer.render();
     }
     return result.success;
@@ -6403,6 +6423,8 @@ export class SpreadsheetApp {
 
   // 保存到本地存储
   public saveToLocalStorage(key?: string): boolean {
+    // 保存前同步当前工作表的打印配置到 SheetManager
+    this.syncPrintConfigToSheetManager();
     return this.dataManager.saveToLocalStorage(key);
   }
 
@@ -6410,6 +6432,10 @@ export class SpreadsheetApp {
   public loadFromLocalStorage(key?: string): boolean {
     const success = this.dataManager.loadFromLocalStorage(key);
     if (success) {
+      // 加载后恢复活动工作表的打印配置
+      if (this.sheetManager) {
+        this.restorePrintConfigFromSheetManager(this.sheetManager.getActiveSheet().id);
+      }
       this.renderer.render();
     }
     return success;
@@ -6666,6 +6692,9 @@ export class SpreadsheetApp {
         : null,
     });
 
+    // 保存当前工作表的打印配置
+    this.syncPrintConfigToSheetManager();
+
     // 更新 app 的 model 引用
     this.model = this.sheetManager.getActiveModel();
 
@@ -6674,6 +6703,9 @@ export class SpreadsheetApp {
 
     // 恢复目标工作表的视口状态
     const savedState = this.sheetManager.getViewportState(sheetId);
+
+    // 恢复目标工作表的打印配置
+    this.restorePrintConfigFromSheetManager(sheetId);
     if (savedState) {
       this.renderer.scrollTo(savedState.scrollX, savedState.scrollY);
       if (savedState.selection) {
@@ -6861,6 +6893,12 @@ export class SpreadsheetApp {
     // 绑定工具栏按钮事件
     this.bindExtensionToolbarEvents();
 
+    // 绑定打印导出工具栏按钮事件
+    this.setupPrintExportButtons();
+
+    // 注册打印区域右键菜单项
+    this.registerPrintAreaContextMenuItems();
+
     // 监听透视表写入工作表事件
     document.addEventListener('pivot-write', ((e: CustomEvent) => {
       const result = e.detail?.result;
@@ -6909,6 +6947,181 @@ export class SpreadsheetApp {
       historyManager.resumeRecording();
     }
     this.renderer.render();
+  }
+
+  /**
+   * 将当前打印配置同步到 SheetManager（保存到当前活动工作表）
+   */
+  private syncPrintConfigToSheetManager(): void {
+    if (!this.sheetManager) return;
+    const sheetId = this.sheetManager.getActiveSheet().id;
+    const printMeta: SheetPrintMetadata = {
+      printArea: this.printArea.serialize(),
+      pageConfig: this.pageConfig.serialize(),
+      headerFooter: this.headerFooter.serialize(),
+    };
+    this.sheetManager.savePrintMetadata(sheetId, printMeta);
+  }
+
+  /**
+   * 从 SheetManager 恢复指定工作表的打印配置
+   */
+  private restorePrintConfigFromSheetManager(sheetId: string): void {
+    if (!this.sheetManager) return;
+    const printMeta = this.sheetManager.getPrintMetadata(sheetId);
+    if (printMeta) {
+      // 恢复打印区域
+      this.printArea = printMeta.printArea !== undefined
+        ? PrintArea.deserialize(printMeta.printArea ?? null)
+        : new PrintArea();
+      // 恢复页面配置
+      this.pageConfig = printMeta.pageConfig
+        ? PageConfig.deserialize(printMeta.pageConfig)
+        : new PageConfig();
+      // 恢复页眉页脚
+      this.headerFooter = printMeta.headerFooter
+        ? HeaderFooter.deserialize(printMeta.headerFooter)
+        : new HeaderFooter();
+    } else {
+      // 无保存的打印配置，使用默认值
+      this.printArea = new PrintArea();
+      this.pageConfig = new PageConfig();
+      this.headerFooter = new HeaderFooter();
+    }
+  }
+
+  /**
+   * 设置打印导出相关工具栏按钮事件绑定
+   * 包括：打印预览、导出 XLSX/CSV/PDF、导入 XLSX
+   */
+  private setupPrintExportButtons(): void {
+    // 打印预览按钮
+    const printPreviewBtn = document.getElementById('print-preview-btn');
+    if (printPreviewBtn) {
+      printPreviewBtn.addEventListener('click', () => this.openPrintPreview());
+    }
+
+    // 导出 XLSX 按钮
+    const exportXlsxBtn = document.getElementById('export-xlsx-btn');
+    if (exportXlsxBtn) {
+      exportXlsxBtn.addEventListener('click', () => this.exportXlsx());
+    }
+
+    // 导出 CSV 按钮
+    const exportCsvBtn = document.getElementById('export-csv-btn');
+    if (exportCsvBtn) {
+      exportCsvBtn.addEventListener('click', () => this.exportCsv());
+    }
+
+    // 导出 PDF 按钮
+    const exportPdfBtn = document.getElementById('export-pdf-btn');
+    if (exportPdfBtn) {
+      exportPdfBtn.addEventListener('click', () => this.exportPdf());
+    }
+
+    // 导入 XLSX 按钮
+    const importXlsxBtn = document.getElementById('import-xlsx-btn');
+    if (importXlsxBtn) {
+      importXlsxBtn.addEventListener('click', () => this.importXlsx());
+    }
+  }
+
+  /** 打开打印预览对话框 */
+  public openPrintPreview(): void {
+    const dialog = new PrintPreviewDialog(
+      {
+        cells: this.model.getData().cells,
+        getRowCount: () => this.model.getRowCount(),
+        getColCount: () => this.model.getColCount(),
+        getRowHeight: (r: number) => this.model.getRowHeight(r),
+        getColWidth: (c: number) => this.model.getColWidth(c),
+      },
+      this.sheetManager ? { getActiveSheetName: () => this.sheetManager!.getActiveSheet().name } : null,
+      this.pageConfig,
+      this.printArea,
+      this.headerFooter
+    );
+    dialog.open();
+  }
+
+  /** 导出 XLSX */
+  public exportXlsx(): void {
+    this.dataManager.exportToXlsx();
+  }
+
+  /** 导出 CSV */
+  public exportCsv(): void {
+    const sheetName = this.sheetManager ? this.sheetManager.getActiveSheet().name : undefined;
+    this.dataManager.exportToCsv(undefined, this.printArea, sheetName);
+  }
+
+  /** 导出 PDF */
+  public exportPdf(): void {
+    this.dataManager.exportToPdf(this.pageConfig, this.headerFooter, this.printArea);
+  }
+
+  /** 导入 XLSX 文件 */
+  public importXlsx(): void {
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.xlsx';
+    fileInput.style.display = 'none';
+    fileInput.addEventListener('change', async () => {
+      const file = fileInput.files?.[0];
+      if (file) {
+        const result = await this.dataManager.importFromXlsx(file);
+        if (result.success) {
+          // 导入成功后更新 model 引用并刷新界面
+          this.model = this.sheetManager.getActiveModel();
+          this.renderer.setModel(this.model);
+          this.dataManager = new DataManager(this.model);
+          this.dataManager.setSheetManager(this.sheetManager);
+          this.sheetTabBar.render();
+          this.renderer.render();
+          this.updateScrollbars();
+          this.updateSelectedCellInfo();
+          this.updateStatusBar();
+          if (result.warnings.length > 0) {
+            await Modal.alert(`导入完成，但有以下警告：\n${result.warnings.map(w => `• ${w}`).join('\n')}`);
+          }
+        } else if (result.errors.length > 0) {
+          await Modal.alert(`导入失败：\n${result.errors.map(e => `• ${e}`).join('\n')}`);
+        }
+      }
+      document.body.removeChild(fileInput);
+    });
+    document.body.appendChild(fileInput);
+    fileInput.click();
+  }
+
+  /**
+   * 注册打印区域相关的右键菜单项
+   * 在单元格右键菜单中添加"设置打印区域"和"清除打印区域"选项
+   */
+  private registerPrintAreaContextMenuItems(): void {
+    // 设置打印区域
+    this.cellContextMenu.registerExtraItem({
+      label: '📐 设置打印区域',
+      action: () => {
+        const sel = this.multiSelection.getActiveSelection();
+        if (sel) {
+          this.printArea.set({
+            startRow: Math.min(sel.startRow, sel.endRow),
+            startCol: Math.min(sel.startCol, sel.endCol),
+            endRow: Math.max(sel.startRow, sel.endRow),
+            endCol: Math.max(sel.startCol, sel.endCol),
+          });
+        }
+      },
+    });
+
+    // 清除打印区域
+    this.cellContextMenu.registerExtraItem({
+      label: '🗑️ 清除打印区域',
+      action: () => {
+        this.printArea.clear();
+      },
+    });
   }
 
   /**

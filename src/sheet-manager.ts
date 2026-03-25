@@ -7,6 +7,8 @@ import { SpreadsheetModel } from './model';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
 import type { SheetMeta, ViewportState, RenameResult, Cell, WorkbookData, WorkbookSheetEntry } from './types';
+import type { SheetPrintMetadata } from './print-export/print-metadata';
+import { savePrintConfigToMetadata, loadPrintConfigFromMetadata } from './print-export/print-metadata';
 
 /** 协同操作提交回调（由 SpreadsheetApp 注入） */
 export type SheetCollabCallback = (op: Record<string, unknown>) => void;
@@ -26,6 +28,8 @@ export class SheetManager {
   private sheetDataMap: Map<string, SheetData> = new Map();
   /** 当前活动工作表 ID */
   private activeSheetId: string = '';
+  /** 每个工作表的打印配置（sheetId -> 打印元数据） */
+  private printMetadataMap: Map<string, SheetPrintMetadata> = new Map();
   /** 协同操作提交回调 */
   private collabCallback: SheetCollabCallback | null = null;
   /** 工作表切换后回调（通知 App 更新 renderer 等） */
@@ -343,6 +347,24 @@ export class SheetManager {
   public getViewportState(sheetId: string): ViewportState | undefined {
     const data = this.sheetDataMap.get(sheetId);
     return data?.viewportState;
+  }
+
+  /**
+   * 保存指定工作表的打印配置
+   * @param sheetId 工作表 ID
+   * @param printMeta 打印元数据
+   */
+  public savePrintMetadata(sheetId: string, printMeta: SheetPrintMetadata): void {
+    this.printMetadataMap.set(sheetId, { ...printMeta });
+  }
+
+  /**
+   * 获取指定工作表的打印配置
+   * @param sheetId 工作表 ID
+   * @returns 打印元数据，未设置时返回 undefined
+   */
+  public getPrintMetadata(sheetId: string): SheetPrintMetadata | undefined {
+    return this.printMetadataMap.get(sheetId);
   }
 
   /**
@@ -796,6 +818,12 @@ export class SheetManager {
         }
       }
 
+      // 将打印配置写入 metadata
+      const printMeta = this.printMetadataMap.get(meta.id);
+      if (printMeta) {
+        savePrintConfigToMetadata(metadata, printMeta);
+      }
+
       return {
         meta: { ...meta },
         data,
@@ -831,6 +859,7 @@ export class SheetManager {
       // 清除现有工作表
       this.sheets = [];
       this.sheetDataMap.clear();
+      this.printMetadataMap.clear();
       this.activeSheetId = '';
 
       // 恢复每个工作表
@@ -862,6 +891,13 @@ export class SheetManager {
         });
 
         sheetData.model.importFromJSON(modelJson);
+
+        // 从 metadata 中提取打印配置
+        const entryMetadata = (entry.metadata ?? {}) as Record<string, unknown>;
+        const printMeta = loadPrintConfigFromMetadata(entryMetadata);
+        if (printMeta.printArea !== undefined || printMeta.pageConfig || printMeta.headerFooter) {
+          this.printMetadataMap.set(sheetData.meta.id, printMeta);
+        }
 
         this.sheets.push(sheetData.meta);
         this.sheetDataMap.set(sheetData.meta.id, sheetData);
