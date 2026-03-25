@@ -2511,6 +2511,8 @@ export class SpreadsheetModel {
   public getTotalHeight(): number {
     let total = 0;
     for (let i = 0; i < this.data.rowHeights.length; i++) {
+      // 跳过隐藏行
+      if (this.hiddenRows.has(i)) continue;
       total += this.data.rowHeights[i];
     }
     return total;
@@ -2520,6 +2522,8 @@ export class SpreadsheetModel {
   public getTotalWidth(): number {
     let total = 0;
     for (let i = 0; i < this.data.colWidths.length; i++) {
+      // 跳过隐藏列
+      if (this.hiddenCols.has(i)) continue;
       total += this.data.colWidths[i];
     }
     return total;
@@ -2529,6 +2533,8 @@ export class SpreadsheetModel {
   public getRowAtY(y: number): number {
     let currentY = 0;
     for (let i = 0; i < this.getRowCount(); i++) {
+      // 跳过隐藏行
+      if (this.hiddenRows.has(i)) continue;
       currentY += this.data.rowHeights[i];
       if (currentY > y) {
         return i;
@@ -2541,6 +2547,8 @@ export class SpreadsheetModel {
   public getColAtX(x: number): number {
     let currentX = 0;
     for (let i = 0; i < this.getColCount(); i++) {
+      // 跳过隐藏列
+      if (this.hiddenCols.has(i)) continue;
       currentX += this.data.colWidths[i];
       if (currentX > x) {
         return i;
@@ -2553,6 +2561,8 @@ export class SpreadsheetModel {
   public getRowY(row: number): number {
     let y = 0;
     for (let i = 0; i < row && i < this.getRowCount(); i++) {
+      // 跳过隐藏行
+      if (this.hiddenRows.has(i)) continue;
       y += this.data.rowHeights[i];
     }
     return y;
@@ -2562,6 +2572,8 @@ export class SpreadsheetModel {
   public getColX(col: number): number {
     let x = 0;
     for (let i = 0; i < col && i < this.getColCount(); i++) {
+      // 跳过隐藏列
+      if (this.hiddenCols.has(i)) continue;
       x += this.data.colWidths[i];
     }
     return x;
@@ -3204,7 +3216,9 @@ export class SpreadsheetModel {
             // 数据类型与格式化新增字段（旧格式文件中不存在，默认 undefined）
             dataType, rawValue, format, richText, wrapText, validation,
             // 边框、字体族、删除线字段（旧格式文件中不存在，默认 undefined）
-            border, fontFamily, fontStrikethrough
+            border, fontFamily, fontStrikethrough,
+            // 迷你图、对齐、超链接字段
+            sparkline, fontAlign, hyperlink
           } = cellData;
 
           if (this.isValidPosition(row as number, col as number)) {
@@ -3233,6 +3247,9 @@ export class SpreadsheetModel {
               border: border as CellBorder | undefined,
               fontFamily: fontFamily as string | undefined,
               fontStrikethrough: fontStrikethrough as boolean | undefined,
+              sparkline: sparkline as SparklineConfig | undefined,
+              fontAlign: fontAlign as 'left' | 'center' | 'right' | undefined,
+              hyperlink: hyperlink as Cell['hyperlink'],
             };
           }
         });

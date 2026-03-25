@@ -1047,6 +1047,12 @@ export class SpreadsheetApp {
     const { validation } = cellInfo;
     const { inputTitle, inputMessage } = validation;
 
+    // 下拉验证类型不显示输入提示，避免遮盖下拉选项
+    if (validation.type === 'dropdown') {
+      this.hideValidationTooltip();
+      return;
+    }
+
     // 有输入提示时显示浅蓝色 tooltip
     if (inputTitle || inputMessage) {
       this.showValidationTooltip(

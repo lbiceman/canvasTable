@@ -509,12 +509,19 @@ export class SpreadsheetRenderer {
       const cellInfo = this.model.getMergedCellInfo(row, col);
       if (!cellInfo || cellInfo.row !== row || cellInfo.col !== col) return;
 
-      const colWidth = this.model.getColWidth(col);
-      const rowHeight = this.model.getRowHeight(row);
+      // 计算合并单元格的总宽度和总高度
+      let totalWidth = 0;
+      for (let c = 0; c < cellInfo.colSpan; c++) {
+        totalWidth += this.model.getColWidth(col + c);
+      }
+      let totalHeight = 0;
+      for (let r = 0; r < cellInfo.rowSpan; r++) {
+        totalHeight += this.model.getRowHeight(row + r);
+      }
 
       // 绘制背景（先用默认背景覆盖滚动区域的内容）
       this.ctx.fillStyle = this.themeColors.background;
-      this.ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+      this.ctx.fillRect(cellX, cellY, totalWidth, totalHeight);
 
       // 条件格式
       const rawCell = this.model.getCell(row, col);
@@ -522,7 +529,7 @@ export class SpreadsheetRenderer {
       const effectiveBgColor = cfResult?.bgColor || cellInfo.bgColor;
       if (effectiveBgColor) {
         this.ctx.fillStyle = effectiveBgColor;
-        this.ctx.fillRect(cellX, cellY, colWidth, rowHeight);
+        this.ctx.fillRect(cellX, cellY, totalWidth, totalHeight);
       }
 
       // 显示文本
@@ -541,10 +548,10 @@ export class SpreadsheetRenderer {
       const align = cellInfo.fontAlign || 'left';
       const verticalAlign = cellInfo.verticalAlign || 'middle';
 
-      // 裁剪到单元格区域
+      // 裁剪到合并单元格区域
       this.ctx.save();
       this.ctx.beginPath();
-      this.ctx.rect(cellX, cellY, colWidth, rowHeight);
+      this.ctx.rect(cellX, cellY, totalWidth, totalHeight);
       this.ctx.clip();
 
       // 计算文本位置
@@ -554,16 +561,16 @@ export class SpreadsheetRenderer {
 
       let textX: number;
       switch (align) {
-        case 'center': textX = cellX + colWidth / 2; break;
-        case 'right': textX = cellX + colWidth - cellPadding; break;
+        case 'center': textX = cellX + totalWidth / 2; break;
+        case 'right': textX = cellX + totalWidth - cellPadding; break;
         default: textX = cellX + cellPadding;
       }
 
       let textY: number;
       switch (verticalAlign) {
         case 'top': textY = cellY + fontSize / 2 + cellPadding; break;
-        case 'bottom': textY = cellY + rowHeight - fontSize / 2 - cellPadding; break;
-        default: textY = cellY + rowHeight / 2;
+        case 'bottom': textY = cellY + totalHeight - fontSize / 2 - cellPadding; break;
+        default: textY = cellY + totalHeight / 2;
       }
 
       this.ctx.fillText(displayText, textX, textY);
@@ -598,12 +605,12 @@ export class SpreadsheetRenderer {
       this.ctx.strokeStyle = this.themeColors.gridLine;
       this.ctx.lineWidth = 1;
       this.ctx.beginPath();
-      this.ctx.moveTo(cellX + colWidth, cellY);
-      this.ctx.lineTo(cellX + colWidth, cellY + rowHeight);
+      this.ctx.moveTo(cellX + totalWidth, cellY);
+      this.ctx.lineTo(cellX + totalWidth, cellY + totalHeight);
       this.ctx.stroke();
       this.ctx.beginPath();
-      this.ctx.moveTo(cellX, cellY + rowHeight);
-      this.ctx.lineTo(cellX + colWidth, cellY + rowHeight);
+      this.ctx.moveTo(cellX, cellY + totalHeight);
+      this.ctx.lineTo(cellX + totalWidth, cellY + totalHeight);
       this.ctx.stroke();
 
       // 绘制单元格自定义边框（在网格线之上）
@@ -674,16 +681,16 @@ export class SpreadsheetRenderer {
 
         // 按 top → bottom → left → right 顺序绘制边框
         if (border.top) {
-          drawFrozenBorderLine(border.top, cellX, cellY, cellX + colWidth, cellY);
+          drawFrozenBorderLine(border.top, cellX, cellY, cellX + totalWidth, cellY);
         }
         if (border.bottom) {
-          drawFrozenBorderLine(border.bottom, cellX, cellY + rowHeight, cellX + colWidth, cellY + rowHeight);
+          drawFrozenBorderLine(border.bottom, cellX, cellY + totalHeight, cellX + totalWidth, cellY + totalHeight);
         }
         if (border.left) {
-          drawFrozenBorderLine(border.left, cellX, cellY, cellX, cellY + rowHeight);
+          drawFrozenBorderLine(border.left, cellX, cellY, cellX, cellY + totalHeight);
         }
         if (border.right) {
-          drawFrozenBorderLine(border.right, cellX + colWidth, cellY, cellX + colWidth, cellY + rowHeight);
+          drawFrozenBorderLine(border.right, cellX + totalWidth, cellY, cellX + totalWidth, cellY + totalHeight);
         }
 
         // 恢复 lineDash 状态
@@ -811,6 +818,10 @@ export class SpreadsheetRenderer {
     const { headerWidth, headerHeight, fontSize, fontFamily } = this.config;
     const { offsetY } = this.viewport;
 
+    // 计算分组区域宽度，行号文本居中在分组区域右侧的剩余空间
+    const rowGroupWidth = this.getRowGroupAreaWidth();
+    const textCenterX = rowGroupWidth + (headerWidth - rowGroupWidth) / 2;
+
     // 绘制背景
     this.ctx.fillStyle = this.themeColors.headerBackground;
     this.ctx.fillRect(0, headerHeight, headerWidth, this.canvas.height - headerHeight);
@@ -860,7 +871,7 @@ export class SpreadsheetRenderer {
         if (textY > headerHeight && textY < this.canvasHeight) {
           this.ctx.fillText(
             (dataRow + 1).toString(),
-            headerWidth / 2,
+            textCenterX,
             currentY + rowHeight / 2
           );
         }
@@ -896,7 +907,7 @@ export class SpreadsheetRenderer {
 
           // 绘制行号
           this.ctx.fillStyle = this.themeColors.headerText;
-          this.ctx.fillText((row + 1).toString(), headerWidth / 2, frozenY + rowHeight / 2);
+          this.ctx.fillText((row + 1).toString(), textCenterX, frozenY + rowHeight / 2);
 
           // 绘制边框
           this.ctx.strokeStyle = this.themeColors.gridLine;
@@ -2838,13 +2849,26 @@ export class SpreadsheetRenderer {
       return null;
     }
 
-    // 将屏幕坐标转换为数据坐标
-    const dataX = x - headerWidth + scrollX;
-    const dataY = y - headerHeight + scrollY;
+    // 计算冻结区域的像素尺寸
+    const freezeRows = this.model.getFreezeRows();
+    const freezeCols = this.model.getFreezeCols();
+    let frozenRowHeight = 0;
+    for (let r = 0; r < freezeRows; r++) {
+      frozenRowHeight += this.model.getRowHeight(r);
+    }
+    let frozenColWidth = 0;
+    for (let c = 0; c < freezeCols; c++) {
+      frozenColWidth += this.model.getColWidth(c);
+    }
+
+    // 判断点击是否在冻结区域内，冻结区域不加滚动偏移
+    const inFrozenRow = freezeRows > 0 && (y - headerHeight) < frozenRowHeight;
+    const inFrozenCol = freezeCols > 0 && (x - headerWidth) < frozenColWidth;
+
+    const dataX = x - headerWidth + (inFrozenCol ? 0 : scrollX);
+    const dataY = y - headerHeight + (inFrozenRow ? 0 : scrollY);
 
     // 获取行列索引
-    // 注意：getRowAtY 返回的是基于原始数据布局的行索引
-    // 当排序筛选激活时，需要先计算显示行索引，再映射到数据行
     let row: number;
     const col = this.model.getColAtX(dataX);
 
