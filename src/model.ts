@@ -12,6 +12,8 @@ import { SortFilterModel } from './sort-filter/sort-filter-model';
 import { GroupManager } from './group-manager';
 import { FillSeriesEngine } from './fill-series';
 import { NamedRangeManager } from './formula/named-range';
+import { PrefixSumIndex } from './prefix-sum-index';
+import { FormulaWorkerBridge } from './formula-worker-bridge';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -53,8 +55,21 @@ export class SpreadsheetModel {
   private freezeRowCount: number = 0;
   private freezeColCount: number = 0;
 
+  // 脏区域通知回调（单元格变更时通知 Renderer 层标记脏区域）
+  private onCellDirty: ((row: number, col: number) => void) | null = null;
+
+  // 合并单元格脏区域通知回调（合并区域变更时通知 Renderer 层标记整个合并区域）
+  private onMergedCellDirty: ((startRow: number, startCol: number, endRow: number, endCol: number) => void) | null = null;
+
   // 分组管理器
   private groupManager: GroupManager = new GroupManager();
+
+  // 前缀和索引（行高/列宽的 O(log n) 定位）
+  private rowPrefixSumIndex!: PrefixSumIndex;
+  private colPrefixSumIndex!: PrefixSumIndex;
+
+  // Worker 公式计算桥接（将公式求值任务发送到 Worker 线程）
+  private workerBridge: FormulaWorkerBridge;
 
   constructor(rows = DEFAULT_ROWS, cols = DEFAULT_COLS) {
     // 初始化历史管理器
@@ -99,11 +114,153 @@ export class SpreadsheetModel {
       this.data.colWidths[j] = DEFAULT_COL_WIDTH;
     }
 
+    // 初始化前缀和索引
+    this.rowPrefixSumIndex = new PrefixSumIndex(this.data.rowHeights, this.hiddenRows);
+    this.colPrefixSumIndex = new PrefixSumIndex(this.data.colWidths, this.hiddenCols);
+
+    // 初始化 Worker 公式计算桥接
+    this.workerBridge = new FormulaWorkerBridge();
+
     // 初始化排序筛选数据模型（必须在 this.data 初始化之后，因为 buildIdentityMap 会调用 getRowCount）
     this.sortFilterModel = new SortFilterModel({
       getCell: (r: number, c: number) => this.getCell(r, c),
       getRowCount: () => this.getRowCount(),
     });
+  }
+
+  // ============================================================
+  // 脏区域通知机制（Model → Renderer 解耦通信）
+  // ============================================================
+
+  /**
+   * 注册单元格脏区域回调
+   * Renderer 层通过此方法注册回调，Model 层数据变更时通知 Renderer 标记脏区域
+   *
+   * @param callback - 接收变更单元格的行列索引
+   */
+  public setDirtyCallback(callback: (row: number, col: number) => void): void {
+    this.onCellDirty = callback;
+  }
+
+  /**
+   * 注册合并单元格脏区域回调
+   * 合并/拆分操作时通知 Renderer 标记整个合并区域为脏区域
+   *
+   * @param callback - 接收合并区域的起止行列索引
+   */
+  public setMergedDirtyCallback(callback: (startRow: number, startCol: number, endRow: number, endCol: number) => void): void {
+    this.onMergedCellDirty = callback;
+  }
+
+  /**
+   * 通知单元格脏区域
+   * 自动检测合并单元格，对合并区域调用 onMergedCellDirty，普通单元格调用 onCellDirty
+   *
+   * @param row - 变更单元格行索引
+   * @param col - 变更单元格列索引
+   */
+  private notifyCellDirty(row: number, col: number): void {
+    const cell = this.data.cells[row]?.[col];
+    if (!cell) return;
+
+    // 如果是被合并的子单元格，找到合并父单元格并通知整个合并区域
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      const parentCell = this.data.cells[parentRow]?.[parentCol];
+      if (parentCell && this.onMergedCellDirty) {
+        this.onMergedCellDirty(
+          parentRow,
+          parentCol,
+          parentRow + parentCell.rowSpan - 1,
+          parentCol + parentCell.colSpan - 1
+        );
+      }
+      return;
+    }
+
+    // 如果是合并父单元格（rowSpan > 1 或 colSpan > 1），通知整个合并区域
+    if (cell.rowSpan > 1 || cell.colSpan > 1) {
+      this.onMergedCellDirty?.(
+        row,
+        col,
+        row + cell.rowSpan - 1,
+        col + cell.colSpan - 1
+      );
+      return;
+    }
+
+    // 普通单元格，通知单个单元格脏区域
+    this.onCellDirty?.(row, col);
+  }
+
+  /**
+   * 收集公式依赖的单元格数据
+   * 解析公式中引用的单元格，将其当前值打包为 "row-col" → content 的映射
+   * 供 Worker 线程在隔离环境中求值使用
+   *
+   * @param formula - 公式字符串（含 = 前缀）
+   * @param _row - 公式所在行（保留参数，未来可用于相对引用）
+   * @param _col - 公式所在列
+   * @returns 依赖单元格数据映射
+   */
+  private collectDependencies(formula: string, _row: number, _col: number): Record<string, string> {
+    const dependencies: Record<string, string> = {};
+
+    // 匹配公式中的单元格引用（如 A1, B2, AA100）和范围引用（如 A1:B10）
+    const cellRefPattern = /\$?([A-Z]+)\$?(\d+)/gi;
+    let match: RegExpExecArray | null;
+
+    // 收集所有引用的单元格坐标
+    const referencedCells: Array<{ row: number; col: number }> = [];
+
+    // 检查是否有范围引用（如 A1:B10）
+    const rangePattern = /\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)/gi;
+    let rangeMatch: RegExpExecArray | null;
+
+    while ((rangeMatch = rangePattern.exec(formula)) !== null) {
+      const startCol = this.colLetterToIndex(rangeMatch[1]);
+      const startRow = parseInt(rangeMatch[2], 10) - 1;
+      const endCol = this.colLetterToIndex(rangeMatch[3]);
+      const endRow = parseInt(rangeMatch[4], 10) - 1;
+
+      for (let r = startRow; r <= endRow; r++) {
+        for (let c = startCol; c <= endCol; c++) {
+          referencedCells.push({ row: r, col: c });
+        }
+      }
+    }
+
+    // 收集单独的单元格引用（排除已被范围引用覆盖的）
+    while ((match = cellRefPattern.exec(formula)) !== null) {
+      const col = this.colLetterToIndex(match[1]);
+      const row = parseInt(match[2], 10) - 1;
+      referencedCells.push({ row, col });
+    }
+
+    // 去重并收集数据
+    const seen = new Set<string>();
+    for (const ref of referencedCells) {
+      const key = `${ref.row}-${ref.col}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const cell = this.getCell(ref.row, ref.col);
+      dependencies[key] = cell?.content ?? '';
+    }
+
+    return dependencies;
+  }
+
+  /**
+   * 将列字母转换为列索引（A=0, B=1, ..., Z=25, AA=26, ...）
+   */
+  private colLetterToIndex(letters: string): number {
+    let index = 0;
+    const upper = letters.toUpperCase();
+    for (let i = 0; i < upper.length; i++) {
+      index = index * 26 + (upper.charCodeAt(i) - 64);
+    }
+    return index - 1;
   }
 
   // 获取单元格数据
@@ -157,21 +314,55 @@ export class SpreadsheetModel {
     }
   }
 
-  // 重新计算所有公式单元格
+  // 重新计算所有公式单元格（使用 Worker 批量重算，需求 2.5）
   public recalculateFormulas(): void {
     const rows = this.data.cells.length;
     const cols = this.data.cells[0]?.length ?? 0;
 
+    // 收集所有公式单元格
+    const formulaCells: Array<{ row: number; col: number; formula: string }> = [];
     for (let i = 0; i < rows; i++) {
       for (let j = 0; j < cols; j++) {
         const cell = this.data.cells[i][j];
-        if (cell && this.formulaEngine.isFormula(cell.content)) {
-          this.formulaEngine.clearCellCache(i, j);
-          const result = this.formulaEngine.evaluate(cell.content, i, j);
-          cell.content = result.value.toString();
-          this.notifyFormulaChange(i, j, result.value.toString());
+        if (cell && cell.formulaContent && this.formulaEngine.isFormula(cell.formulaContent)) {
+          formulaCells.push({ row: i, col: j, formula: cell.formulaContent });
         }
       }
+    }
+
+    if (formulaCells.length === 0) return;
+
+    // 将所有公式通过 Worker 批量重算
+    for (const { row, col, formula } of formulaCells) {
+      const cell = this.data.cells[row][col];
+      this.formulaEngine.clearCellCache(row, col);
+
+      // 设置计算中状态
+      cell.isComputing = true;
+
+      const dependencies = this.collectDependencies(formula, row, col);
+      this.workerBridge.enqueueForBatch(formula, row, col, dependencies)
+        .then((computedValue: string) => {
+          const currentCell = this.data.cells[row]?.[col];
+          if (!currentCell) return;
+
+          currentCell.content = computedValue;
+          currentCell.isComputing = false;
+          this.contentCache[`${row}-${col}`] = computedValue;
+          this.notifyFormulaChange(row, col, computedValue);
+          this.notifyCellDirty(row, col);
+        })
+        .catch(() => {
+          // 批量重算中的错误静默处理
+          const currentCell = this.data.cells[row]?.[col];
+          if (!currentCell) return;
+          currentCell.isComputing = false;
+        });
+
+      // 同步求值更新依赖图和临时显示值
+      const result = this.formulaEngine.evaluate(formula, row, col);
+      cell.content = result.value.toString();
+      this.notifyFormulaChange(row, col, result.value.toString());
     }
   }
 
@@ -514,26 +705,72 @@ export class SpreadsheetModel {
         return { success: false };
       }
 
-      const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
+      // 取消该单元格之前正在进行的 Worker 计算任务（需求 2.7）
+      this.workerBridge.cancelTask(targetRow, targetCol);
 
-      // 错误值（#VALUE!, #NUM! 等）也应写入单元格并显示，不阻止写入
-      const displayValue = result.value.toString();
-
+      // 保存公式内容到单元格
       if (cell.isMerged && cell.mergeParent) {
         this.data.cells[targetRow][targetCol].formulaContent = content;
-        this.data.cells[targetRow][targetCol].content = displayValue;
-        this.contentCache[`${targetRow}-${targetCol}`] = displayValue;
       } else {
         cell.formulaContent = content;
-        cell.content = displayValue;
-        this.contentCache[cacheKey] = displayValue;
       }
 
-      this.notifyFormulaChange(targetRow, targetCol, displayValue);
+      // 设置计算中状态，Renderer 显示"计算中..."加载指示符（需求 2.3）
+      targetCell.isComputing = true;
+      this.notifyCellDirty(targetRow, targetCol);
 
-      const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
-      for (const affected of affectedCells) {
-        this.recalculateCell(affected.row, affected.col);
+      // 收集公式依赖的单元格数据，发送到 Worker 线程计算（需求 2.2）
+      const dependencies = this.collectDependencies(content, targetRow, targetCol);
+      this.workerBridge.enqueueForBatch(content, targetRow, targetCol, dependencies)
+        .then((computedValue: string) => {
+          // Worker 返回结果后更新单元格值（需求 2.4）
+          const currentCell = this.data.cells[targetRow]?.[targetCol];
+          if (!currentCell) return;
+
+          // 如果单元格内容已被用户再次编辑（formulaContent 不再匹配），忽略旧结果
+          if (currentCell.formulaContent !== content) return;
+
+          currentCell.content = computedValue;
+          currentCell.isComputing = false;
+          this.contentCache[`${targetRow}-${targetCol}`] = computedValue;
+
+          this.notifyFormulaChange(targetRow, targetCol, computedValue);
+
+          // 触发脏区域重绘
+          this.notifyCellDirty(targetRow, targetCol);
+
+          // 通知图表模型：公式计算完成，数据已更新
+          this.notifyChartDataChange(targetRow, targetCol);
+
+          // 重算依赖该单元格的其他公式
+          const affectedCells = this.formulaEngine.getAffectedCells(targetRow, targetCol);
+          for (const affected of affectedCells) {
+            this.recalculateCell(affected.row, affected.col);
+          }
+        })
+        .catch((error: Error) => {
+          // 任务被取消时忽略错误（用户重新编辑了同一单元格）
+          if (error.message === '任务已取消') return;
+
+          const currentCell = this.data.cells[targetRow]?.[targetCol];
+          if (!currentCell) return;
+
+          currentCell.content = '#ERROR!';
+          currentCell.isComputing = false;
+          this.contentCache[`${targetRow}-${targetCol}`] = '#ERROR!';
+          this.notifyCellDirty(targetRow, targetCol);
+        });
+
+      // 同步更新依赖图（保持依赖关系正确）
+      const result = this.formulaEngine.evaluate(content, targetRow, targetCol);
+      // 使用同步求值结果作为临时显示值（Worker 返回后会覆盖）
+      const tempDisplayValue = result.value.toString();
+      if (cell.isMerged && cell.mergeParent) {
+        this.data.cells[targetRow][targetCol].content = tempDisplayValue;
+        this.contentCache[`${targetRow}-${targetCol}`] = tempDisplayValue;
+      } else {
+        cell.content = tempDisplayValue;
+        this.contentCache[cacheKey] = tempDisplayValue;
       }
     } else {
       // 非公式内容：清除依赖图中该单元格的依赖关系
@@ -580,6 +817,9 @@ export class SpreadsheetModel {
     // 通知图表模型：单元格数据已变更，检查受影响的图表状态
     this.notifyChartDataChange(targetRow, targetCol);
 
+    // 通知脏区域：单元格内容变更，标记需要重绘
+    this.notifyCellDirty(targetRow, targetCol);
+
     return { success: true, validationResult: warningResult };
   }
 
@@ -621,6 +861,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：撤销/重做内容变更，标记需要重绘
+    this.notifyCellDirty(row, col);
   }
 
   // 设置单元格字体颜色
@@ -640,6 +883,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体颜色变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体颜色
@@ -707,6 +953,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量字体颜色变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格字体大小
@@ -726,6 +979,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体大小变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体大小
@@ -793,6 +1049,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量字体大小变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格字体加粗
@@ -812,6 +1075,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体加粗变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体加粗
@@ -898,6 +1164,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体斜体变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体斜体
@@ -971,6 +1240,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量字体斜体变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格字体下划线
@@ -990,6 +1266,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：下划线变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体下划线
@@ -1063,6 +1342,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量下划线变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格字体对齐方式
@@ -1082,6 +1368,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体对齐变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格字体对齐方式
@@ -1149,6 +1438,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量字体对齐变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格垂直对齐方式
@@ -1168,6 +1464,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：垂直对齐变更
+    this.notifyCellDirty(row, col);
   }
 
   // 设置选区范围内所有单元格的垂直对齐方式
@@ -1235,6 +1534,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量垂直对齐变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单元格背景颜色
@@ -1254,6 +1560,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：背景颜色变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格背景颜色
@@ -1321,6 +1630,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量背景颜色变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 设置单个单元格边框（协同远程操作使用）
@@ -1340,6 +1656,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：边框变更
+    this.notifyCellDirty(row, col);
   }
 
   // 设置单个单元格字体族（协同远程操作使用）
@@ -1359,6 +1678,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：字体族变更
+    this.notifyCellDirty(row, col);
   }
 
   // 设置单个单元格删除线（协同远程操作使用）
@@ -1378,6 +1700,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：删除线变更
+    this.notifyCellDirty(row, col);
   }
 
   // 批量设置单元格边框
@@ -1565,6 +1890,13 @@ export class SpreadsheetModel {
         break;
       }
     }
+
+    // 通知脏区域：批量边框变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 批量设置单元格字体族
@@ -1636,6 +1968,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量字体族变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 批量设置单元格删除线
@@ -1707,6 +2046,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量删除线变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 合并单元格 - 简化版本，专注解决扩展合并问题
@@ -1804,6 +2150,9 @@ export class SpreadsheetModel {
     this.clearAllCache();
     this.isDirty = true;
 
+    // 通知脏区域：合并单元格变更，标记整个合并区域
+    this.onMergedCellDirty?.(startRow, startCol, endRow, endCol);
+
     console.log(`合并成功: (${startRow},${startCol}) 到 (${endRow},${endCol}), 内容: "${content}"`);
     return true;
   }
@@ -1890,6 +2239,9 @@ export class SpreadsheetModel {
       undoData: { cells: originalCells }
     });
 
+    // 通知脏区域：拆分单元格变更，标记原合并区域
+    this.onMergedCellDirty?.(parentRow, parentCol, endRow, endCol);
+
     // 返回拆分成功
     return true;
   }
@@ -1923,6 +2275,8 @@ export class SpreadsheetModel {
         });
       }
       this.data.rowHeights[row] = height;
+      // 同步更新前缀和索引
+      this.rowPrefixSumIndex.update(row, height);
     }
   }
 
@@ -1939,6 +2293,8 @@ export class SpreadsheetModel {
         });
       }
       this.data.colWidths[col] = width;
+      // 同步更新前缀和索引
+      this.colPrefixSumIndex.update(col, width);
     }
   }
 
@@ -1996,6 +2352,9 @@ export class SpreadsheetModel {
     this.data.cells.splice(rowIndex, 0, ...newRows);
     this.data.rowHeights.splice(rowIndex, 0, ...newHeights);
 
+    // 同步更新前缀和索引
+    this.rowPrefixSumIndex.insert(rowIndex, count, DEFAULT_ROW_HEIGHT);
+
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterInsertRows(rowIndex, count);
 
@@ -2030,6 +2389,9 @@ export class SpreadsheetModel {
     // 删除行
     this.data.cells.splice(rowIndex, actualCount);
     this.data.rowHeights.splice(rowIndex, actualCount);
+
+    // 同步更新前缀和索引
+    this.rowPrefixSumIndex.remove(rowIndex, actualCount);
 
     // 更新合并单元格的引用
     this.updateMergeReferencesAfterDeleteRows(rowIndex, actualCount);
@@ -2077,6 +2439,9 @@ export class SpreadsheetModel {
     // 在 colWidths 中插入 count 个默认列宽
     const newWidths = Array(count).fill(DEFAULT_COL_WIDTH);
     this.data.colWidths.splice(colIndex, 0, ...newWidths);
+
+    // 同步更新前缀和索引
+    this.colPrefixSumIndex.insert(colIndex, count, DEFAULT_COL_WIDTH);
 
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterInsertCols(colIndex, count);
@@ -2143,6 +2508,9 @@ export class SpreadsheetModel {
     // 从 colWidths 中删除对应条目
     this.data.colWidths.splice(colIndex, actualCount);
 
+    // 同步更新前缀和索引
+    this.colPrefixSumIndex.remove(colIndex, actualCount);
+
     // 更新合并/拆分单元格引用
     this.updateMergeReferencesAfterDeleteCols(colIndex, actualCount);
 
@@ -2168,6 +2536,8 @@ export class SpreadsheetModel {
     for (const idx of indices) {
       this.hiddenRows.add(idx);
     }
+    // 隐藏状态变更，重建前缀和索引
+    this.rowPrefixSumIndex.rebuild();
   }
 
   /** 隐藏指定列 */
@@ -2175,6 +2545,8 @@ export class SpreadsheetModel {
     for (const idx of indices) {
       this.hiddenCols.add(idx);
     }
+    // 隐藏状态变更，重建前缀和索引
+    this.colPrefixSumIndex.rebuild();
   }
 
   /** 取消隐藏指定行 */
@@ -2182,6 +2554,8 @@ export class SpreadsheetModel {
     for (const idx of indices) {
       this.hiddenRows.delete(idx);
     }
+    // 隐藏状态变更，重建前缀和索引
+    this.rowPrefixSumIndex.rebuild();
   }
 
   /** 取消隐藏指定列 */
@@ -2189,6 +2563,8 @@ export class SpreadsheetModel {
     for (const idx of indices) {
       this.hiddenCols.delete(idx);
     }
+    // 隐藏状态变更，重建前缀和索引
+    this.colPrefixSumIndex.rebuild();
   }
 
   /** 判断行是否隐藏 */
@@ -2282,6 +2658,11 @@ export class SpreadsheetModel {
       this.data.rowHeights.splice(idx, 1);
     }
 
+    // 同步更新前缀和索引（逆序逐个删除）
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      this.rowPrefixSumIndex.remove(uniqueIndices[i], 1);
+    }
+
     // 记录历史（作为单个操作）
     this.historyManager.record({
       type: 'batchDeleteRows',
@@ -2337,6 +2718,11 @@ export class SpreadsheetModel {
         row.splice(idx, 1);
       }
       this.data.colWidths.splice(idx, 1);
+    }
+
+    // 同步更新前缀和索引（逆序逐个删除）
+    for (let i = uniqueIndices.length - 1; i >= 0; i--) {
+      this.colPrefixSumIndex.remove(uniqueIndices[i], 1);
     }
 
     // 记录历史（作为单个操作）
@@ -2475,6 +2861,10 @@ export class SpreadsheetModel {
         };
       }
     }
+
+    // 同步更新前缀和索引：在末尾插入新行
+    const addedCount = newRowCount - currentRowCount;
+    this.rowPrefixSumIndex.insert(currentRowCount, addedCount, DEFAULT_ROW_HEIGHT);
   }
 
   // 动态扩展列数
@@ -2505,78 +2895,40 @@ export class SpreadsheetModel {
         };
       }
     }
+
+    // 同步更新前缀和索引：在末尾插入新列
+    const addedCount = newColCount - currentColCount;
+    this.colPrefixSumIndex.insert(currentColCount, addedCount, DEFAULT_COL_WIDTH);
   }
 
-  // 获取总内容高度（用于滚动计算）
+  // 获取总内容高度（用于滚动计算）- 委托给前缀和索引 O(1)
   public getTotalHeight(): number {
-    let total = 0;
-    for (let i = 0; i < this.data.rowHeights.length; i++) {
-      // 跳过隐藏行
-      if (this.hiddenRows.has(i)) continue;
-      total += this.data.rowHeights[i];
-    }
-    return total;
+    return this.rowPrefixSumIndex.getTotalSize();
   }
 
-  // 获取总内容宽度（用于滚动计算）
+  // 获取总内容宽度（用于滚动计算）- 委托给前缀和索引 O(1)
   public getTotalWidth(): number {
-    let total = 0;
-    for (let i = 0; i < this.data.colWidths.length; i++) {
-      // 跳过隐藏列
-      if (this.hiddenCols.has(i)) continue;
-      total += this.data.colWidths[i];
-    }
-    return total;
+    return this.colPrefixSumIndex.getTotalSize();
   }
 
-  // 根据Y坐标获取行索引
+  // 根据Y坐标获取行索引 - 委托给前缀和索引 O(log n)
   public getRowAtY(y: number): number {
-    let currentY = 0;
-    for (let i = 0; i < this.getRowCount(); i++) {
-      // 跳过隐藏行
-      if (this.hiddenRows.has(i)) continue;
-      currentY += this.data.rowHeights[i];
-      if (currentY > y) {
-        return i;
-      }
-    }
-    return this.getRowCount() - 1;
+    return this.rowPrefixSumIndex.getIndexAtOffset(y);
   }
 
-  // 根据X坐标获取列索引
+  // 根据X坐标获取列索引 - 委托给前缀和索引 O(log n)
   public getColAtX(x: number): number {
-    let currentX = 0;
-    for (let i = 0; i < this.getColCount(); i++) {
-      // 跳过隐藏列
-      if (this.hiddenCols.has(i)) continue;
-      currentX += this.data.colWidths[i];
-      if (currentX > x) {
-        return i;
-      }
-    }
-    return this.getColCount() - 1;
+    return this.colPrefixSumIndex.getIndexAtOffset(x);
   }
 
-  // 获取行的Y坐标
+  // 获取行的Y坐标 - 委托给前缀和索引 O(1)
   public getRowY(row: number): number {
-    let y = 0;
-    for (let i = 0; i < row && i < this.getRowCount(); i++) {
-      // 跳过隐藏行
-      if (this.hiddenRows.has(i)) continue;
-      y += this.data.rowHeights[i];
-    }
-    return y;
+    return this.rowPrefixSumIndex.getOffsetAtIndex(row);
   }
 
-  // 获取列的X坐标
+  // 获取列的X坐标 - 委托给前缀和索引 O(1)
   public getColX(col: number): number {
-    let x = 0;
-    for (let i = 0; i < col && i < this.getColCount(); i++) {
-      // 跳过隐藏列
-      if (this.hiddenCols.has(i)) continue;
-      x += this.data.colWidths[i];
-    }
-    return x;
+    return this.colPrefixSumIndex.getOffsetAtIndex(col);
   }
 
   // 验证位置是否有效
@@ -2733,6 +3085,9 @@ export class SpreadsheetModel {
       rowHeights: source.rowHeights,
       colWidths: source.colWidths,
     };
+    // 重建前缀和索引（数据源完全替换）
+    this.rowPrefixSumIndex = new PrefixSumIndex(this.data.rowHeights, this.hiddenRows);
+    this.colPrefixSumIndex = new PrefixSumIndex(this.data.colWidths, this.hiddenCols);
     this.clearAllCache();
     this.isDirty = false;
   }
@@ -3280,6 +3635,10 @@ export class SpreadsheetModel {
       this.clearAllCache();
       this.isDirty = false;
 
+      // 重建前缀和索引（数据完全重新导入）
+      this.rowPrefixSumIndex = new PrefixSumIndex(this.data.rowHeights, this.hiddenRows);
+      this.colPrefixSumIndex = new PrefixSumIndex(this.data.colWidths, this.hiddenCols);
+
       return true;
     } catch (error) {
       console.error('导入JSON数据失败:', error);
@@ -3788,11 +4147,16 @@ export class SpreadsheetModel {
           if (data.rowsToInsert && data.heightsToInsert) {
             this.data.cells.splice(data.rowIndex, 0, ...data.rowsToInsert);
             this.data.rowHeights.splice(data.rowIndex, 0, ...data.heightsToInsert);
+            // 同步前缀和索引
+            this.rowPrefixSumIndex.insert(data.rowIndex, data.heightsToInsert.length, DEFAULT_ROW_HEIGHT);
+            this.rowPrefixSumIndex.rebuild();
           } else {
             const actualCount = Math.min(data.count, this.getRowCount() - data.rowIndex);
             if (actualCount > 0) {
               this.data.cells.splice(data.rowIndex, actualCount);
               this.data.rowHeights.splice(data.rowIndex, actualCount);
+              // 同步前缀和索引
+              this.rowPrefixSumIndex.remove(data.rowIndex, actualCount);
             }
           }
         }
@@ -3801,11 +4165,16 @@ export class SpreadsheetModel {
         if (data.deletedRows && data.deletedHeights) {
           this.data.cells.splice(data.rowIndex, 0, ...data.deletedRows);
           this.data.rowHeights.splice(data.rowIndex, 0, ...data.deletedHeights);
+          // 同步前缀和索引
+          this.rowPrefixSumIndex.insert(data.rowIndex, data.deletedHeights.length, DEFAULT_ROW_HEIGHT);
+          this.rowPrefixSumIndex.rebuild();
         } else if (data.rowIndex !== undefined && data.count !== undefined) {
           const actualCount = Math.min(data.count, this.getRowCount() - data.rowIndex);
           if (actualCount > 0) {
             this.data.cells.splice(data.rowIndex, actualCount);
             this.data.rowHeights.splice(data.rowIndex, actualCount);
+            // 同步前缀和索引
+            this.rowPrefixSumIndex.remove(data.rowIndex, actualCount);
           }
         }
         break;
@@ -3836,6 +4205,8 @@ export class SpreadsheetModel {
         if (data.row !== undefined && data.height !== undefined) {
           if (data.row >= 0 && data.row < this.data.rowHeights.length) {
             this.data.rowHeights[data.row] = data.height;
+            // 同步前缀和索引
+            this.rowPrefixSumIndex.update(data.row, data.height);
           }
         }
         break;
@@ -3843,6 +4214,8 @@ export class SpreadsheetModel {
         if (data.col !== undefined && data.width !== undefined) {
           if (data.col >= 0 && data.col < this.data.colWidths.length) {
             this.data.colWidths[data.col] = data.width;
+            // 同步前缀和索引
+            this.colPrefixSumIndex.update(data.col, data.width);
           }
         }
         break;
@@ -3995,6 +4368,8 @@ export class SpreadsheetModel {
               this.hiddenRows.add(idx);
             }
           }
+          // 隐藏状态变更，重建前缀和索引
+          this.rowPrefixSumIndex.rebuild();
         }
         break;
       case 'hideCols':
@@ -4006,6 +4381,8 @@ export class SpreadsheetModel {
               this.hiddenCols.add(idx);
             }
           }
+          // 隐藏状态变更，重建前缀和索引
+          this.colPrefixSumIndex.rebuild();
         }
         break;
       case 'unhideRows':
@@ -4018,6 +4395,8 @@ export class SpreadsheetModel {
               this.hiddenRows.add(idx);
             }
           }
+          // 隐藏状态变更，重建前缀和索引
+          this.rowPrefixSumIndex.rebuild();
         }
         break;
       case 'unhideCols':
@@ -4029,6 +4408,8 @@ export class SpreadsheetModel {
               this.hiddenCols.add(idx);
             }
           }
+          // 隐藏状态变更，重建前缀和索引
+          this.colPrefixSumIndex.rebuild();
         }
         break;
       case 'freeze':
@@ -4171,6 +4552,8 @@ export class SpreadsheetModel {
             this.data.cells.splice(rowData.index, 0, rowData.cells);
             this.data.rowHeights.splice(rowData.index, 0, rowData.height);
           }
+          // 重建前缀和索引
+          this.rowPrefixSumIndex = new PrefixSumIndex(this.data.rowHeights, this.hiddenRows);
           this.clearAllCache();
         } else if (data.indices && Array.isArray(data.indices)) {
           // 重做：逆序删除
@@ -4181,6 +4564,8 @@ export class SpreadsheetModel {
               this.data.rowHeights.splice(idx, 1);
             }
           }
+          // 重建前缀和索引
+          this.rowPrefixSumIndex = new PrefixSumIndex(this.data.rowHeights, this.hiddenRows);
           this.clearAllCache();
         }
         break;
@@ -4198,6 +4583,8 @@ export class SpreadsheetModel {
             }
             this.data.colWidths.splice(colData.index, 0, colData.width);
           }
+          // 重建前缀和索引
+          this.colPrefixSumIndex = new PrefixSumIndex(this.data.colWidths, this.hiddenCols);
           this.clearAllCache();
         } else if (data.indices && Array.isArray(data.indices)) {
           // 重做：逆序删除
@@ -4212,6 +4599,8 @@ export class SpreadsheetModel {
               this.data.colWidths.splice(idx, 1);
             }
           }
+          // 重建前缀和索引
+          this.colPrefixSumIndex = new PrefixSumIndex(this.data.colWidths, this.hiddenCols);
           this.clearAllCache();
         }
         break;
@@ -4449,6 +4838,9 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：格式变更
+    this.notifyCellDirty(row, col);
   }
 
   // 设置区域格式
@@ -4536,6 +4928,13 @@ export class SpreadsheetModel {
     }
 
     this.isDirty = true;
+
+    // 通知脏区域：批量格式变更
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        this.notifyCellDirty(i, j);
+      }
+    }
   }
 
   // 清除单元格格式（恢复为常规）

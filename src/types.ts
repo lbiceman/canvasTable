@@ -197,6 +197,9 @@ export interface Cell {
 
   // === 单元格内嵌图片 ===
   embeddedImage?: EmbeddedImage;   // 内嵌图片数据
+
+  // === Worker 公式计算状态 ===
+  isComputing?: boolean;           // 公式正在 Worker 中计算
 }
 
 // 表格数据结构

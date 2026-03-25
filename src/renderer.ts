@@ -11,6 +11,9 @@ import type { ChartOverlay } from './chart/chart-overlay';
 import type { SortFilterModel } from './sort-filter/sort-filter-model';
 import { ColumnHeaderIndicator } from './sort-filter/column-header-indicator';
 import type { ReorderDragState } from './row-col-reorder';
+import { DPRManager } from './dpr-manager';
+import { DirtyRegionTracker } from './dirty-region-tracker';
+import type { DirtyRect } from './dirty-region-tracker';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -92,8 +95,17 @@ export class SpreadsheetRenderer {
   // 滚动相关回调
   private onScrollChange?: (scrollX: number, scrollY: number, maxScrollX: number, maxScrollY: number) => void;
 
+  // 惯性滚动跳帧：requestAnimationFrame ID，用于合并连续滚动渲染
+  private scrollRafId: number | null = null;
+
   // 单元格内容字体大小（独立于标题字体大小）
   private cellFontSize: number;
+
+  // 高 DPI 适配管理器
+  private dprManager: DPRManager;
+
+  // 脏区域追踪器（增量渲染）
+  private dirtyTracker: DirtyRegionTracker;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -118,11 +130,24 @@ export class SpreadsheetRenderer {
       scrollY: 0
     };
 
-    // 设置画布大小
+    // 设置画布 CSS 尺寸
     this.canvasWidth = window.innerWidth;
     this.canvasHeight = window.innerHeight - (config.headerHeight + 76 + 24);
-    this.canvas.width = this.canvasWidth;
-    this.canvas.height = this.canvasHeight;
+
+    // 初始化 DPRManager，设置物理像素尺寸和 DPR 缩放
+    this.dprManager = new DPRManager(this.canvas, this.ctx);
+    this.dprManager.updateSize(this.canvasWidth, this.canvasHeight);
+    this.dprManager.applyScale();
+
+    // 注册 DPR 变化回调，DPR 变化时重新计算 Canvas 尺寸并全量重绘
+    this.dprManager.onDPRChanged(() => {
+      this.dprManager.updateSize(this.canvasWidth, this.canvasHeight);
+      this.dprManager.applyScale();
+      this.render();
+    });
+
+    // 初始化脏区域追踪器（增量渲染）
+    this.dirtyTracker = new DirtyRegionTracker(this.canvasWidth, this.canvasHeight);
 
     // 计算初始视口范围
     this.updateViewport();
@@ -169,6 +194,9 @@ export class SpreadsheetRenderer {
   public scrollTo(scrollX: number, scrollY: number): void {
     const { headerWidth, headerHeight } = this.config;
 
+    // 标记滚动状态，滚动时强制全量重绘
+    this.dirtyTracker.setScrolling(true);
+
     // 计算最大滚动范围
     const totalWidth = this.model.getTotalWidth();
     const totalHeight = this.model.getTotalHeight();
@@ -187,8 +215,8 @@ export class SpreadsheetRenderer {
       this.onScrollChange(this.viewport.scrollX, this.viewport.scrollY, maxScrollX, maxScrollY);
     }
 
-    // 重新渲染
-    this.render();
+    // 使用 scheduleRender 合并连续滚动，跳过中间帧仅渲染最终位置
+    this.scheduleRender();
   }
 
   // 滚动指定偏移量
@@ -197,6 +225,21 @@ export class SpreadsheetRenderer {
       this.viewport.scrollX + deltaX,
       this.viewport.scrollY + deltaY
     );
+  }
+
+  /**
+   * 调度渲染：取消之前的 RAF 请求，合并连续滚动仅渲染最终位置。
+   * 快速连续滚动时跳过中间帧，避免渲染积压。
+   */
+  public scheduleRender(): void {
+    // 取消之前的 RAF，确保只渲染最终目标位置
+    if (this.scrollRafId !== null) {
+      cancelAnimationFrame(this.scrollRafId);
+    }
+    this.scrollRafId = requestAnimationFrame(() => {
+      this.scrollRafId = null;
+      this.render();
+    });
   }
 
   // 更新视口范围
@@ -282,12 +325,69 @@ export class SpreadsheetRenderer {
 
   // 渲染表格
   public render(): void {
-    // 清除画布
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // 帧时间监控：记录渲染开始时间
+    const startTime = performance.now();
+
+    // 增量渲染判断：非滚动场景下，如果有脏区域且不需要全量重绘，使用增量重绘
+    const dirtyRects = this.dirtyTracker.flush();
+    const needsFullRedraw = this.dirtyTracker.shouldFullRedraw() || dirtyRects.length === 0;
+
+    if (!needsFullRedraw && dirtyRects.length > 0) {
+      // 增量重绘：仅重绘脏区域
+      this.renderDirtyRegions(dirtyRects);
+    } else {
+      // 全量重绘
+      this.renderFull();
+    }
+
+    // 重置滚动状态
+    this.dirtyTracker.setScrolling(false);
+
+    // 帧时间监控：检测是否超过 16ms 阈值
+    const frameTime = performance.now() - startTime;
+    if (frameTime > 16) {
+      const { startRow, endRow, startCol, endCol } = this.viewport;
+      console.warn(
+        `[性能警告] 帧渲染耗时 ${frameTime.toFixed(2)}ms（超过 16ms），` +
+        `视口范围：行 ${startRow}-${endRow}，列 ${startCol}-${endCol}`
+      );
+    }
+  }
+
+  /**
+   * 增量重绘：仅重绘指定的脏区域
+   * 对每个脏区域使用 ctx.save()/ctx.clip()/ctx.restore() 限制绘制范围，
+   * 然后执行完整的渲染流程，Canvas 会自动裁剪到脏区域范围内
+   *
+   * 需求：3.1, 3.2, 3.6
+   */
+  private renderDirtyRegions(dirtyRects: DirtyRect[]): void {
+    for (const rect of dirtyRects) {
+      this.ctx.save();
+
+      // 使用 clip() 限制绘制范围到脏区域
+      this.ctx.beginPath();
+      this.ctx.rect(rect.x, rect.y, rect.width, rect.height);
+      this.ctx.clip();
+
+      // 在裁剪区域内执行完整渲染流程
+      this.renderFull();
+
+      this.ctx.restore();
+    }
+  }
+
+  /**
+   * 全量重绘：执行完整的渲染流程
+   * 按固定顺序绘制所有层：背景 → 高亮 → 单元格 → 网格线 → 选区 → 标题
+   */
+  private renderFull(): void {
+    // 清除画布（使用 CSS 尺寸，因为 ctx.scale(dpr, dpr) 已将坐标系映射到 CSS 像素）
+    this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
 
     // 绘制背景
     this.ctx.fillStyle = this.themeColors.background;
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
 
     // 绘制高亮行背景
     this.renderHighlightedRow();
@@ -1508,6 +1608,23 @@ export class SpreadsheetRenderer {
             this.renderDataBar(cfVisuals.dataBar, currentX, currentY, totalWidth, totalHeight);
           }
 
+          // 【Worker 公式计算】检查单元格是否正在计算，显示"计算中..."加载指示符
+          if (rawCell?.isComputing) {
+            const computingFontSize = cellInfo.fontSize || this.cellFontSize;
+            this.ctx.font = `italic ${computingFontSize}px ${fontFamily}`;
+            this.ctx.fillStyle = this.themeColors.gridLine;
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText(
+              '计算中...',
+              currentX + totalWidth / 2,
+              currentY + totalHeight / 2
+            );
+            this.ctx.restore();
+            currentX += colWidth;
+            continue;
+          }
+
           // 确定显示文本：有 format + rawValue 时调用格式化引擎，否则使用 content
           const displayText = this.getFormattedDisplayText(cellInfo);
 
@@ -1966,7 +2083,8 @@ export class SpreadsheetRenderer {
     const { offsetX, offsetY } = this.viewport;
 
     this.ctx.strokeStyle = this.themeColors.gridLine;
-    this.ctx.lineWidth = 1;
+    // 使用 1 物理像素宽度，确保高 DPI 屏幕上网格线清晰锐利
+    this.ctx.lineWidth = this.dprManager.getPhysicalPixel();
 
     // 裁剪区域
     this.ctx.save();
@@ -2804,11 +2922,26 @@ export class SpreadsheetRenderer {
   public resize(width: number, height: number): void {
     this.canvasWidth = width;
     this.canvasHeight = height;
-    this.canvas.width = width;
-    this.canvas.height = height;
+
+    // 通过 DPRManager 同步更新物理像素尺寸和 DPR 缩放
+    this.dprManager.updateSize(this.canvasWidth, this.canvasHeight);
+    this.dprManager.applyScale();
+
+    // 同步更新脏区域追踪器的 Canvas 尺寸
+    this.dirtyTracker.updateCanvasSize(this.canvasWidth, this.canvasHeight);
 
     this.updateViewport();
     this.render();
+  }
+
+  /** 销毁渲染器，释放 DPRManager 等资源 */
+  public dispose(): void {
+    this.dprManager.dispose();
+  }
+
+  /** 获取脏区域追踪器实例，供 Model 层标记脏区域 */
+  public getDirtyTracker(): DirtyRegionTracker {
+    return this.dirtyTracker;
   }
 
   // 获取当前视口信息
