@@ -3204,15 +3204,13 @@ export class SpreadsheetApp {
 
     // 图片层鼠标事件已移除（改为单元格内嵌图片）
 
-    // Ctrl+点击超链接打开
-    if (event.ctrlKey || event.metaKey) {
-      const hlCellPos = this.renderer.getCellAtPosition(x, y);
-      if (hlCellPos) {
-        const hyperlink = this.hyperlinkManager.getHyperlink(hlCellPos.row, hlCellPos.col);
-        if (hyperlink) {
-          this.hyperlinkManager.openHyperlink(hlCellPos.row, hlCellPos.col);
-          return;
-        }
+    // 点击超链接直接打开（无需 Ctrl）
+    const hlCellPos = this.renderer.getCellAtPosition(x, y);
+    if (hlCellPos) {
+      const hyperlink = this.hyperlinkManager.getHyperlink(hlCellPos.row, hlCellPos.col);
+      if (hyperlink) {
+        this.hyperlinkManager.openHyperlink(hlCellPos.row, hlCellPos.col);
+        return;
       }
     }
 
