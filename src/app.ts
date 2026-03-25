@@ -3204,13 +3204,17 @@ export class SpreadsheetApp {
 
     // 图片层鼠标事件已移除（改为单元格内嵌图片）
 
-    // 点击超链接直接打开（无需 Ctrl）
+    // Ctrl+点击超链接打开
     const hlCellPos = this.renderer.getCellAtPosition(x, y);
     if (hlCellPos) {
       const hyperlink = this.hyperlinkManager.getHyperlink(hlCellPos.row, hlCellPos.col);
       if (hyperlink) {
-        this.hyperlinkManager.openHyperlink(hlCellPos.row, hlCellPos.col);
-        return;
+        if (event.ctrlKey || event.metaKey) {
+          this.hyperlinkManager.openHyperlink(hlCellPos.row, hlCellPos.col);
+          return;
+        }
+        // 普通点击时显示 tooltip 提示
+        this.showHyperlinkTooltip(x, y);
       }
     }
 
@@ -6470,6 +6474,53 @@ export class SpreadsheetApp {
   // ============================================================
   // 协同编辑集成
   // ============================================================
+
+  // 超链接 tooltip 元素
+  private hyperlinkTooltip: HTMLDivElement | null = null;
+  private hyperlinkTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * 显示超链接提示 tooltip
+   */
+  private showHyperlinkTooltip(canvasX: number, canvasY: number): void {
+    this.hideHyperlinkTooltip();
+
+    const rect = this.canvas.getBoundingClientRect();
+    const tooltip = document.createElement('div');
+    tooltip.textContent = 'Ctrl + 鼠标左键访问';
+    tooltip.style.cssText = `
+      position: fixed;
+      left: ${rect.left + canvasX + 10}px;
+      top: ${rect.top + canvasY - 30}px;
+      background: #333;
+      color: #fff;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      z-index: 9999;
+      pointer-events: none;
+    `;
+    document.body.appendChild(tooltip);
+    this.hyperlinkTooltip = tooltip;
+
+    // 2 秒后自动隐藏
+    this.hyperlinkTooltipTimer = setTimeout(() => this.hideHyperlinkTooltip(), 2000);
+  }
+
+  /**
+   * 隐藏超链接提示 tooltip
+   */
+  private hideHyperlinkTooltip(): void {
+    if (this.hyperlinkTooltipTimer) {
+      clearTimeout(this.hyperlinkTooltipTimer);
+      this.hyperlinkTooltipTimer = null;
+    }
+    if (this.hyperlinkTooltip) {
+      this.hyperlinkTooltip.remove();
+      this.hyperlinkTooltip = null;
+    }
+  }
 
   /**
    * 插入内嵌图片到指定单元格
