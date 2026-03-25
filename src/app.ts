@@ -4584,7 +4584,7 @@ export class SpreadsheetApp {
     // 点击按钮切换下拉面板
     btn.addEventListener('click', (e: MouseEvent) => {
       e.stopPropagation();
-      dropdown.classList.toggle('visible');
+      dropdown.classList.toggle('show');
     });
 
     // 绑定字体选项点击事件
@@ -4625,7 +4625,7 @@ export class SpreadsheetApp {
         textEl.textContent = (option as HTMLElement).textContent || fontFamily;
 
         // 关闭下拉面板
-        dropdown.classList.remove('visible');
+        dropdown.classList.remove('show');
 
         // 重新渲染
         this.renderer.render();
@@ -4637,7 +4637,7 @@ export class SpreadsheetApp {
 
     // 点击面板外部区域自动关闭下拉面板
     document.addEventListener('click', () => {
-      dropdown.classList.remove('visible');
+      dropdown.classList.remove('show');
     });
   }
 
