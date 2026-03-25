@@ -50,10 +50,6 @@ export type ActionType =
   // 扩展功能操作类型
   | 'setHyperlink'       // 设置/编辑超链接
   | 'removeHyperlink'    // 移除超链接
-  | 'insertImage'        // 插入图片
-  | 'deleteImage'        // 删除图片
-  | 'moveImage'          // 移动图片
-  | 'resizeImage'        // 缩放图片
   | 'formatPainter'      // 格式刷应用
   | 'reorderRows'        // 行重排序
   | 'reorderCols'        // 列重排序

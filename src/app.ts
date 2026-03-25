@@ -23,7 +23,6 @@ import { MultiSelectionManager } from './multi-selection';
 import { FormulaBar } from './formula-bar/formula-bar';
 import { FormulaEngine } from './formula-engine';
 import { HyperlinkManager } from './hyperlink-manager';
-import { ImageManager } from './image-manager';
 import { FormatPainter } from './format-painter';
 import { DropdownSelector } from './dropdown-selector';
 import { RowColReorder } from './row-col-reorder';
@@ -131,7 +130,6 @@ export class SpreadsheetApp {
 
   // 扩展功能模块
   private hyperlinkManager!: HyperlinkManager;
-  private imageManager!: ImageManager;
   private formatPainter!: FormatPainter;
 
   // 内嵌图片拖拽缩放状态
@@ -3204,10 +3202,7 @@ export class SpreadsheetApp {
       }
     }
 
-    // 图片层鼠标事件（浮动图片）
-    if (this.imageManager.handleMouseDown(x, y)) {
-      return; // 图片层处理了事件
-    }
+    // 图片层鼠标事件已移除（改为单元格内嵌图片）
 
     // Ctrl+点击超链接打开
     if (event.ctrlKey || event.metaKey) {
@@ -3647,18 +3642,6 @@ export class SpreadsheetApp {
       }
     }
 
-    // 图片层拖拽（浮动图片）
-    if (this.imageManager.getSelectedImageId()) {
-      this.imageManager.handleMouseMove(x, y);
-      this.renderer.render();
-      const ctx = this.canvas.getContext('2d');
-      if (ctx) {
-        const vp = this.renderer.getViewport();
-        this.imageManager.renderAll(ctx, vp.scrollX, vp.scrollY);
-      }
-      return;
-    }
-
     // 行列拖拽重排序
     if (this.rowColReorder.getDragState()) {
       this.rowColReorder.updateDrag(x, y);
@@ -3856,9 +3839,6 @@ export class SpreadsheetApp {
       }
       return;
     }
-
-    // 图片层鼠标释放（浮动图片）
-    this.imageManager.handleMouseUp();
 
     // 行列拖拽结束
     if (this.rowColReorder.getDragState()) {
@@ -6692,9 +6672,6 @@ export class SpreadsheetApp {
     // 超链接管理器
     this.hyperlinkManager = new HyperlinkManager(this.model, this.renderer, historyManager);
 
-    // 图片管理器
-    this.imageManager = new ImageManager(this.renderer, historyManager);
-
     // 格式刷
     this.formatPainter = new FormatPainter(this.model, historyManager);
 
@@ -6984,9 +6961,6 @@ export class SpreadsheetApp {
 
   /** 获取超链接管理器 */
   public getHyperlinkManager(): HyperlinkManager { return this.hyperlinkManager; }
-
-  /** 获取图片管理器 */
-  public getImageManager(): ImageManager { return this.imageManager; }
 
   /** 获取格式刷 */
   public getFormatPainter(): FormatPainter { return this.formatPainter; }

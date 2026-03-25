@@ -117,18 +117,6 @@ export interface HyperlinkData {
   displayText?: string;            // 显示文本（为空时使用 URL）
 }
 
-// 浮动图片数据
-export interface FloatingImage {
-  id: string;                      // 唯一标识
-  base64Data: string;              // Base64 编码图片数据
-  x: number;                       // 画布 X 坐标
-  y: number;                       // 画布 Y 坐标
-  width: number;                   // 显示宽度
-  height: number;                  // 显示高度
-  originalWidth: number;           // 原始宽度
-  originalHeight: number;          // 原始高度
-}
-
 // 单元格内嵌图片数据
 export interface EmbeddedImage {
   base64Data: string;              // Base64 编码图片数据
@@ -217,7 +205,6 @@ export interface SpreadsheetData {
   rowHeights: number[];
   colWidths: number[];
   charts?: ChartConfig[];          // 图表配置列表
-  images?: FloatingImage[];        // 浮动图片列表
 }
 
 // 视口位置
