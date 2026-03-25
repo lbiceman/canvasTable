@@ -93,11 +93,11 @@
 
 ## 八、单元格边框与样式
 
-- [ ] **单元格边框**：上/下/左/右/全部/外框/内框边框设置
-- [ ] **边框样式**：实线、虚线、点线、双线等
-- [ ] **边框颜色**：自定义边框颜色
-- [ ] **字体选择**：字体族下拉选择（宋体、微软雅黑、Arial 等）
-- [ ] **删除线样式**
+- [x] **单元格边框**：上/下/左/右/全部/外框/内框边框设置
+- [x] **边框样式**：实线、虚线、点线、双线等
+- [x] **边框颜色**：自定义边框颜色
+- [x] **字体选择**：字体族下拉选择（宋体、微软雅黑、Arial 等）
+- [x] **删除线样式**
 
 ---
 
@@ -151,7 +151,7 @@
 |------|--------|
 | Canvas 渲染 | 虚拟滚动、无限扩展行列、行列标题、网格线 |
 | 单元格编辑 | 内联编辑器、内容输入、双击编辑、F2 编辑 |
-| 格式化 | 字体颜色、背景色、字号、加粗、斜体、下划线、水平/垂直对齐 |
+| 格式化 | 字体颜色、背景色、字号、加粗、斜体、下划线、删除线、水平/垂直对齐、字体族选择、单元格边框（8种位置+4种线型+自定义颜色） |
 | 合并单元格 | 合并、拆分、合并区域渲染 |
 | 行列操作 | 插入/删除行列、拖拽调整行高列宽、右键菜单 |
 | 公式 | SUM、SUBTRACT、MULTIPLY、DIVIDE、ABS、ROUND、CEILING、FLOOR、MOD、POWER、SQRT、MAX、MIN、AVERAGE、COUNT、COUNTA、COUNTIF、COUNTIFS、SUMIF、SUMIFS、AVERAGEIF、LEFT、RIGHT、MID、LEN、TRIM、UPPER、LOWER、CONCATENATE、SUBSTITUTE、FIND、SEARCH、TEXT、IF、AND、OR、NOT、IFERROR、IFS、SWITCH、VLOOKUP、HLOOKUP、INDEX、MATCH、OFFSET、INDIRECT、TODAY、NOW、DATE、YEAR、MONTH、DAY、DATEDIF、EDATE、EOMONTH、数组公式、命名范围、循环引用检测、公式栏语法高亮与自动补全 |
