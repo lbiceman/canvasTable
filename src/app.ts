@@ -1,7 +1,7 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
-import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder } from './types';
+import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder, EmbeddedImage } from './types';
 import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
@@ -6385,6 +6385,62 @@ export class SpreadsheetApp {
   // ============================================================
 
   /**
+   * 插入内嵌图片到指定单元格
+   */
+  private insertEmbeddedImage(row: number, col: number): void {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/png,image/jpeg,image/gif,image/webp';
+
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      // 文件大小校验（5MB）
+      if (file.size > 5 * 1024 * 1024) {
+        alert('图片文件大小不能超过 5MB');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Data = reader.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const embeddedImage: EmbeddedImage = {
+            base64Data,
+            originalWidth: img.naturalWidth,
+            originalHeight: img.naturalHeight,
+          };
+
+          // 获取单元格并设置内嵌图片
+          const cell = this.model.getCell(row, col);
+          if (cell) {
+            const oldImage = cell.embeddedImage ? { ...cell.embeddedImage } : undefined;
+            cell.embeddedImage = embeddedImage;
+
+            // 记录历史操作
+            this.model.getHistoryManager().record({
+              type: 'setEmbeddedImage',
+              data: { row, col, image: { ...embeddedImage } },
+              undoData: { row, col, image: oldImage },
+            });
+          }
+
+          this.renderer.render();
+          this.updateUndoRedoButtons();
+        };
+        img.onerror = () => alert('图片读取失败');
+        img.src = base64Data;
+      };
+      reader.onerror = () => alert('图片读取失败');
+      reader.readAsDataURL(file);
+    });
+
+    input.click();
+  }
+
+  /**
    * 设置协同引擎
    * 由 main.ts 在协同模式初始化时调用
    */
@@ -6771,10 +6827,7 @@ export class SpreadsheetApp {
       imageBtn.addEventListener('click', () => {
         const sel = this.multiSelection.getActiveSelection();
         if (sel) {
-          const rect = this.renderer.getCellRect(sel.startRow, sel.startCol);
-          if (rect) {
-            this.imageManager.insertImage(rect.x, rect.y);
-          }
+          this.insertEmbeddedImage(sel.startRow, sel.startCol);
         }
       });
     }

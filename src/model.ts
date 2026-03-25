@@ -4316,6 +4316,12 @@ export class SpreadsheetModel {
           }
         }
         break;
+      case 'setEmbeddedImage':
+        // 撤销/重做内嵌图片
+        if (data.row !== undefined && data.col !== undefined && this.isValidPosition(data.row, data.col)) {
+          this.data.cells[data.row][data.col].embeddedImage = data.image;
+        }
+        break;
     }
     this.isDirty = true;
   }

@@ -62,7 +62,8 @@ export type ActionType =
   // 边框与样式操作
   | 'setBorder'          // 设置单元格边框
   | 'setFontFamily'      // 设置字体族
-  | 'setStrikethrough';  // 设置删除线
+  | 'setStrikethrough'   // 设置删除线
+  | 'setEmbeddedImage';  // 设置单元格内嵌图片
 
 
 // 历史记录项

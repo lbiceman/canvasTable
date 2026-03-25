@@ -1,5 +1,5 @@
 import { SpreadsheetModel } from './model';
-import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment, BorderSide, CellBorder } from './types';
+import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment, BorderSide, CellBorder, EmbeddedImage } from './types';
 import type { RowColumnGroup } from './types';
 import { CursorAwareness } from './collaboration/cursor-awareness';
 import { NumberFormatter, DateFormatter } from './format-engine';
@@ -54,6 +54,9 @@ export class SpreadsheetRenderer {
 
   // 格式刷模式是否激活
   private formatPainterActive: boolean = false;
+
+  // 内嵌图片缓存（base64Data → HTMLImageElement）
+  private embeddedImageCache: Map<string, HTMLImageElement> = new Map();
 
   // 主题颜色
   private themeColors: {
@@ -1683,6 +1686,11 @@ export class SpreadsheetRenderer {
             }
           }
 
+          // 【内嵌图片】绘制单元格内嵌图片
+          if (rawCell?.embeddedImage) {
+            this.renderEmbeddedImage(rawCell.embeddedImage, currentX, currentY, totalWidth, totalHeight);
+          }
+
           this.ctx.restore();
         }
 
@@ -2042,6 +2050,46 @@ export class SpreadsheetRenderer {
     this.ctx.stroke();
 
     this.ctx.restore();
+  }
+
+  /**
+   * 绘制单元格内嵌图片
+   * 图片自适应单元格大小，保持宽高比，居中显示，留 2px 内边距
+   */
+  private renderEmbeddedImage(
+    embeddedImage: EmbeddedImage,
+    cellX: number, cellY: number,
+    cellWidth: number, cellHeight: number
+  ): void {
+    const padding = 2;
+    const availW = cellWidth - padding * 2;
+    const availH = cellHeight - padding * 2;
+    if (availW <= 0 || availH <= 0) return;
+
+    // 从缓存获取或创建 HTMLImageElement
+    let imgEl = this.embeddedImageCache.get(embeddedImage.base64Data);
+    if (!imgEl) {
+      imgEl = new Image();
+      imgEl.src = embeddedImage.base64Data;
+      this.embeddedImageCache.set(embeddedImage.base64Data, imgEl);
+      // 图片加载完成后触发重新渲染
+      imgEl.onload = () => this.render();
+      return; // 首次加载时跳过绘制，等 onload 触发 render
+    }
+
+    if (!imgEl.complete || imgEl.naturalWidth === 0) return;
+
+    // 计算等比缩放尺寸
+    const { originalWidth, originalHeight } = embeddedImage;
+    const scale = Math.min(availW / originalWidth, availH / originalHeight, 1);
+    const drawW = originalWidth * scale;
+    const drawH = originalHeight * scale;
+
+    // 居中
+    const drawX = cellX + padding + (availW - drawW) / 2;
+    const drawY = cellY + padding + (availH - drawH) / 2;
+
+    this.ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
   }
 
   /**

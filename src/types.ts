@@ -129,6 +129,13 @@ export interface FloatingImage {
   originalHeight: number;          // 原始高度
 }
 
+// 单元格内嵌图片数据
+export interface EmbeddedImage {
+  base64Data: string;              // Base64 编码图片数据
+  originalWidth: number;           // 原始宽度
+  originalHeight: number;          // 原始高度
+}
+
 // ============================================================
 // 边框相关类型定义
 // ============================================================
@@ -197,6 +204,9 @@ export interface Cell {
   border?: CellBorder;             // 边框配置
   fontFamily?: string;             // 字体族名称
   fontStrikethrough?: boolean;     // 删除线
+
+  // === 单元格内嵌图片 ===
+  embeddedImage?: EmbeddedImage;   // 内嵌图片数据
 }
 
 // 表格数据结构
