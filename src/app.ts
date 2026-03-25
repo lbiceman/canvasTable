@@ -133,6 +133,15 @@ export class SpreadsheetApp {
   private hyperlinkManager!: HyperlinkManager;
   private imageManager!: ImageManager;
   private formatPainter!: FormatPainter;
+
+  // 内嵌图片拖拽缩放状态
+  private embeddedImageResizing = false;
+  private embeddedImageResizeHandle = '';
+  private embeddedImageResizeStartX = 0;
+  private embeddedImageResizeStartY = 0;
+  private embeddedImageResizeStartW = 0;
+  private embeddedImageResizeStartH = 0;
+
   private dropdownSelector!: DropdownSelector;
   private rowColReorder!: RowColReorder;
   private cellContextMenu!: CellContextMenu;
@@ -3162,7 +3171,40 @@ export class SpreadsheetApp {
       }
     }
 
-    // 图片层鼠标事件
+    // 内嵌图片控制点拖拽检测
+    const embImgHandle = this.renderer.hitTestEmbeddedImageHandle(x, y);
+    if (embImgHandle) {
+      const imgRect = this.renderer.getLastEmbeddedImageRect();
+      if (imgRect) {
+        this.embeddedImageResizing = true;
+        this.embeddedImageResizeHandle = embImgHandle;
+        this.embeddedImageResizeStartX = x;
+        this.embeddedImageResizeStartY = y;
+        this.embeddedImageResizeStartW = imgRect.width;
+        this.embeddedImageResizeStartH = imgRect.height;
+        this.canvas.style.cursor = embImgHandle === 'nw' || embImgHandle === 'se' ? 'nwse-resize' : 'nesw-resize';
+        return;
+      }
+    }
+
+    // 内嵌图片选中检测：点击有图片的单元格时选中图片
+    const cellPos = this.renderer.getCellAtPosition(x, y);
+    if (cellPos) {
+      const cell = this.model.getCell(cellPos.row, cellPos.col);
+      if (cell?.embeddedImage) {
+        this.renderer.setSelectedEmbeddedImageCell({ row: cellPos.row, col: cellPos.col });
+        this.renderer.render();
+        // 不 return，继续正常的单元格选择流程
+      } else {
+        // 点击无图片的单元格，取消图片选中
+        if (this.renderer.getSelectedEmbeddedImageCell()) {
+          this.renderer.setSelectedEmbeddedImageCell(null);
+          this.renderer.render();
+        }
+      }
+    }
+
+    // 图片层鼠标事件（浮动图片）
     if (this.imageManager.handleMouseDown(x, y)) {
       return; // 图片层处理了事件
     }
@@ -3571,7 +3613,41 @@ export class SpreadsheetApp {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
-    // 图片层拖拽
+    // 内嵌图片拖拽缩放
+    if (this.embeddedImageResizing) {
+      const dx = x - this.embeddedImageResizeStartX;
+      // 等比缩放：根据水平方向的拖拽距离计算
+      const aspectRatio = this.embeddedImageResizeStartH / this.embeddedImageResizeStartW;
+      let scaleDx = dx;
+      // 左侧控制点方向相反
+      if (this.embeddedImageResizeHandle === 'nw' || this.embeddedImageResizeHandle === 'sw') {
+        scaleDx = -dx;
+      }
+      const newW = Math.max(20, this.embeddedImageResizeStartW + scaleDx);
+      const newH = Math.max(20, newW * aspectRatio);
+
+      const selectedCell = this.renderer.getSelectedEmbeddedImageCell();
+      if (selectedCell) {
+        const cell = this.model.getCell(selectedCell.row, selectedCell.col);
+        if (cell?.embeddedImage) {
+          cell.embeddedImage.displayWidth = newW;
+          cell.embeddedImage.displayHeight = newH;
+          this.renderer.render();
+        }
+      }
+      return;
+    }
+
+    // 内嵌图片控制点悬停光标
+    if (this.renderer.getSelectedEmbeddedImageCell()) {
+      const handle = this.renderer.hitTestEmbeddedImageHandle(x, y);
+      if (handle) {
+        this.canvas.style.cursor = handle === 'nw' || handle === 'se' ? 'nwse-resize' : 'nesw-resize';
+        return;
+      }
+    }
+
+    // 图片层拖拽（浮动图片）
     if (this.imageManager.getSelectedImageId()) {
       this.imageManager.handleMouseMove(x, y);
       this.renderer.render();
@@ -3748,7 +3824,40 @@ export class SpreadsheetApp {
 
   // 处理鼠标松开事件
   private handleMouseUp(): void {
-    // 图片层鼠标释放
+    // 内嵌图片缩放结束
+    if (this.embeddedImageResizing) {
+      this.embeddedImageResizing = false;
+      this.canvas.style.cursor = '';
+
+      // 记录历史操作
+      const selectedCell = this.renderer.getSelectedEmbeddedImageCell();
+      if (selectedCell) {
+        const cell = this.model.getCell(selectedCell.row, selectedCell.col);
+        if (cell?.embeddedImage) {
+          this.model.getHistoryManager().record({
+            type: 'setEmbeddedImage',
+            data: {
+              row: selectedCell.row,
+              col: selectedCell.col,
+              image: { ...cell.embeddedImage },
+            },
+            undoData: {
+              row: selectedCell.row,
+              col: selectedCell.col,
+              image: {
+                ...cell.embeddedImage,
+                displayWidth: this.embeddedImageResizeStartW,
+                displayHeight: this.embeddedImageResizeStartH,
+              },
+            },
+          });
+          this.updateUndoRedoButtons();
+        }
+      }
+      return;
+    }
+
+    // 图片层鼠标释放（浮动图片）
     this.imageManager.handleMouseUp();
 
     // 行列拖拽结束

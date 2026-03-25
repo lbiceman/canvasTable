@@ -58,6 +58,10 @@ export class SpreadsheetRenderer {
   // 内嵌图片缓存（base64Data → HTMLImageElement）
   private embeddedImageCache: Map<string, HTMLImageElement> = new Map();
 
+  // 内嵌图片选中状态
+  private selectedEmbeddedImageCell: { row: number; col: number } | null = null;
+  private lastEmbeddedImageRect: { x: number; y: number; width: number; height: number; row: number; col: number } | null = null;
+
   // 主题颜色
   private themeColors: {
     background: string;
@@ -352,6 +356,9 @@ export class SpreadsheetRenderer {
 
     // 绘制左上角空白区域
     this.renderCorner();
+
+    // 绘制内嵌图片选中框和控制点（在所有内容之上）
+    this.renderEmbeddedImageHandles();
 
     // 排序筛选激活时，在状态栏显示筛选摘要
     if (this.sortFilterModel && this.sortFilterModel.hasActiveFilters()) {
@@ -2054,7 +2061,8 @@ export class SpreadsheetRenderer {
 
   /**
    * 绘制单元格内嵌图片
-   * 图片自适应单元格大小，保持宽高比，居中显示，留 2px 内边距
+   * 优先使用 displayWidth/displayHeight（用户拖拽缩放后的尺寸），否则自适应单元格大小
+   * 保持宽高比，居中显示，留 2px 内边距
    */
   private renderEmbeddedImage(
     embeddedImage: EmbeddedImage,
@@ -2074,22 +2082,127 @@ export class SpreadsheetRenderer {
       this.embeddedImageCache.set(embeddedImage.base64Data, imgEl);
       // 图片加载完成后触发重新渲染
       imgEl.onload = () => this.render();
-      return; // 首次加载时跳过绘制，等 onload 触发 render
+      return;
     }
 
     if (!imgEl.complete || imgEl.naturalWidth === 0) return;
 
-    // 计算等比缩放尺寸
-    const { originalWidth, originalHeight } = embeddedImage;
-    const scale = Math.min(availW / originalWidth, availH / originalHeight, 1);
-    const drawW = originalWidth * scale;
-    const drawH = originalHeight * scale;
+    // 计算绘制尺寸
+    let drawW: number;
+    let drawH: number;
+    if (embeddedImage.displayWidth && embeddedImage.displayHeight) {
+      // 使用用户自定义尺寸，但不超过单元格可用区域
+      drawW = Math.min(embeddedImage.displayWidth, availW);
+      drawH = Math.min(embeddedImage.displayHeight, availH);
+    } else {
+      // 自适应：等比缩放到单元格内
+      const { originalWidth, originalHeight } = embeddedImage;
+      const scale = Math.min(availW / originalWidth, availH / originalHeight, 1);
+      drawW = originalWidth * scale;
+      drawH = originalHeight * scale;
+    }
 
     // 居中
     const drawX = cellX + padding + (availW - drawW) / 2;
     const drawY = cellY + padding + (availH - drawH) / 2;
 
     this.ctx.drawImage(imgEl, drawX, drawY, drawW, drawH);
+
+    // 如果该单元格是当前选中的图片单元格，绘制选中框和控制点
+    if (this.selectedEmbeddedImageCell) {
+      const { row, col } = this.selectedEmbeddedImageCell;
+      // 需要检查当前绘制的单元格是否是选中的那个
+      // 通过保存最后绘制的图片矩形来实现命中测试
+      this.lastEmbeddedImageRect = { x: drawX, y: drawY, width: drawW, height: drawH, row, col };
+    }
+  }
+
+  /**
+   * 绘制内嵌图片的选中框和控制点（在主渲染流程最后调用）
+   */
+  private renderEmbeddedImageHandles(): void {
+    if (!this.selectedEmbeddedImageCell || !this.lastEmbeddedImageRect) return;
+
+    const { row, col } = this.selectedEmbeddedImageCell;
+    const rect = this.lastEmbeddedImageRect;
+    if (rect.row !== row || rect.col !== col) return;
+
+    const { x, y, width, height } = rect;
+
+    // 绘制选中虚线框
+    this.ctx.save();
+    this.ctx.strokeStyle = '#1a73e8';
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([4, 4]);
+    this.ctx.strokeRect(x, y, width, height);
+    this.ctx.setLineDash([]);
+
+    // 绘制四角控制点（6x6 白色方块 + 蓝色边框）
+    const handleSize = 6;
+    const handles = [
+      { x: x - handleSize / 2, y: y - handleSize / 2 },                           // 左上
+      { x: x + width - handleSize / 2, y: y - handleSize / 2 },                   // 右上
+      { x: x - handleSize / 2, y: y + height - handleSize / 2 },                  // 左下
+      { x: x + width - handleSize / 2, y: y + height - handleSize / 2 },          // 右下
+    ];
+
+    for (const h of handles) {
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.fillRect(h.x, h.y, handleSize, handleSize);
+      this.ctx.strokeStyle = '#1a73e8';
+      this.ctx.lineWidth = 1;
+      this.ctx.strokeRect(h.x, h.y, handleSize, handleSize);
+    }
+
+    this.ctx.restore();
+  }
+
+  /**
+   * 命中测试：检测点击是否在内嵌图片的控制点上
+   * 返回 'nw' | 'ne' | 'sw' | 'se' 表示控制点方向，null 表示未命中
+   */
+  public hitTestEmbeddedImageHandle(canvasX: number, canvasY: number): string | null {
+    if (!this.lastEmbeddedImageRect) return null;
+    const { x, y, width, height } = this.lastEmbeddedImageRect;
+    const handleSize = 8; // 命中区域略大于视觉尺寸
+
+    const corners = [
+      { name: 'nw', cx: x, cy: y },
+      { name: 'ne', cx: x + width, cy: y },
+      { name: 'sw', cx: x, cy: y + height },
+      { name: 'se', cx: x + width, cy: y + height },
+    ];
+
+    for (const c of corners) {
+      if (Math.abs(canvasX - c.cx) <= handleSize && Math.abs(canvasY - c.cy) <= handleSize) {
+        return c.name;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 命中测试：检测点击是否在内嵌图片区域内
+   */
+  public hitTestEmbeddedImage(canvasX: number, canvasY: number): boolean {
+    if (!this.lastEmbeddedImageRect) return false;
+    const { x, y, width, height } = this.lastEmbeddedImageRect;
+    return canvasX >= x && canvasX <= x + width && canvasY >= y && canvasY <= y + height;
+  }
+
+  /** 获取最后绘制的内嵌图片矩形信息 */
+  public getLastEmbeddedImageRect(): { x: number; y: number; width: number; height: number; row: number; col: number } | null {
+    return this.lastEmbeddedImageRect;
+  }
+
+  /** 设置当前选中的内嵌图片单元格 */
+  public setSelectedEmbeddedImageCell(cell: { row: number; col: number } | null): void {
+    this.selectedEmbeddedImageCell = cell;
+  }
+
+  /** 获取当前选中的内嵌图片单元格 */
+  public getSelectedEmbeddedImageCell(): { row: number; col: number } | null {
+    return this.selectedEmbeddedImageCell;
   }
 
   /**

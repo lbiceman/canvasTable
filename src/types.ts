@@ -134,6 +134,8 @@ export interface EmbeddedImage {
   base64Data: string;              // Base64 编码图片数据
   originalWidth: number;           // 原始宽度
   originalHeight: number;          // 原始高度
+  displayWidth?: number;           // 用户自定义显示宽度（拖拽缩放后）
+  displayHeight?: number;          // 用户自定义显示高度（拖拽缩放后）
 }
 
 // ============================================================
