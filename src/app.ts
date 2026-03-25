@@ -1,7 +1,7 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
-import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup } from './types';
+import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder } from './types';
 import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
@@ -141,6 +141,10 @@ export class SpreadsheetApp {
   private scriptEngine!: ScriptEngine;
   private scriptEditor!: ScriptEditor;
   private pluginManager!: PluginManager;
+
+  // 边框选择器当前状态
+  private currentBorderStyle: BorderStyle = 'solid';
+  private currentBorderColor: string = '#000000';
 
   constructor(_containerId: string) {
     // 初始化多工作表管理器（默认创建 Sheet1）
@@ -1755,6 +1759,12 @@ export class SpreadsheetApp {
     // 初始化数字格式下拉菜单
     this.initNumberFormatPicker();
 
+    // 初始化边框选择器
+    this.initBorderPicker();
+
+    // 初始化字体族选择器
+    this.initFontFamilyPicker();
+
     // 初始化垂直对齐选择器
     this.initVerticalAlignPicker();
 
@@ -1777,6 +1787,12 @@ export class SpreadsheetApp {
     const fontUnderlineBtn = document.getElementById('font-underline-btn');
     if (fontUnderlineBtn) {
       fontUnderlineBtn.addEventListener('click', this.handleFontUnderlineChange.bind(this));
+    }
+
+    // 字体删除线按钮事件
+    const fontStrikethroughBtn = document.getElementById('font-strikethrough-btn');
+    if (fontStrikethroughBtn) {
+      fontStrikethroughBtn.addEventListener('click', this.handleFontStrikethroughChange.bind(this));
     }
 
     // 字体对齐按钮事件
@@ -2443,6 +2459,10 @@ export class SpreadsheetApp {
           fontAlign: cell?.fontAlign,
           verticalAlign: cell?.verticalAlign,
           format: cell?.format,
+          // 边框深拷贝，避免引用共享
+          border: cell?.border ? JSON.parse(JSON.stringify(cell.border)) as CellBorder : undefined,
+          fontFamily: cell?.fontFamily,
+          fontStrikethrough: cell?.fontStrikethrough,
         };
         cellRow.push(cellData);
       }
@@ -2523,6 +2543,18 @@ export class SpreadsheetApp {
 
         if (targetRow < this.model.getRowCount() && targetCol < this.model.getColCount()) {
           this.model.setCellContent(targetRow, targetCol, content[i][j]);
+          // 从内部剪贴板应用格式属性（包括边框、字体族、删除线）
+          const srcData = this.internalClipboard?.cells[i]?.[j];
+          if (srcData) {
+            const targetCell = this.model.getCell(targetRow, targetCol);
+            if (targetCell) {
+              if (srcData.border !== undefined) {
+                targetCell.border = JSON.parse(JSON.stringify(srcData.border)) as CellBorder;
+              }
+              if (srcData.fontFamily !== undefined) targetCell.fontFamily = srcData.fontFamily;
+              if (srcData.fontStrikethrough !== undefined) targetCell.fontStrikethrough = srcData.fontStrikethrough;
+            }
+          }
         }
       }
     }
@@ -2683,6 +2715,12 @@ export class SpreadsheetApp {
                 if (srcData.fontAlign !== undefined) targetCell.fontAlign = srcData.fontAlign;
                 if (srcData.verticalAlign !== undefined) targetCell.verticalAlign = srcData.verticalAlign;
                 if (srcData.format !== undefined) targetCell.format = srcData.format;
+                // 粘贴边框、字体族、删除线格式
+                if (srcData.border !== undefined) {
+                  targetCell.border = JSON.parse(JSON.stringify(srcData.border)) as CellBorder;
+                }
+                if (srcData.fontFamily !== undefined) targetCell.fontFamily = srcData.fontFamily;
+                if (srcData.fontStrikethrough !== undefined) targetCell.fontStrikethrough = srcData.fontStrikethrough;
               }
               break;
             }
@@ -2723,6 +2761,12 @@ export class SpreadsheetApp {
                 if (srcData.fontAlign !== undefined) targetCell.fontAlign = srcData.fontAlign;
                 if (srcData.verticalAlign !== undefined) targetCell.verticalAlign = srcData.verticalAlign;
                 if (srcData.format !== undefined) targetCell.format = srcData.format;
+                // 转置粘贴也应用边框、字体族、删除线
+                if (srcData.border !== undefined) {
+                  targetCell.border = JSON.parse(JSON.stringify(srcData.border)) as CellBorder;
+                }
+                if (srcData.fontFamily !== undefined) targetCell.fontFamily = srcData.fontFamily;
+                if (srcData.fontStrikethrough !== undefined) targetCell.fontStrikethrough = srcData.fontStrikethrough;
               }
               break;
             }
@@ -4417,6 +4461,206 @@ export class SpreadsheetApp {
     this.updateUndoRedoButtons();
   }
 
+  // 初始化边框选择器
+  private initBorderPicker(): void {
+    const btn = document.getElementById('border-btn');
+    const dropdown = document.getElementById('border-dropdown');
+    if (!btn || !dropdown) return;
+
+    // 点击按钮切换下拉面板
+    btn.addEventListener('click', (e: MouseEvent) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 绑定八个边框位置选项的点击事件
+    const positionOptions = dropdown.querySelectorAll('.border-position-option');
+    positionOptions.forEach((option) => {
+      option.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+        const position = (option as HTMLElement).dataset.position as BorderPosition | undefined;
+        if (!position) return;
+        this.handleBorderPositionClick(position);
+        // 应用后关闭下拉面板
+        dropdown.classList.remove('visible');
+      });
+    });
+
+    // 绑定线型选择事件
+    const styleOptions = dropdown.querySelectorAll('.border-style-option');
+    styleOptions.forEach((option) => {
+      option.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+        const style = (option as HTMLElement).dataset.style as BorderStyle | undefined;
+        if (!style) return;
+        // 更新当前选中线型
+        this.currentBorderStyle = style;
+        // 更新线型选项激活状态
+        styleOptions.forEach((el) => {
+          (el as HTMLElement).classList.toggle('active', (el as HTMLElement).dataset.style === style);
+        });
+      });
+    });
+
+    // 绑定颜色选择器变更事件
+    const colorInput = document.getElementById('border-color') as HTMLInputElement | null;
+    const colorText = document.getElementById('border-color-text');
+    if (colorInput) {
+      colorInput.addEventListener('input', (e: Event) => {
+        e.stopPropagation();
+        this.currentBorderColor = colorInput.value;
+        if (colorText) {
+          colorText.textContent = colorInput.value;
+        }
+      });
+    }
+
+    // 点击面板外部区域自动关闭下拉面板
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+
+    // 阻止面板内部点击冒泡（防止点击线型/颜色时关闭面板）
+    dropdown.addEventListener('click', (e: MouseEvent) => {
+      // 仅阻止非位置选项的点击冒泡（位置选项需要关闭面板）
+      const target = e.target as HTMLElement;
+      if (!target.closest('.border-position-option')) {
+        e.stopPropagation();
+      }
+    });
+  }
+
+  // 处理边框位置选项点击
+  private handleBorderPositionClick(position: BorderPosition): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    // 构建 BorderSide 对象（清除边框时传 undefined）
+    const borderSide: BorderSide | undefined = position === 'none'
+      ? undefined
+      : { style: this.currentBorderStyle, color: this.currentBorderColor, width: 1 };
+
+    // 遍历所有选区应用边框
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeBorder(startRow, startCol, endRow, endCol, position, borderSide);
+
+      // 协同模式下为每个单元格提交边框操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            const cell = this.model.getCell(r, c);
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'setBorder',
+              row: r,
+              col: c,
+              border: cell?.border,
+            });
+          }
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
+  }
+
+  // 初始化字体族选择器
+  private initFontFamilyPicker(): void {
+    const btn = document.getElementById('font-family-btn');
+    const dropdown = document.getElementById('font-family-dropdown');
+    const textEl = document.getElementById('font-family-text');
+    if (!btn || !dropdown || !textEl) return;
+
+    // 点击按钮切换下拉面板
+    btn.addEventListener('click', (e: MouseEvent) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('visible');
+    });
+
+    // 绑定字体选项点击事件
+    const options = dropdown.querySelectorAll('.font-family-option');
+    options.forEach((option) => {
+      option.addEventListener('click', (e: Event) => {
+        e.stopPropagation();
+        const fontFamily = (option as HTMLElement).dataset.font;
+        if (!fontFamily) return;
+
+        // 遍历所有选区应用字体族
+        const selections = this.multiSelection.getSelections();
+        for (const sel of selections) {
+          const { startRow, startCol, endRow, endCol } = sel;
+          this.model.setRangeFontFamily(startRow, startCol, endRow, endCol, fontFamily);
+
+          // 协同模式下为每个单元格提交字体族操作
+          if (this.isCollaborationMode()) {
+            const minRow = Math.min(startRow, endRow);
+            const maxRow = Math.max(startRow, endRow);
+            const minCol = Math.min(startCol, endCol);
+            const maxCol = Math.max(startCol, endCol);
+            for (let r = minRow; r <= maxRow; r++) {
+              for (let c = minCol; c <= maxCol; c++) {
+                this.submitCollabOperation({
+                  ...this.createBaseOp(),
+                  type: 'setFontFamily',
+                  row: r,
+                  col: c,
+                  fontFamily,
+                });
+              }
+            }
+          }
+        }
+
+        // 更新下拉显示文本
+        textEl.textContent = (option as HTMLElement).textContent || fontFamily;
+
+        // 关闭下拉面板
+        dropdown.classList.remove('visible');
+
+        // 重新渲染
+        this.renderer.render();
+
+        // 更新撤销/重做按钮状态
+        this.updateUndoRedoButtons();
+      });
+    });
+
+    // 点击面板外部区域自动关闭下拉面板
+    document.addEventListener('click', () => {
+      dropdown.classList.remove('visible');
+    });
+  }
+
+  // 更新字体族下拉显示文本
+  private updateFontFamilyUI(fontFamily: string | undefined): void {
+    const textEl = document.getElementById('font-family-text');
+    if (!textEl) return;
+
+    if (fontFamily) {
+      // 查找匹配的选项显示名称
+      const dropdown = document.getElementById('font-family-dropdown');
+      if (dropdown) {
+        const matchOption = dropdown.querySelector(`.font-family-option[data-font="${fontFamily}"]`) as HTMLElement | null;
+        textEl.textContent = matchOption ? (matchOption.textContent || fontFamily) : fontFamily;
+      } else {
+        textEl.textContent = fontFamily;
+      }
+    } else {
+      // 多个不同字体族或未设置时显示默认文本
+      textEl.textContent = '字体';
+    }
+  }
+
   // 处理换行按钮点击
   private handleWrapTextChange(): void {
     const activeSelection = this.multiSelection.getActiveSelection();
@@ -5647,6 +5891,53 @@ export class SpreadsheetApp {
     this.updateUndoRedoButtons();
   }
 
+  // 处理字体删除线变化
+  private handleFontStrikethroughChange(): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) {
+      return;
+    }
+
+    const fontStrikethroughBtn = document.getElementById('font-strikethrough-btn') as HTMLButtonElement;
+    if (!fontStrikethroughBtn) return;
+
+    // 切换删除线状态
+    const isStrikethrough = !fontStrikethroughBtn.classList.contains('active');
+    fontStrikethroughBtn.classList.toggle('active', isStrikethrough);
+
+    // 遍历所有选区应用删除线
+    const selections = this.multiSelection.getSelections();
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+      this.model.setRangeFontStrikethrough(startRow, startCol, endRow, endCol, isStrikethrough);
+
+      // 协同模式下为每个单元格提交删除线操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'setStrikethrough',
+              row: r,
+              col: c,
+              strikethrough: isStrikethrough,
+            });
+          }
+        }
+      }
+    }
+
+    // 重新渲染
+    this.renderer.render();
+
+    // 更新撤销/重做按钮状态
+    this.updateUndoRedoButtons();
+  }
+
   // 处理字体对齐变化
   private handleFontAlignChange(align: 'left' | 'center' | 'right'): void {
     const activeSelection = this.multiSelection.getActiveSelection();
@@ -5904,6 +6195,12 @@ export class SpreadsheetApp {
           fontUnderlineBtn.classList.toggle('active', cellInfo.fontUnderline || false);
         }
 
+        // 更新字体删除线按钮状态
+        const fontStrikethroughBtn = document.getElementById('font-strikethrough-btn');
+        if (fontStrikethroughBtn) {
+          fontStrikethroughBtn.classList.toggle('active', cellInfo.fontStrikethrough || false);
+        }
+
         // 更新字体对齐按钮状态
         const fontAlignLeftBtn = document.getElementById('font-align-left-btn');
         const fontAlignCenterBtn = document.getElementById('font-align-center-btn');
@@ -5925,6 +6222,24 @@ export class SpreadsheetApp {
 
         // 更新换行按钮状态
         this.updateWrapTextUI(cellInfo.wrapText || false);
+
+        // 更新字体族下拉显示（选中单元格时同步显示当前字体族）
+        // 检查选区内是否所有单元格字体族一致
+        const { startRow: selStartRow, startCol: selStartCol, endRow: selEndRow, endCol: selEndCol } = activeSelection;
+        let uniformFontFamily: string | undefined = cellInfo.fontFamily;
+        let fontFamilyConsistent = true;
+        for (let r = selStartRow; r <= selEndRow && fontFamilyConsistent; r++) {
+          for (let c = selStartCol; c <= selEndCol && fontFamilyConsistent; c++) {
+            const cell = this.model.getCell(r, c);
+            const ff = cell?.fontFamily;
+            if (r === selStartRow && c === selStartCol) {
+              uniformFontFamily = ff;
+            } else if (ff !== uniformFontFamily) {
+              fontFamilyConsistent = false;
+            }
+          }
+        }
+        this.updateFontFamilyUI(fontFamilyConsistent ? uniformFontFamily : undefined);
       }
     }
 

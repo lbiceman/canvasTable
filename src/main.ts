@@ -183,6 +183,15 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'verticalAlign':
       targetModel.setCellVerticalAlign(op.row, op.col, op.align);
       break;
+    case 'setBorder':
+      targetModel.setCellBorder(op.row, op.col, op.border);
+      break;
+    case 'setFontFamily':
+      targetModel.setCellFontFamily(op.row, op.col, op.fontFamily);
+      break;
+    case 'setStrikethrough':
+      targetModel.setCellFontStrikethrough(op.row, op.col, op.strikethrough);
+      break;
   }
 };
 

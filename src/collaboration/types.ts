@@ -1,4 +1,4 @@
-import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule, WorkbookData } from '../types';
+import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule, WorkbookData, CellBorder } from '../types';
 
 // ============================================================
 // 操作类型定义
@@ -33,7 +33,10 @@ export type OperationType =
   | 'sheetReorder'
   | 'sheetDuplicate'
   | 'sheetVisibility'
-  | 'sheetTabColor';
+  | 'sheetTabColor'
+  | 'setBorder'
+  | 'setFontFamily'
+  | 'setStrikethrough';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -210,6 +213,30 @@ export interface SetValidationOp extends BaseOperation {
   validation: ValidationRule;
 }
 
+// 设置边框操作
+export interface SetBorderOp extends BaseOperation {
+  type: 'setBorder';
+  row: number;
+  col: number;
+  border: CellBorder | undefined;
+}
+
+// 设置字体族操作
+export interface SetFontFamilyOp extends BaseOperation {
+  type: 'setFontFamily';
+  row: number;
+  col: number;
+  fontFamily: string;
+}
+
+// 设置删除线操作
+export interface SetStrikethroughOp extends BaseOperation {
+  type: 'setStrikethrough';
+  row: number;
+  col: number;
+  strikethrough: boolean;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -233,6 +260,9 @@ export type CollabOperation =
   | SetWrapTextOp
   | SetRichTextOp
   | SetValidationOp
+  | SetBorderOp
+  | SetFontFamilyOp
+  | SetStrikethroughOp
   | SheetAddOp
   | SheetDeleteOp
   | SheetRenameOp

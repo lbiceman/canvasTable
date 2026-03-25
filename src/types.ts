@@ -130,6 +130,31 @@ export interface FloatingImage {
 }
 
 // ============================================================
+// 边框相关类型定义
+// ============================================================
+
+// 边框线型
+export type BorderStyle = 'solid' | 'dashed' | 'dotted' | 'double';
+
+// 边框应用位置
+export type BorderPosition = 'top' | 'bottom' | 'left' | 'right' | 'all' | 'outer' | 'inner' | 'none';
+
+// 单条边框样式
+export interface BorderSide {
+  style: BorderStyle;  // 线型
+  color: string;       // 颜色
+  width: number;       // 宽度（像素）
+}
+
+// 单元格边框配置
+export interface CellBorder {
+  top?: BorderSide;    // 上边框
+  bottom?: BorderSide; // 下边框
+  left?: BorderSide;   // 左边框
+  right?: BorderSide;  // 右边框
+}
+
+// ============================================================
 // 单元格数据结构
 // ============================================================
 
@@ -167,6 +192,11 @@ export interface Cell {
   // === 数组公式相关字段 ===
   isArrayFormula?: boolean;        // 是否为数组公式
   arrayFormulaOrigin?: CellPosition; // 数组公式起始单元格位置
+
+  // === 边框与样式扩展字段 ===
+  border?: CellBorder;             // 边框配置
+  fontFamily?: string;             // 字体族名称
+  fontStrikethrough?: boolean;     // 删除线
 }
 
 // 表格数据结构
@@ -341,6 +371,9 @@ export interface ClipboardCellData {
   fontAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   format?: CellFormat;
+  border?: CellBorder;             // 边框配置
+  fontFamily?: string;             // 字体族名称
+  fontStrikethrough?: boolean;     // 删除线
 }
 
 /** 内部剪贴板数据 */

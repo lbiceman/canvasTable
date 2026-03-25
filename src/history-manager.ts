@@ -58,7 +58,11 @@ export type ActionType =
   | 'reorderRows'        // 行重排序
   | 'reorderCols'        // 列重排序
   | 'clearFormat'        // 清除格式
-  | 'scriptExecution';   // 脚本执行（批量修改）
+  | 'scriptExecution'   // 脚本执行（批量修改）
+  // 边框与样式操作
+  | 'setBorder'          // 设置单元格边框
+  | 'setFontFamily'      // 设置字体族
+  | 'setStrikethrough';  // 设置删除线
 
 
 // 历史记录项

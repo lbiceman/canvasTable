@@ -1,6 +1,6 @@
 import { SpreadsheetModel } from './model';
 import { HistoryManager } from './history-manager';
-import { CellFormat } from './types';
+import { CellFormat, CellBorder } from './types';
 
 // 格式刷模式：关闭 / 单次 / 锁定
 export type FormatPainterMode = 'off' | 'single' | 'locked';
@@ -16,6 +16,9 @@ export interface CopiedFormat {
   fontAlign?: 'left' | 'center' | 'right';
   verticalAlign?: 'top' | 'middle' | 'bottom';
   format?: CellFormat;
+  border?: CellBorder;
+  fontFamily?: string;
+  fontStrikethrough?: boolean;
 }
 
 // 单元格旧格式数据（用于撤销）
@@ -79,6 +82,19 @@ export class FormatPainter {
     if (cell.fontAlign !== undefined) format.fontAlign = cell.fontAlign;
     if (cell.verticalAlign !== undefined) format.verticalAlign = cell.verticalAlign;
     if (cell.format !== undefined) format.format = { ...cell.format };
+    // 提取边框属性（深拷贝每条边）
+    if (cell.border !== undefined) {
+      format.border = {
+        ...(cell.border.top ? { top: { ...cell.border.top } } : {}),
+        ...(cell.border.bottom ? { bottom: { ...cell.border.bottom } } : {}),
+        ...(cell.border.left ? { left: { ...cell.border.left } } : {}),
+        ...(cell.border.right ? { right: { ...cell.border.right } } : {}),
+      };
+    }
+    // 提取字体族属性
+    if (cell.fontFamily !== undefined) format.fontFamily = cell.fontFamily;
+    // 提取删除线属性
+    if (cell.fontStrikethrough !== undefined) format.fontStrikethrough = cell.fontStrikethrough;
 
     return format;
   }
@@ -181,5 +197,20 @@ export class FormatPainter {
     cell.fontAlign = format.fontAlign;
     cell.verticalAlign = format.verticalAlign;
     cell.format = format.format ? { ...format.format } : undefined;
+    // 应用边框属性（深拷贝每条边）
+    if (format.border) {
+      cell.border = {
+        ...(format.border.top ? { top: { ...format.border.top } } : {}),
+        ...(format.border.bottom ? { bottom: { ...format.border.bottom } } : {}),
+        ...(format.border.left ? { left: { ...format.border.left } } : {}),
+        ...(format.border.right ? { right: { ...format.border.right } } : {}),
+      };
+    } else {
+      cell.border = undefined;
+    }
+    // 应用字体族属性
+    cell.fontFamily = format.fontFamily;
+    // 应用删除线属性
+    cell.fontStrikethrough = format.fontStrikethrough;
   }
 }

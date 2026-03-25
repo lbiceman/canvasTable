@@ -3420,3 +3420,255 @@ h1 {
   top: 0;
   bottom: 0;
 }
+
+
+/* ============================================================
+   边框操作按钮与下拉面板样式
+   ============================================================ */
+
+/* 边框选择器容器 */
+.border-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.border-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.border-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* 边框下拉面板 */
+.border-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  min-width: 220px;
+  padding: 8px 0;
+}
+
+.border-dropdown.show,
+.border-dropdown.visible {
+  display: block;
+}
+
+/* 边框面板分区 */
+.border-section {
+  padding: 4px 10px;
+}
+
+.border-section + .border-section {
+  border-top: 1px solid var(--theme-grid-line);
+}
+
+.border-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--theme-status-text);
+  margin-bottom: 6px;
+  padding: 2px 0;
+}
+
+/* 边框位置选项网格 */
+.border-position-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.border-position-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 2px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  font-size: 10px;
+  color: var(--theme-foreground);
+}
+
+.border-position-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.border-position-option svg {
+  flex-shrink: 0;
+}
+
+/* 边框线型选项网格 */
+.border-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+}
+
+.border-style-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  font-size: 11px;
+  color: var(--theme-foreground);
+  border: 1px solid transparent;
+}
+
+.border-style-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.border-style-option.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+}
+
+.border-style-option svg {
+  flex-shrink: 0;
+}
+
+/* 边框颜色选择器 */
+.border-color-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.border-color-picker input[type="color"] {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--theme-button-border);
+  border-radius: 4px;
+  padding: 2px;
+  background: var(--theme-background);
+  cursor: pointer;
+}
+
+.border-color-picker input[type="color"]::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.border-color-picker input[type="color"]::-webkit-color-swatch {
+  border: none;
+  border-radius: 2px;
+}
+
+.border-color-picker span {
+  font-size: 12px;
+  color: var(--theme-status-text);
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* ============================================================
+   字体族选择器样式
+   ============================================================ */
+
+/* 字体族选择器容器 */
+.font-family-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.font-family-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 70px;
+}
+
+.font-family-picker button svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+#font-family-text {
+  font-size: 12px;
+}
+
+/* 字体族下拉面板 */
+.font-family-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2000;
+  max-height: 200px;
+  overflow-y: auto;
+  min-width: 140px;
+}
+
+.font-family-dropdown.show {
+  display: block;
+}
+
+/* 字体族选项 */
+.font-family-option {
+  padding: 4px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+  white-space: nowrap;
+  transition: background-color 0.1s ease;
+}
+
+.font-family-option:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-family-option.active {
+  background-color: var(--theme-selection-bg);
+  font-weight: 600;
+}
+
+/* ============================================================
+   删除线按钮样式
+   ============================================================ */
+
+.font-strikethrough-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  background-color: var(--theme-button-bg);
+  border: 1px solid var(--theme-button-border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--theme-button-text);
+  font-size: inherit;
+}
+
+.font-strikethrough-btn:hover {
+  background-color: var(--theme-button-hover-bg);
+}
+
+.font-strikethrough-btn.active {
+  background-color: var(--theme-selection-bg);
+  border-color: var(--theme-selection-border);
+  color: var(--theme-selection-text);
+}

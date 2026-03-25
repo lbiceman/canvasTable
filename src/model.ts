@@ -1,5 +1,5 @@
 import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule, SparklineConfig } from './types';
-import type { RowColumnGroup, FillDirection } from './types';
+import type { RowColumnGroup, FillDirection, BorderPosition, BorderSide, CellBorder } from './types';
 import type { ArrayFormulaInfo } from './formula/types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
@@ -1323,6 +1323,392 @@ export class SpreadsheetModel {
     this.isDirty = true;
   }
 
+  // 设置单个单元格边框（协同远程操作使用）
+  public setCellBorder(row: number, col: number, border: CellBorder | undefined): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的边框
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].border = border;
+    } else {
+      cell.border = border;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置单个单元格字体族（协同远程操作使用）
+  public setCellFontFamily(row: number, col: number, fontFamily: string): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的字体族
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontFamily = fontFamily;
+    } else {
+      cell.fontFamily = fontFamily;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 设置单个单元格删除线（协同远程操作使用）
+  public setCellFontStrikethrough(row: number, col: number, strikethrough: boolean): void {
+    if (!this.isValidPosition(row, col)) {
+      return;
+    }
+
+    const cell = this.data.cells[row][col];
+
+    // 如果是被合并的单元格，则设置合并父单元格的删除线
+    if (cell.isMerged && cell.mergeParent) {
+      const { row: parentRow, col: parentCol } = cell.mergeParent;
+      this.data.cells[parentRow][parentCol].fontStrikethrough = strikethrough;
+    } else {
+      cell.fontStrikethrough = strikethrough;
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格边框
+  public setRangeBorder(
+    startRow: number, startCol: number,
+    endRow: number, endCol: number,
+    position: BorderPosition,
+    borderSide: BorderSide | undefined
+  ): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    // 第一遍：收集旧边框状态用于撤销
+    const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; border: CellBorder | undefined }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          // 跳过被合并的子单元格，记录父单元格
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const parentCell = this.data.cells[parentRow][parentCol];
+            const oldBorder = parentCell.border ? { ...parentCell.border } : undefined;
+            cellsData.push({ row: parentRow, col: parentCol, border: oldBorder });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            const oldBorder = cell.border ? { ...cell.border } : undefined;
+            cellsData.push({ row: i, col: j, border: oldBorder });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    // 记录历史操作
+    this.historyManager.record({
+      type: 'setBorder',
+      data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, position, borderSide },
+      undoData: { cells: cellsData }
+    });
+
+    // 第二遍：应用边框
+    this.applyBorderToRange(minRow, minCol, maxRow, maxCol, position, borderSide);
+
+    this.isDirty = true;
+  }
+
+  // 根据位置参数将边框应用到指定区域（内部方法，不记录历史）
+  private applyBorderToRange(
+    minRow: number, minCol: number,
+    maxRow: number, maxCol: number,
+    position: BorderPosition,
+    borderSide: BorderSide | undefined
+  ): void {
+    const processedCells = new Set<string>();
+
+    // 获取目标单元格（处理合并单元格）
+    const getTargetCell = (row: number, col: number): { cell: Cell; row: number; col: number } | null => {
+      const cell = this.data.cells[row][col];
+      if (cell.isMerged && cell.mergeParent) {
+        const { row: parentRow, col: parentCol } = cell.mergeParent;
+        return { cell: this.data.cells[parentRow][parentCol], row: parentRow, col: parentCol };
+      }
+      return { cell, row, col };
+    };
+
+    // 为单元格设置指定方向的边框
+    const setBorderSide = (row: number, col: number, side: 'top' | 'bottom' | 'left' | 'right', value: BorderSide | undefined): void => {
+      const target = getTargetCell(row, col);
+      if (!target) return;
+      const { cell: targetCell } = target;
+
+      if (value) {
+        // 设置边框
+        if (!targetCell.border) {
+          targetCell.border = {};
+        }
+        targetCell.border[side] = { ...value };
+      } else {
+        // 清除指定方向边框
+        if (targetCell.border) {
+          delete targetCell.border[side];
+          // 如果四条边都没了，清除整个 border 对象
+          if (!targetCell.border.top && !targetCell.border.bottom &&
+              !targetCell.border.left && !targetCell.border.right) {
+            targetCell.border = undefined;
+          }
+        }
+      }
+    };
+
+    switch (position) {
+      case 'none': {
+        // 清除区域内所有单元格的边框
+        for (let i = minRow; i <= maxRow; i++) {
+          for (let j = minCol; j <= maxCol; j++) {
+            const target = getTargetCell(i, j);
+            if (!target) continue;
+            const key = `${target.row}-${target.col}`;
+            if (!processedCells.has(key)) {
+              target.cell.border = undefined;
+              processedCells.add(key);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'top':
+      case 'bottom':
+      case 'left':
+      case 'right': {
+        // 单边边框：为区域内每个单元格设置对应方向的单条边框
+        for (let i = minRow; i <= maxRow; i++) {
+          for (let j = minCol; j <= maxCol; j++) {
+            const target = getTargetCell(i, j);
+            if (!target) continue;
+            const key = `${target.row}-${target.col}`;
+            if (!processedCells.has(key)) {
+              setBorderSide(i, j, position, borderSide);
+              processedCells.add(key);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'all': {
+        // 全部边框：为区域内每个单元格设置上/下/左/右四条边框
+        for (let i = minRow; i <= maxRow; i++) {
+          for (let j = minCol; j <= maxCol; j++) {
+            const target = getTargetCell(i, j);
+            if (!target) continue;
+            const key = `${target.row}-${target.col}`;
+            if (!processedCells.has(key)) {
+              setBorderSide(i, j, 'top', borderSide);
+              setBorderSide(i, j, 'bottom', borderSide);
+              setBorderSide(i, j, 'left', borderSide);
+              setBorderSide(i, j, 'right', borderSide);
+              processedCells.add(key);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'outer': {
+        // 外框边框：仅设置区域最外圈对应方向的边框
+        for (let i = minRow; i <= maxRow; i++) {
+          for (let j = minCol; j <= maxCol; j++) {
+            // 顶行设上边框
+            if (i === minRow) setBorderSide(i, j, 'top', borderSide);
+            // 底行设下边框
+            if (i === maxRow) setBorderSide(i, j, 'bottom', borderSide);
+            // 左列设左边框
+            if (j === minCol) setBorderSide(i, j, 'left', borderSide);
+            // 右列设右边框
+            if (j === maxCol) setBorderSide(i, j, 'right', borderSide);
+          }
+        }
+        break;
+      }
+
+      case 'inner': {
+        // 内框边框：仅设置区域内部相邻单元格之间的共享边
+        for (let i = minRow; i <= maxRow; i++) {
+          for (let j = minCol; j <= maxCol; j++) {
+            // 水平内边：非最后一行的单元格设下边框，非第一行的单元格设上边框
+            if (i < maxRow) setBorderSide(i, j, 'bottom', borderSide);
+            if (i > minRow) setBorderSide(i, j, 'top', borderSide);
+            // 垂直内边：非最后一列的单元格设右边框，非第一列的单元格设左边框
+            if (j < maxCol) setBorderSide(i, j, 'right', borderSide);
+            if (j > minCol) setBorderSide(i, j, 'left', borderSide);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // 批量设置单元格字体族
+  public setRangeFontFamily(
+    startRow: number, startCol: number,
+    endRow: number, endCol: number,
+    fontFamily: string
+  ): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    // 第一遍：收集旧字体族状态用于撤销
+    const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; fontFamily: string | undefined }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          // 跳过被合并的子单元格，记录父单元格
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const parentCell = this.data.cells[parentRow][parentCol];
+            cellsData.push({ row: parentRow, col: parentCol, fontFamily: parentCell.fontFamily });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cellsData.push({ row: i, col: j, fontFamily: cell.fontFamily });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    // 记录历史操作
+    this.historyManager.record({
+      type: 'setFontFamily',
+      data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, fontFamily },
+      undoData: { cells: cellsData }
+    });
+
+    // 第二遍：应用字体族
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontFamily = fontFamily;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontFamily = fontFamily;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
+  // 批量设置单元格删除线
+  public setRangeFontStrikethrough(
+    startRow: number, startCol: number,
+    endRow: number, endCol: number,
+    strikethrough: boolean
+  ): void {
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    // 第一遍：收集旧删除线状态用于撤销
+    const processedCells = new Set<string>();
+    const cellsData: { row: number; col: number; strikethrough: boolean | undefined }[] = [];
+
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          // 跳过被合并的子单元格，记录父单元格
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            const parentCell = this.data.cells[parentRow][parentCol];
+            cellsData.push({ row: parentRow, col: parentCol, strikethrough: parentCell.fontStrikethrough });
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cellsData.push({ row: i, col: j, strikethrough: cell.fontStrikethrough });
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    // 记录历史操作
+    this.historyManager.record({
+      type: 'setStrikethrough',
+      data: { startRow: minRow, startCol: minCol, endRow: maxRow, endCol: maxCol, strikethrough },
+      undoData: { cells: cellsData }
+    });
+
+    // 第二遍：应用删除线
+    processedCells.clear();
+    for (let i = minRow; i <= maxRow; i++) {
+      for (let j = minCol; j <= maxCol; j++) {
+        const cell = this.data.cells[i][j];
+
+        if (cell.isMerged && cell.mergeParent) {
+          const { row: parentRow, col: parentCol } = cell.mergeParent;
+          const key = `${parentRow}-${parentCol}`;
+          if (!processedCells.has(key)) {
+            this.data.cells[parentRow][parentCol].fontStrikethrough = strikethrough;
+            processedCells.add(key);
+          }
+        } else {
+          const key = `${i}-${j}`;
+          if (!processedCells.has(key)) {
+            cell.fontStrikethrough = strikethrough;
+            processedCells.add(key);
+          }
+        }
+      }
+    }
+
+    this.isDirty = true;
+  }
+
   // 合并单元格 - 简化版本，专注解决扩展合并问题
   public mergeCells(startRow: number, startCol: number, endRow: number, endCol: number): boolean {
     // 验证范围
@@ -2216,6 +2602,8 @@ export class SpreadsheetModel {
     richText?: RichTextSegment[];
     validation?: ValidationRule;
     sparkline?: SparklineConfig;
+    fontFamily?: string;
+    fontStrikethrough?: boolean;
   } | null {
     if (!this.isValidPosition(row, col)) {
       return null;
@@ -2248,6 +2636,8 @@ export class SpreadsheetModel {
         richText: parentCell.richText,
         validation: parentCell.validation,
         sparkline: parentCell.sparkline,
+        fontFamily: parentCell.fontFamily,
+        fontStrikethrough: parentCell.fontStrikethrough,
       };
     }
 
@@ -2273,6 +2663,8 @@ export class SpreadsheetModel {
       richText: cell.richText,
       validation: cell.validation,
       sparkline: cell.sparkline,
+      fontFamily: cell.fontFamily,
+      fontStrikethrough: cell.fontStrikethrough,
     };
   }
 
@@ -2474,7 +2866,7 @@ export class SpreadsheetModel {
         const cell = this.data.cells[i][j];
 
         // 只保存有内容、合并信息、颜色或数据类型格式化相关字段的单元格
-        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign || cell.formulaContent || cell.dataType || cell.rawValue !== undefined || cell.format || cell.richText || cell.wrapText || cell.validation) {
+        if (cell.content || cell.rowSpan > 1 || cell.colSpan > 1 || cell.isMerged || cell.fontColor || cell.bgColor || cell.fontSize || cell.fontBold || cell.fontItalic || cell.fontUnderline || cell.verticalAlign || cell.formulaContent || cell.dataType || cell.rawValue !== undefined || cell.format || cell.richText || cell.wrapText || cell.validation || cell.border || cell.fontFamily || cell.fontStrikethrough) {
           // 导出数据对象类型，使用 Record 避免 any
           const cellData: Record<string, unknown> = {
             row: i,
@@ -2504,6 +2896,10 @@ export class SpreadsheetModel {
           if (cell.richText) cellData.richText = cell.richText;
           if (cell.wrapText) cellData.wrapText = cell.wrapText;
           if (cell.validation) cellData.validation = cell.validation;
+          // 序列化边框、字体族、删除线属性
+          if (cell.border) cellData.border = cell.border;
+          if (cell.fontFamily) cellData.fontFamily = cell.fontFamily;
+          if (cell.fontStrikethrough) cellData.fontStrikethrough = cell.fontStrikethrough;
 
           exportData.data.cells.push(cellData);
         }
@@ -2806,7 +3202,9 @@ export class SpreadsheetModel {
         data.cells.forEach((cellData: Record<string, unknown>) => {
           const { row, col, content, formulaContent, rowSpan, colSpan, isMerged, mergeParent, fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, verticalAlign,
             // 数据类型与格式化新增字段（旧格式文件中不存在，默认 undefined）
-            dataType, rawValue, format, richText, wrapText, validation
+            dataType, rawValue, format, richText, wrapText, validation,
+            // 边框、字体族、删除线字段（旧格式文件中不存在，默认 undefined）
+            border, fontFamily, fontStrikethrough
           } = cellData;
 
           if (this.isValidPosition(row as number, col as number)) {
@@ -2831,6 +3229,10 @@ export class SpreadsheetModel {
               richText: richText as RichTextSegment[] | undefined,
               wrapText: wrapText as boolean | undefined,
               validation: validation as ValidationRule | undefined,
+              // 反序列化边框、字体族、删除线字段（旧格式文件自动兼容，值为 undefined）
+              border: border as CellBorder | undefined,
+              fontFamily: fontFamily as string | undefined,
+              fontStrikethrough: fontStrikethrough as boolean | undefined,
             };
           }
         });
@@ -3851,6 +4253,65 @@ export class SpreadsheetModel {
           for (const cellData of data.cells) {
             if (this.isValidPosition(cellData.row, cellData.col)) {
               this.setCellContentNoHistory(cellData.row, cellData.col, cellData.content);
+            }
+          }
+        }
+        break;
+      case 'setBorder':
+        // 撤销时使用 cells 数组恢复原始边框，重做时使用范围重新应用
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].border = cellData.border;
+            }
+          }
+        } else if (data.startRow !== undefined && data.position !== undefined) {
+          this.applyBorderToRange(
+            data.startRow, data.startCol, data.endRow, data.endCol,
+            data.position, data.borderSide
+          );
+        }
+        break;
+      case 'setFontFamily':
+        // 撤销时使用 cells 数组恢复原始字体族，重做时使用范围重新应用
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontFamily = cellData.fontFamily;
+            }
+          }
+        } else if (data.startRow !== undefined && data.fontFamily !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontFamily = data.fontFamily;
+              }
+            }
+          }
+        }
+        break;
+      case 'setStrikethrough':
+        // 撤销时使用 cells 数组恢复原始删除线状态，重做时使用范围重新应用
+        if (data.cells && Array.isArray(data.cells)) {
+          for (const cellData of data.cells) {
+            if (this.isValidPosition(cellData.row, cellData.col)) {
+              this.data.cells[cellData.row][cellData.col].fontStrikethrough = cellData.strikethrough;
+            }
+          }
+        } else if (data.startRow !== undefined && data.strikethrough !== undefined) {
+          const minRow = Math.min(data.startRow, data.endRow);
+          const maxRow = Math.max(data.startRow, data.endRow);
+          const minCol = Math.min(data.startCol, data.endCol);
+          const maxCol = Math.max(data.startCol, data.endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              if (this.isValidPosition(r, c)) {
+                this.data.cells[r][c].fontStrikethrough = data.strikethrough;
+              }
             }
           }
         }

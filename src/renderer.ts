@@ -1,5 +1,5 @@
 import { SpreadsheetModel } from './model';
-import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment } from './types';
+import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment, BorderSide, CellBorder } from './types';
 import type { RowColumnGroup } from './types';
 import { CursorAwareness } from './collaboration/cursor-awareness';
 import { NumberFormatter, DateFormatter } from './format-engine';
@@ -294,6 +294,9 @@ export class SpreadsheetRenderer {
     // 绘制网格线
     this.renderGrid();
 
+    // 绘制单元格边框（在网格线之上）
+    this.renderCellBorders();
+
     // 绘制选择区域（多选区或单选区）
     if (this.multiSelections.length > 0) {
       this.renderMultiSelection();
@@ -520,7 +523,9 @@ export class SpreadsheetRenderer {
       let fontStyle = cellInfo.fontItalic ? 'italic ' : '';
       if (cellInfo.formulaContent) fontStyle = 'italic ';
       const fontSize = cellInfo.fontSize || this.cellFontSize;
-      this.ctx.font = `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
+      // 使用单元格自定义字体族，未设置时回退到默认字体族
+      const cellFontFamily = rawCell?.fontFamily || fontFamily;
+      this.ctx.font = `${fontStyle}${fontWeight}${fontSize}px ${cellFontFamily}`;
 
       const effectiveFontColor = cfResult?.fontColor || cellInfo.fontColor || this.themeColors.cellText;
       const align = cellInfo.fontAlign || 'left';
@@ -565,6 +570,18 @@ export class SpreadsheetRenderer {
         this.ctx.stroke();
       }
 
+      // 删除线：在文本垂直中心绘制水平线
+      if (cellInfo.fontStrikethrough) {
+        const textWidth = this.ctx.measureText(displayText).width;
+        const strikethroughY = textY - fontSize / 6;
+        this.ctx.beginPath();
+        this.ctx.moveTo(cellX + cellPadding, strikethroughY);
+        this.ctx.lineTo(cellX + cellPadding + textWidth, strikethroughY);
+        this.ctx.strokeStyle = effectiveFontColor;
+        this.ctx.lineWidth = 1;
+        this.ctx.stroke();
+      }
+
       this.ctx.restore();
 
       // 绘制网格线
@@ -578,6 +595,90 @@ export class SpreadsheetRenderer {
       this.ctx.moveTo(cellX, cellY + rowHeight);
       this.ctx.lineTo(cellX + colWidth, cellY + rowHeight);
       this.ctx.stroke();
+
+      // 绘制单元格自定义边框（在网格线之上）
+      if (rawCell && rawCell.border) {
+        const border = rawCell.border;
+
+        // 辅助方法：绘制单条冻结单元格边框线
+        const drawFrozenBorderLine = (
+          side: BorderSide,
+          x1: number,
+          y1: number,
+          x2: number,
+          y2: number
+        ): void => {
+          this.ctx.strokeStyle = side.color;
+
+          if (side.style === 'double') {
+            // 双线：绘制两条平行线，间距 2px，每条线宽 1px
+            this.ctx.lineWidth = 1;
+            this.ctx.setLineDash([]);
+
+            const isHorizontal = Math.abs(y1 - y2) < 0.5;
+            if (isHorizontal) {
+              // 水平双线：上下各偏移 1px
+              this.ctx.beginPath();
+              this.ctx.moveTo(x1, y1 - 1);
+              this.ctx.lineTo(x2, y2 - 1);
+              this.ctx.stroke();
+
+              this.ctx.beginPath();
+              this.ctx.moveTo(x1, y1 + 1);
+              this.ctx.lineTo(x2, y2 + 1);
+              this.ctx.stroke();
+            } else {
+              // 垂直双线：左右各偏移 1px
+              this.ctx.beginPath();
+              this.ctx.moveTo(x1 - 1, y1);
+              this.ctx.lineTo(x2 - 1, y2);
+              this.ctx.stroke();
+
+              this.ctx.beginPath();
+              this.ctx.moveTo(x1 + 1, y1);
+              this.ctx.lineTo(x2 + 1, y2);
+              this.ctx.stroke();
+            }
+          } else {
+            // 非双线：根据线型设置 setLineDash
+            this.ctx.lineWidth = side.width;
+            switch (side.style) {
+              case 'dashed':
+                this.ctx.setLineDash([6, 3]);
+                break;
+              case 'dotted':
+                this.ctx.setLineDash([2, 2]);
+                break;
+              case 'solid':
+              default:
+                this.ctx.setLineDash([]);
+                break;
+            }
+
+            this.ctx.beginPath();
+            this.ctx.moveTo(x1, y1);
+            this.ctx.lineTo(x2, y2);
+            this.ctx.stroke();
+          }
+        };
+
+        // 按 top → bottom → left → right 顺序绘制边框
+        if (border.top) {
+          drawFrozenBorderLine(border.top, cellX, cellY, cellX + colWidth, cellY);
+        }
+        if (border.bottom) {
+          drawFrozenBorderLine(border.bottom, cellX, cellY + rowHeight, cellX + colWidth, cellY + rowHeight);
+        }
+        if (border.left) {
+          drawFrozenBorderLine(border.left, cellX, cellY, cellX, cellY + rowHeight);
+        }
+        if (border.right) {
+          drawFrozenBorderLine(border.right, cellX + colWidth, cellY, cellX + colWidth, cellY + rowHeight);
+        }
+
+        // 恢复 lineDash 状态
+        this.ctx.setLineDash([]);
+      }
     };
 
     // === 1. 渲染冻结行区域（顶部，水平随滚动，垂直固定） ===
@@ -1360,7 +1461,9 @@ export class SpreadsheetRenderer {
           if (cellInfo.formulaContent) {
             fontStyle = 'italic ';
           }
-          this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${fontFamily}`;
+          // 使用单元格自定义字体族，未设置时回退到默认字体族
+          const cellFontFamily = cellInfo.fontFamily || fontFamily;
+          this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${cellFontFamily}`;
 
           // 记录是否需要绘制下划线
           let needUnderline = cellInfo.fontUnderline;
@@ -1531,6 +1634,17 @@ export class SpreadsheetRenderer {
               this.ctx.beginPath();
               this.ctx.moveTo(currentX + cellPadding + iconOffset, underlineY);
               this.ctx.lineTo(currentX + cellPadding + iconOffset + textWidth, underlineY);
+              this.ctx.strokeStyle = effectiveFontColor;
+              this.ctx.lineWidth = 1;
+              this.ctx.stroke();
+            }
+
+            // 删除线：在文本垂直中心绘制水平线
+            if (cellInfo.fontStrikethrough) {
+              const strikethroughY = textY - fontSize / 6;
+              this.ctx.beginPath();
+              this.ctx.moveTo(currentX + cellPadding + iconOffset, strikethroughY);
+              this.ctx.lineTo(currentX + cellPadding + iconOffset + textWidth, strikethroughY);
               this.ctx.strokeStyle = effectiveFontColor;
               this.ctx.lineWidth = 1;
               this.ctx.stroke();
@@ -1927,6 +2041,214 @@ export class SpreadsheetRenderer {
     this.ctx.lineTo(headerWidth, this.canvasHeight);
     this.ctx.stroke();
 
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制单元格自定义边框
+   * 在网格线之上渲染，遍历视口内可见单元格，按 top → bottom → left → right 顺序绘制
+   * 相邻单元格共享边冲突解决：宽度大者优先；宽度相同时行号/列号较大者优先
+   */
+  private renderCellBorders(): void {
+    const { headerWidth, headerHeight } = this.config;
+    const { offsetX, offsetY } = this.viewport;
+
+    // 裁剪到数据区域，防止绘制到标题区域
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+    this.ctx.clip();
+
+    // 收集视口内所有有边框的单元格及其坐标信息
+    interface BorderCellInfo {
+      row: number;
+      col: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      border: CellBorder;
+    }
+
+    const borderCells: BorderCellInfo[] = [];
+
+    let currentY = headerHeight + offsetY;
+    for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      if (this.model.isRowHidden(row)) continue;
+      const rowHeight = this.model.getRowHeight(row);
+      let currentX = headerWidth + offsetX;
+
+      for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+        if (this.model.isColHidden(col)) continue;
+        const colWidth = this.model.getColWidth(col);
+
+        const cell = this.model.getCell(row, col);
+        if (cell && cell.border) {
+          borderCells.push({
+            row,
+            col,
+            x: currentX,
+            y: currentY,
+            width: colWidth,
+            height: rowHeight,
+            border: cell.border,
+          });
+        }
+
+        currentX += colWidth;
+      }
+      currentY += rowHeight;
+    }
+
+    // 共享边冲突解决：构建边框映射，key 为边的像素坐标标识
+    // 水平边 key: `h_${y}_${x1}_${x2}`，垂直边 key: `v_${x}_${y1}_${y2}`
+    interface ResolvedBorder {
+      side: BorderSide;
+      row: number;
+      col: number;
+    }
+
+    const horizontalEdges = new Map<string, ResolvedBorder>();
+    const verticalEdges = new Map<string, ResolvedBorder>();
+
+    // 判断新边框是否应覆盖已有边框（宽度大者优先；宽度相同时行号/列号较大者优先）
+    const shouldOverride = (
+      existing: ResolvedBorder,
+      newSide: BorderSide,
+      newRow: number,
+      newCol: number,
+      isHorizontal: boolean
+    ): boolean => {
+      if (newSide.width > existing.side.width) return true;
+      if (newSide.width < existing.side.width) return false;
+      // 宽度相同，水平边比较行号，垂直边比较列号
+      if (isHorizontal) return newRow > existing.row;
+      return newCol > existing.col;
+    };
+
+    // 注册边框到映射表
+    for (const info of borderCells) {
+      const { row, col, x, y, width, height, border } = info;
+
+      // 上边框
+      if (border.top) {
+        const key = `h_${Math.round(y)}_${Math.round(x)}_${Math.round(x + width)}`;
+        const existing = horizontalEdges.get(key);
+        if (!existing || shouldOverride(existing, border.top, row, col, true)) {
+          horizontalEdges.set(key, { side: border.top, row, col });
+        }
+      }
+
+      // 下边框
+      if (border.bottom) {
+        const key = `h_${Math.round(y + height)}_${Math.round(x)}_${Math.round(x + width)}`;
+        const existing = horizontalEdges.get(key);
+        if (!existing || shouldOverride(existing, border.bottom, row, col, true)) {
+          horizontalEdges.set(key, { side: border.bottom, row, col });
+        }
+      }
+
+      // 左边框
+      if (border.left) {
+        const key = `v_${Math.round(x)}_${Math.round(y)}_${Math.round(y + height)}`;
+        const existing = verticalEdges.get(key);
+        if (!existing || shouldOverride(existing, border.left, row, col, false)) {
+          verticalEdges.set(key, { side: border.left, row, col });
+        }
+      }
+
+      // 右边框
+      if (border.right) {
+        const key = `v_${Math.round(x + width)}_${Math.round(y)}_${Math.round(y + height)}`;
+        const existing = verticalEdges.get(key);
+        if (!existing || shouldOverride(existing, border.right, row, col, false)) {
+          verticalEdges.set(key, { side: border.right, row, col });
+        }
+      }
+    }
+
+    // 绘制单条边框线的辅助方法
+    const drawBorderLine = (
+      side: BorderSide,
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number
+    ): void => {
+      this.ctx.strokeStyle = side.color;
+
+      if (side.style === 'double') {
+        // 双线：绘制两条平行线，间距 2px，每条线宽 1px
+        this.ctx.lineWidth = 1;
+        this.ctx.setLineDash([]);
+
+        const isHorizontal = Math.abs(y1 - y2) < 0.5;
+        if (isHorizontal) {
+          // 水平双线：上下各偏移 1px
+          this.ctx.beginPath();
+          this.ctx.moveTo(x1, y1 - 1);
+          this.ctx.lineTo(x2, y2 - 1);
+          this.ctx.stroke();
+
+          this.ctx.beginPath();
+          this.ctx.moveTo(x1, y1 + 1);
+          this.ctx.lineTo(x2, y2 + 1);
+          this.ctx.stroke();
+        } else {
+          // 垂直双线：左右各偏移 1px
+          this.ctx.beginPath();
+          this.ctx.moveTo(x1 - 1, y1);
+          this.ctx.lineTo(x2 - 1, y2);
+          this.ctx.stroke();
+
+          this.ctx.beginPath();
+          this.ctx.moveTo(x1 + 1, y1);
+          this.ctx.lineTo(x2 + 1, y2);
+          this.ctx.stroke();
+        }
+      } else {
+        // 非双线：根据线型设置 setLineDash
+        this.ctx.lineWidth = side.width;
+        switch (side.style) {
+          case 'dashed':
+            this.ctx.setLineDash([6, 3]);
+            break;
+          case 'dotted':
+            this.ctx.setLineDash([2, 2]);
+            break;
+          case 'solid':
+          default:
+            this.ctx.setLineDash([]);
+            break;
+        }
+
+        this.ctx.beginPath();
+        this.ctx.moveTo(x1, y1);
+        this.ctx.lineTo(x2, y2);
+        this.ctx.stroke();
+      }
+    };
+
+    // 绘制所有已解决冲突的水平边框
+    for (const [key, resolved] of horizontalEdges) {
+      const parts = key.split('_');
+      const y = parseInt(parts[1], 10);
+      const x1 = parseInt(parts[2], 10);
+      const x2 = parseInt(parts[3], 10);
+      drawBorderLine(resolved.side, x1, y, x2, y);
+    }
+
+    // 绘制所有已解决冲突的垂直边框
+    for (const [key, resolved] of verticalEdges) {
+      const parts = key.split('_');
+      const x = parseInt(parts[1], 10);
+      const y1 = parseInt(parts[2], 10);
+      const y2 = parseInt(parts[3], 10);
+      drawBorderLine(resolved.side, x, y1, x, y2);
+    }
+
+    // 恢复 Canvas 状态（清除 lineDash 和裁剪）
+    this.ctx.setLineDash([]);
     this.ctx.restore();
   }
 
