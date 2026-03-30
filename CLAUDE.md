@@ -33,3 +33,8 @@
 - `/skill newCellFunc` - 使用新增单元格功能skill
 - `/skill formatter` - 使用格式化工具
 - `/skill devTools` - 使用开发调试工具
+
+# 任务完成后
+- 在 .demand/ 目录下创建一个 markdown 文件，格式如：
+  - 文件名：`done-{任务简述}.md`
+  - 内容：完成了什么、产出了哪些文件、下游需要做什么

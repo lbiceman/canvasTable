@@ -2,7 +2,7 @@ import { SpreadsheetApp } from './app';
 import themes from './themes.json';
 import { Modal } from './modal';
 
-export type ThemeType = 'light' | 'dark';
+export type ThemeType = 'light' | 'dark' | 'feishu';
 
 export class UIControls {
   private app: SpreadsheetApp;
@@ -130,6 +130,10 @@ export class UIControls {
     const darkOption = this.createThemeOption('dark', themes.dark.name, true);
     themeOptions.appendChild(darkOption);
 
+    // 飞书风格主题选项
+    const feishuOption = this.createThemeOption('feishu', themes.feishu.name, false);
+    themeOptions.appendChild(feishuOption);
+
     group.appendChild(themeOptions);
     return group;
   }
@@ -150,7 +154,7 @@ export class UIControls {
     label.className = 'ui-theme-label';
 
     const icon = document.createElement('span');
-    icon.textContent = themeKey === 'light' ? '☀️' : '🌙';
+    icon.textContent = themeKey === 'light' ? '☀️' : themeKey === 'feishu' ? '📘' : '🌙';
     icon.className = 'ui-theme-icon';
 
     option.appendChild(radio);
