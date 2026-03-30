@@ -130,7 +130,7 @@ export class UIControls {
     const darkOption = this.createThemeOption('dark', themes.dark.name, true);
     themeOptions.appendChild(darkOption);
 
-    // 飞书风格主题选项
+    // One Pro Dark 主题选项
     const feishuOption = this.createThemeOption('feishu', themes.feishu.name, false);
     themeOptions.appendChild(feishuOption);
 
@@ -154,7 +154,7 @@ export class UIControls {
     label.className = 'ui-theme-label';
 
     const icon = document.createElement('span');
-    icon.textContent = themeKey === 'light' ? '☀️' : themeKey === 'feishu' ? '📘' : '🌙';
+    icon.textContent = themeKey === 'light' ? '☀️' : themeKey === 'feishu' ? '🎨' : '🌙';
     icon.className = 'ui-theme-icon';
 
     option.appendChild(radio);
