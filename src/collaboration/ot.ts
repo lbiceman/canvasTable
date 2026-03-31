@@ -17,6 +17,10 @@ import {
   FontUnderlineOp,
   FontAlignOp,
   VerticalAlignOp,
+  SetBorderOp,
+  SetFontFamilyOp,
+  SetStrikethroughOp,
+  CellBorder,
 } from './types';
 
 // ============================================================
@@ -227,6 +231,33 @@ const transformVerticalAlignVsRowInsert = (
   return result;
 };
 
+const transformSetBorderVsRowInsert = (
+  op: SetBorderOp,
+  insertOp: RowInsertOp
+): SetBorderOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
+const transformSetFontFamilyVsRowInsert = (
+  op: SetFontFamilyOp,
+  insertOp: RowInsertOp
+): SetFontFamilyOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
+const transformSetStrikethroughVsRowInsert = (
+  op: SetStrikethroughOp,
+  insertOp: RowInsertOp
+): SetStrikethroughOp => {
+  const result = cloneOp(op);
+  result.row = adjustRowForInsert(op.row, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs RowDelete 的转换
 // ============================================================
@@ -359,6 +390,39 @@ const transformVerticalAlignVsRowDelete = (
   op: VerticalAlignOp,
   deleteOp: RowDeleteOp
 ): VerticalAlignOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformSetBorderVsRowDelete = (
+  op: SetBorderOp,
+  deleteOp: RowDeleteOp
+): SetBorderOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformSetFontFamilyVsRowDelete = (
+  op: SetFontFamilyOp,
+  deleteOp: RowDeleteOp
+): SetFontFamilyOp | null => {
+  const newRow = adjustRowForDelete(op.row, deleteOp);
+  if (newRow === null) return null;
+  const result = cloneOp(op);
+  result.row = newRow;
+  return result;
+};
+
+const transformSetStrikethroughVsRowDelete = (
+  op: SetStrikethroughOp,
+  deleteOp: RowDeleteOp
+): SetStrikethroughOp | null => {
   const newRow = adjustRowForDelete(op.row, deleteOp);
   if (newRow === null) return null;
   const result = cloneOp(op);
@@ -609,6 +673,33 @@ const transformVerticalAlignVsColInsert = (
   return result;
 };
 
+const transformSetBorderVsColInsert = (
+  op: SetBorderOp,
+  insertOp: ColInsertOp
+): SetBorderOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformSetFontFamilyVsColInsert = (
+  op: SetFontFamilyOp,
+  insertOp: ColInsertOp
+): SetFontFamilyOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
+const transformSetStrikethroughVsColInsert = (
+  op: SetStrikethroughOp,
+  insertOp: ColInsertOp
+): SetStrikethroughOp => {
+  const result = cloneOp(op);
+  result.col = adjustColForInsert(op.col, insertOp);
+  return result;
+};
+
 // ============================================================
 // 具体操作类型 vs ColDelete 的转换
 // ============================================================
@@ -831,6 +922,39 @@ const transformVerticalAlignVsColDelete = (
   return result;
 };
 
+const transformSetBorderVsColDelete = (
+  op: SetBorderOp,
+  deleteOp: ColDeleteOp
+): SetBorderOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformSetFontFamilyVsColDelete = (
+  op: SetFontFamilyOp,
+  deleteOp: ColDeleteOp
+): SetFontFamilyOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
+const transformSetStrikethroughVsColDelete = (
+  op: SetStrikethroughOp,
+  deleteOp: ColDeleteOp
+): SetStrikethroughOp | null => {
+  const newCol = adjustColForDelete(op.col, deleteOp);
+  if (newCol === null) return null;
+  const result = cloneOp(op);
+  result.col = newCol;
+  return result;
+};
+
 // ============================================================
 // CellEdit vs CellEdit 的转换
 // ============================================================
@@ -1025,6 +1149,12 @@ const transformSingle = (
         return transformFontAlignVsColInsert(opA, opB);
       case 'verticalAlign':
         return transformVerticalAlignVsColInsert(opA, opB);
+      case 'setBorder':
+        return transformSetBorderVsColInsert(opA, opB);
+      case 'setFontFamily':
+        return transformSetFontFamilyVsColInsert(opA, opB);
+      case 'setStrikethrough':
+        return transformSetStrikethroughVsColInsert(opA, opB);
     }
   }
 
@@ -1065,6 +1195,12 @@ const transformSingle = (
         return transformFontAlignVsColDelete(opA, opB);
       case 'verticalAlign':
         return transformVerticalAlignVsColDelete(opA, opB);
+      case 'setBorder':
+        return transformSetBorderVsColDelete(opA, opB);
+      case 'setFontFamily':
+        return transformSetFontFamilyVsColDelete(opA, opB);
+      case 'setStrikethrough':
+        return transformSetStrikethroughVsColDelete(opA, opB);
     }
   }
 
@@ -1099,6 +1235,12 @@ const transformSingle = (
         return transformFontAlignVsRowInsert(opA, opB);
       case 'verticalAlign':
         return transformVerticalAlignVsRowInsert(opA, opB);
+      case 'setBorder':
+        return transformSetBorderVsRowInsert(opA, opB);
+      case 'setFontFamily':
+        return transformSetFontFamilyVsRowInsert(opA, opB);
+      case 'setStrikethrough':
+        return transformSetStrikethroughVsRowInsert(opA, opB);
     }
   }
 
@@ -1133,6 +1275,12 @@ const transformSingle = (
         return transformFontAlignVsRowDelete(opA, opB);
       case 'verticalAlign':
         return transformVerticalAlignVsRowDelete(opA, opB);
+      case 'setBorder':
+        return transformSetBorderVsRowDelete(opA, opB);
+      case 'setFontFamily':
+        return transformSetFontFamilyVsRowDelete(opA, opB);
+      case 'setStrikethrough':
+        return transformSetStrikethroughVsRowDelete(opA, opB);
     }
   }
 
@@ -1268,6 +1416,48 @@ const transformSingle = (
         }
         return result;
       }
+      case 'setBorder': {
+        // 如果边框操作在合并范围内，调整到主单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'setFontFamily': {
+        // 如果字体族操作在合并范围内，调整到主单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
+      case 'setStrikethrough': {
+        // 如果删除线操作在合并范围内，调整到主单元格
+        const result = cloneOp(opA);
+        if (
+          opA.row >= opB.startRow &&
+          opA.row <= opB.endRow &&
+          opA.col >= opB.startCol &&
+          opA.col <= opB.endCol
+        ) {
+          result.row = opB.startRow;
+          result.col = opB.startCol;
+        }
+        return result;
+      }
       default:
         return cloneOp(opA);
     }
@@ -1290,6 +1480,9 @@ const transformSingle = (
       case 'fontUnderline':
       case 'fontAlign':
       case 'verticalAlign':
+      case 'setBorder':
+      case 'setFontFamily':
+      case 'setStrikethrough':
         return transformStyleOpVsCellSplit(opA, opB);
       default:
         return cloneOp(opA);
@@ -1305,6 +1498,20 @@ const transformSingle = (
   // ---- opB 是 FontColor / BgColor ----
   if (opB.type === 'fontColor' || opB.type === 'bgColor') {
     // 颜色操作不影响其他操作
+    return cloneOp(opA);
+  }
+
+  // ---- 同类型同单元格冲突消除 ----
+  if (opA.type === 'setBorder' && opB.type === 'setBorder') {
+    if (opA.row === opB.row && opA.col === opB.col) return null;
+    return cloneOp(opA);
+  }
+  if (opA.type === 'setFontFamily' && opB.type === 'setFontFamily') {
+    if (opA.row === opB.row && opA.col === opB.col) return null;
+    return cloneOp(opA);
+  }
+  if (opA.type === 'setStrikethrough' && opB.type === 'setStrikethrough') {
+    if (opA.row === opB.row && opA.col === opB.col) return null;
     return cloneOp(opA);
   }
 
@@ -1359,7 +1566,7 @@ export const transformAgainst = (
  * 避免直接依赖 SpreadsheetModel 类，保持模块解耦。
  */
 export interface ModelReader {
-  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean; fontAlign?: string; verticalAlign?: string } | null;
+  getCell(row: number, col: number): { content: string; rowSpan: number; colSpan: number; fontColor?: string; bgColor?: string; fontSize?: number; fontBold?: boolean; fontItalic?: boolean; fontUnderline?: boolean; fontAlign?: string; verticalAlign?: string; border?: CellBorder; fontFamily?: string; fontStrikethrough?: boolean } | null;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
 }
@@ -1561,6 +1768,36 @@ export const invertOperation = (
       return {
         ...op,
         align: (cell?.verticalAlign as 'top' | 'middle' | 'bottom') ?? 'middle',
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'setBorder': {
+      // 反向操作：恢复原始边框值
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        border: cell?.border ?? undefined,
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'setFontFamily': {
+      // 反向操作：恢复原始字体族
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        fontFamily: cell?.fontFamily ?? '',
+        timestamp: Date.now(),
+      };
+    }
+
+    case 'setStrikethrough': {
+      // 反向操作：恢复原始删除线状态
+      const cell = model.getCell(op.row, op.col);
+      return {
+        ...op,
+        strikethrough: cell?.fontStrikethrough ?? false,
         timestamp: Date.now(),
       };
     }

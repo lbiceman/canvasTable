@@ -32,6 +32,11 @@ public class Cell {
     private List<RichTextSegment> richText;
     private ValidationRule validation;
 
+    // === 边框、字体族、删除线字段 ===
+    private CellBorder border;
+    private String fontFamily;
+    private Boolean fontStrikethrough;
+
     // === 迷你图配置字段 ===
     private SparklineConfigData sparkline;
 
@@ -204,6 +209,30 @@ public class Cell {
         this.validation = validation;
     }
 
+    public CellBorder getBorder() {
+        return border;
+    }
+
+    public void setBorder(CellBorder border) {
+        this.border = border;
+    }
+
+    public String getFontFamily() {
+        return fontFamily;
+    }
+
+    public void setFontFamily(String fontFamily) {
+        this.fontFamily = fontFamily;
+    }
+
+    public Boolean getFontStrikethrough() {
+        return fontStrikethrough;
+    }
+
+    public void setFontStrikethrough(Boolean fontStrikethrough) {
+        this.fontStrikethrough = fontStrikethrough;
+    }
+
     public SparklineConfigData getSparkline() {
         return sparkline;
     }
@@ -236,13 +265,17 @@ public class Cell {
                 && java.util.Objects.equals(format, cell.format)
                 && java.util.Objects.equals(richText, cell.richText)
                 && java.util.Objects.equals(validation, cell.validation)
-                && java.util.Objects.equals(sparkline, cell.sparkline);
+                && java.util.Objects.equals(sparkline, cell.sparkline)
+                && java.util.Objects.equals(border, cell.border)
+                && java.util.Objects.equals(fontFamily, cell.fontFamily)
+                && java.util.Objects.equals(fontStrikethrough, cell.fontStrikethrough);
     }
 
     @Override
     public int hashCode() {
         return java.util.Objects.hash(content, rowSpan, colSpan, isMerged, mergeParent,
                 fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign,
-                dataType, rawValue, wrapText, format, richText, validation, sparkline);
+                dataType, rawValue, wrapText, format, richText, validation, sparkline,
+                border, fontFamily, fontStrikethrough);
     }
 }

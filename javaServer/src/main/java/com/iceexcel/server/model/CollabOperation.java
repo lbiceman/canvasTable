@@ -40,7 +40,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = SheetReorderOp.class, name = "sheetReorder"),
         @JsonSubTypes.Type(value = SheetDuplicateOp.class, name = "sheetDuplicate"),
         @JsonSubTypes.Type(value = SheetVisibilityOp.class, name = "sheetVisibility"),
-        @JsonSubTypes.Type(value = SheetTabColorOp.class, name = "sheetTabColor")
+        @JsonSubTypes.Type(value = SheetTabColorOp.class, name = "sheetTabColor"),
+        @JsonSubTypes.Type(value = SetBorderOp.class, name = "setBorder"),
+        @JsonSubTypes.Type(value = SetFontFamilyOp.class, name = "setFontFamily"),
+        @JsonSubTypes.Type(value = SetStrikethroughOp.class, name = "setStrikethrough")
 })
 public abstract class CollabOperation {
 

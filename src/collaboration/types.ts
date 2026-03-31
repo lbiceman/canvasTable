@@ -1,5 +1,8 @@
 import { Selection, SpreadsheetData, CellFormat, RichTextSegment, ValidationRule, WorkbookData, CellBorder } from '../types';
 
+// 重新导出 CellBorder 以供 ot.ts 使用
+export type { CellBorder };
+
 // ============================================================
 // 操作类型定义
 // ============================================================

@@ -18,6 +18,9 @@ import {
   FontUnderlineOp,
   FontAlignOp,
   VerticalAlignOp,
+  SetBorderOp,
+  SetFontFamilyOp,
+  SetStrikethroughOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -39,6 +42,9 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'fontUnderline',
   'fontAlign',
   'verticalAlign',
+  'setBorder',
+  'setFontFamily',
+  'setStrikethrough',
 ]);
 
 /**
@@ -146,6 +152,18 @@ export const deserializeOperation = (json: string): CollabOperation => {
     case 'verticalAlign':
       validateVerticalAlignOp(obj);
       return obj as unknown as VerticalAlignOp;
+
+    case 'setBorder':
+      validateSetBorderOp(obj);
+      return obj as unknown as SetBorderOp;
+
+    case 'setFontFamily':
+      validateSetFontFamilyOp(obj);
+      return obj as unknown as SetFontFamilyOp;
+
+    case 'setStrikethrough':
+      validateSetStrikethroughOp(obj);
+      return obj as unknown as SetStrikethroughOp;
 
     default:
       throw new Error(`未知的操作类型: ${type}`);
@@ -267,4 +285,22 @@ const validateVerticalAlignOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.col !== 'number') throw new Error('verticalAlign: 缺少 col');
   if (typeof obj.align !== 'string') throw new Error('verticalAlign: 缺少 align');
   if (!['top', 'middle', 'bottom'].includes(obj.align)) throw new Error('verticalAlign: align 必须是 top、middle 或 bottom');
+};
+
+const validateSetBorderOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('setBorder: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('setBorder: 缺少 col');
+  // border 可以为 null/undefined（表示清除边框）
+};
+
+const validateSetFontFamilyOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('setFontFamily: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('setFontFamily: 缺少 col');
+  if (typeof obj.fontFamily !== 'string') throw new Error('setFontFamily: 缺少 fontFamily');
+};
+
+const validateSetStrikethroughOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('setStrikethrough: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('setStrikethrough: 缺少 col');
+  if (typeof obj.strikethrough !== 'boolean') throw new Error('setStrikethrough: 缺少 strikethrough');
 };

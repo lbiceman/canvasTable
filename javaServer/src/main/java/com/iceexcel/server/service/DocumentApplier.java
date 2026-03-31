@@ -116,6 +116,12 @@ public class DocumentApplier {
             applyChartUpdate(document, (ChartUpdateOp) op);
         } else if (op instanceof ChartDeleteOp) {
             applyChartDelete(document, (ChartDeleteOp) op);
+        } else if (op instanceof SetBorderOp) {
+            applySetBorder(cells, (SetBorderOp) op);
+        } else if (op instanceof SetFontFamilyOp) {
+            applySetFontFamily(cells, (SetFontFamilyOp) op);
+        } else if (op instanceof SetStrikethroughOp) {
+            applySetStrikethrough(cells, (SetStrikethroughOp) op);
         } else if (op instanceof SetSparklineOp) {
             applySetSparkline(document, (SetSparklineOp) op);
         }
@@ -346,6 +352,41 @@ public class DocumentApplier {
     private static void applySetValidation(List<List<Cell>> cells, SetValidationOp op) {
         if (op.getRow() < cells.size() && !cells.isEmpty() && op.getCol() < cells.get(0).size()) {
             cells.get(op.getRow()).get(op.getCol()).setValidation(op.getValidation());
+        }
+    }
+
+    private static void applySetBorder(List<List<Cell>> cells, SetBorderOp op) {
+        ensureCellExists(cells, op.getRow(), op.getCol());
+        cells.get(op.getRow()).get(op.getCol()).setBorder(op.getBorder());
+    }
+
+    private static void applySetFontFamily(List<List<Cell>> cells, SetFontFamilyOp op) {
+        ensureCellExists(cells, op.getRow(), op.getCol());
+        cells.get(op.getRow()).get(op.getCol()).setFontFamily(op.getFontFamily());
+    }
+
+    private static void applySetStrikethrough(List<List<Cell>> cells, SetStrikethroughOp op) {
+        ensureCellExists(cells, op.getRow(), op.getCol());
+        cells.get(op.getRow()).get(op.getCol()).setFontStrikethrough(op.isStrikethrough());
+    }
+
+    /**
+     * 确保指定行列的单元格存在，必要时自动扩展行列
+     */
+    private static void ensureCellExists(List<List<Cell>> cells, int row, int col) {
+        int colCount = cells.isEmpty() ? DEFAULT_COLS : cells.get(0).size();
+        // 扩展行
+        while (cells.size() <= row) {
+            List<Cell> newRow = new ArrayList<>(colCount);
+            for (int c = 0; c < colCount; c++) {
+                newRow.add(new Cell());
+            }
+            cells.add(newRow);
+        }
+        // 扩展列
+        List<Cell> targetRow = cells.get(row);
+        while (targetRow.size() <= col) {
+            targetRow.add(new Cell());
         }
     }
 

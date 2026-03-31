@@ -189,6 +189,24 @@ public class OTTransformer {
         return result;
     }
 
+    private static SetBorderOp transformSetBorderVsRowInsert(SetBorderOp op, RowInsertOp insertOp) {
+        SetBorderOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
+    private static SetFontFamilyOp transformSetFontFamilyVsRowInsert(SetFontFamilyOp op, RowInsertOp insertOp) {
+        SetFontFamilyOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
+    private static SetStrikethroughOp transformSetStrikethroughVsRowInsert(SetStrikethroughOp op, RowInsertOp insertOp) {
+        SetStrikethroughOp result = cloneOp(op);
+        result.setRow(adjustRowForInsert(op.getRow(), insertOp));
+        return result;
+    }
+
     // ============================================================
     // 具体操作类型 vs RowDelete 的转换
     // ============================================================
@@ -319,6 +337,30 @@ public class OTTransformer {
         Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
         if (newRow == null) return null;
         SetValidationOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetBorderOp transformSetBorderVsRowDelete(SetBorderOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetBorderOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetFontFamilyOp transformSetFontFamilyVsRowDelete(SetFontFamilyOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetFontFamilyOp result = cloneOp(op);
+        result.setRow(newRow);
+        return result;
+    }
+
+    private static SetStrikethroughOp transformSetStrikethroughVsRowDelete(SetStrikethroughOp op, RowDeleteOp deleteOp) {
+        Integer newRow = adjustRowForDelete(op.getRow(), deleteOp);
+        if (newRow == null) return null;
+        SetStrikethroughOp result = cloneOp(op);
         result.setRow(newRow);
         return result;
     }
@@ -520,6 +562,24 @@ public class OTTransformer {
         return result;
     }
 
+    private static SetBorderOp transformSetBorderVsColInsert(SetBorderOp op, ColInsertOp insertOp) {
+        SetBorderOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static SetFontFamilyOp transformSetFontFamilyVsColInsert(SetFontFamilyOp op, ColInsertOp insertOp) {
+        SetFontFamilyOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
+    private static SetStrikethroughOp transformSetStrikethroughVsColInsert(SetStrikethroughOp op, ColInsertOp insertOp) {
+        SetStrikethroughOp result = cloneOp(op);
+        result.setCol(adjustColForInsert(op.getCol(), insertOp));
+        return result;
+    }
+
     // ============================================================
     // 具体操作类型 vs ColDelete 的转换
     // ============================================================
@@ -714,6 +774,30 @@ public class OTTransformer {
         Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
         if (newCol == null) return null;
         SetValidationOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetBorderOp transformSetBorderVsColDelete(SetBorderOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetBorderOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetFontFamilyOp transformSetFontFamilyVsColDelete(SetFontFamilyOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetFontFamilyOp result = cloneOp(op);
+        result.setCol(newCol);
+        return result;
+    }
+
+    private static SetStrikethroughOp transformSetStrikethroughVsColDelete(SetStrikethroughOp op, ColDeleteOp deleteOp) {
+        Integer newCol = adjustColForDelete(op.getCol(), deleteOp);
+        if (newCol == null) return null;
+        SetStrikethroughOp result = cloneOp(op);
         result.setCol(newCol);
         return result;
     }
@@ -1130,6 +1214,9 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColInsert((SetWrapTextOp) opA, insertOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsColInsert((SetRichTextOp) opA, insertOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsColInsert((SetValidationOp) opA, insertOp);
+            if (opA instanceof SetBorderOp) return transformSetBorderVsColInsert((SetBorderOp) opA, insertOp);
+            if (opA instanceof SetFontFamilyOp) return transformSetFontFamilyVsColInsert((SetFontFamilyOp) opA, insertOp);
+            if (opA instanceof SetStrikethroughOp) return transformSetStrikethroughVsColInsert((SetStrikethroughOp) opA, insertOp);
             // 图表操作 vs ColInsert
             if (opA instanceof ChartCreateOp) return transformChartCreateVsColInsert((ChartCreateOp) opA, insertOp);
             if (opA instanceof ChartUpdateOp) return transformChartUpdateVsColInsert((ChartUpdateOp) opA, insertOp);
@@ -1161,6 +1248,9 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsColDelete((SetWrapTextOp) opA, deleteOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsColDelete((SetRichTextOp) opA, deleteOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsColDelete((SetValidationOp) opA, deleteOp);
+            if (opA instanceof SetBorderOp) return transformSetBorderVsColDelete((SetBorderOp) opA, deleteOp);
+            if (opA instanceof SetFontFamilyOp) return transformSetFontFamilyVsColDelete((SetFontFamilyOp) opA, deleteOp);
+            if (opA instanceof SetStrikethroughOp) return transformSetStrikethroughVsColDelete((SetStrikethroughOp) opA, deleteOp);
             // 图表操作 vs ColDelete
             if (opA instanceof ChartCreateOp) return transformChartCreateVsColDelete((ChartCreateOp) opA, deleteOp);
             if (opA instanceof ChartUpdateOp) return transformChartUpdateVsColDelete((ChartUpdateOp) opA, deleteOp);
@@ -1194,6 +1284,9 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowInsert((SetWrapTextOp) opA, insertOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowInsert((SetRichTextOp) opA, insertOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsRowInsert((SetValidationOp) opA, insertOp);
+            if (opA instanceof SetBorderOp) return transformSetBorderVsRowInsert((SetBorderOp) opA, insertOp);
+            if (opA instanceof SetFontFamilyOp) return transformSetFontFamilyVsRowInsert((SetFontFamilyOp) opA, insertOp);
+            if (opA instanceof SetStrikethroughOp) return transformSetStrikethroughVsRowInsert((SetStrikethroughOp) opA, insertOp);
             // 图表操作 vs RowInsert
             if (opA instanceof ChartCreateOp) return transformChartCreateVsRowInsert((ChartCreateOp) opA, insertOp);
             if (opA instanceof ChartUpdateOp) return transformChartUpdateVsRowInsert((ChartUpdateOp) opA, insertOp);
@@ -1222,6 +1315,9 @@ public class OTTransformer {
             if (opA instanceof SetWrapTextOp) return transformSetWrapTextVsRowDelete((SetWrapTextOp) opA, deleteOp);
             if (opA instanceof SetRichTextOp) return transformSetRichTextVsRowDelete((SetRichTextOp) opA, deleteOp);
             if (opA instanceof SetValidationOp) return transformSetValidationVsRowDelete((SetValidationOp) opA, deleteOp);
+            if (opA instanceof SetBorderOp) return transformSetBorderVsRowDelete((SetBorderOp) opA, deleteOp);
+            if (opA instanceof SetFontFamilyOp) return transformSetFontFamilyVsRowDelete((SetFontFamilyOp) opA, deleteOp);
+            if (opA instanceof SetStrikethroughOp) return transformSetStrikethroughVsRowDelete((SetStrikethroughOp) opA, deleteOp);
             // 图表操作 vs RowDelete
             if (opA instanceof ChartCreateOp) return transformChartCreateVsRowDelete((ChartCreateOp) opA, deleteOp);
             if (opA instanceof ChartUpdateOp) return transformChartUpdateVsRowDelete((ChartUpdateOp) opA, deleteOp);
@@ -1338,6 +1434,30 @@ public class OTTransformer {
                 }
                 return result;
             }
+            if (opA instanceof SetBorderOp) {
+                SetBorderOp result = cloneOp((SetBorderOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetFontFamilyOp) {
+                SetFontFamilyOp result = cloneOp((SetFontFamilyOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetStrikethroughOp) {
+                SetStrikethroughOp result = cloneOp((SetStrikethroughOp) opA);
+                if (isInMergeRange(result.getRow(), result.getCol(), mergeOp)) {
+                    result.setRow(mergeOp.getStartRow());
+                    result.setCol(mergeOp.getStartCol());
+                }
+                return result;
+            }
             if (opA instanceof CellSplitOp) {
                 return transformCellSplitVsCellMerge((CellSplitOp) opA, mergeOp);
             }
@@ -1447,6 +1567,30 @@ public class OTTransformer {
                 }
                 return result;
             }
+            if (opA instanceof SetBorderOp) {
+                SetBorderOp result = cloneOp((SetBorderOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetFontFamilyOp) {
+                SetFontFamilyOp result = cloneOp((SetFontFamilyOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
+            if (opA instanceof SetStrikethroughOp) {
+                SetStrikethroughOp result = cloneOp((SetStrikethroughOp) opA);
+                if (isInSplitRange(result.getRow(), result.getCol(), splitOp)) {
+                    result.setRow(splitOp.getRow());
+                    result.setCol(splitOp.getCol());
+                }
+                return result;
+            }
             // rowInsert/rowDelete/rowResize/colResize 不受 cellSplit 影响
             return cloneOp(opA);
         }
@@ -1493,6 +1637,42 @@ public class OTTransformer {
             if (opA instanceof SetValidationOp) {
                 SetValidationOp a = (SetValidationOp) opA;
                 if (a.getRow() == valOp.getRow() && a.getCol() == valOp.getCol()) {
+                    return null;
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setBorder：同一单元格的 setBorder 冲突，服务端操作优先
+        if (opB instanceof SetBorderOp) {
+            SetBorderOp borderOp = (SetBorderOp) opB;
+            if (opA instanceof SetBorderOp) {
+                SetBorderOp a = (SetBorderOp) opA;
+                if (a.getRow() == borderOp.getRow() && a.getCol() == borderOp.getCol()) {
+                    return null;
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setFontFamily：同一单元格的 setFontFamily 冲突，服务端操作优先
+        if (opB instanceof SetFontFamilyOp) {
+            SetFontFamilyOp fontFamilyOp = (SetFontFamilyOp) opB;
+            if (opA instanceof SetFontFamilyOp) {
+                SetFontFamilyOp a = (SetFontFamilyOp) opA;
+                if (a.getRow() == fontFamilyOp.getRow() && a.getCol() == fontFamilyOp.getCol()) {
+                    return null;
+                }
+            }
+            return cloneOp(opA);
+        }
+
+        // opB 是 setStrikethrough：同一单元格的 setStrikethrough 冲突，服务端操作优先
+        if (opB instanceof SetStrikethroughOp) {
+            SetStrikethroughOp strikethroughOp = (SetStrikethroughOp) opB;
+            if (opA instanceof SetStrikethroughOp) {
+                SetStrikethroughOp a = (SetStrikethroughOp) opA;
+                if (a.getRow() == strikethroughOp.getRow() && a.getCol() == strikethroughOp.getCol()) {
                     return null;
                 }
             }
