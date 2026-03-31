@@ -283,6 +283,44 @@ public class RoomManager {
     }
 
     /**
+     * 获取指定用户的颜色
+     */
+    public String getUserColor(String roomId, String userId) {
+        Room room = rooms.get(roomId);
+        if (room == null) return null;
+        ClientConnection client = room.getClients().get(userId);
+        return client != null ? client.getColor() : null;
+    }
+
+    /**
+     * 获取房间的上次快照操作计数
+     */
+    public int getLastSnapshotOpCount(String roomId) {
+        Room room = rooms.get(roomId);
+        return room != null ? room.getLastSnapshotOpCount() : 0;
+    }
+
+    /**
+     * 更新房间的上次快照操作计数为当前修订号
+     */
+    public void updateLastSnapshotOpCount(String roomId) {
+        Room room = rooms.get(roomId);
+        if (room != null) {
+            room.setLastSnapshotOpCount(room.getRevision());
+        }
+    }
+
+    /**
+     * 生成房间的文档快照
+     */
+    public OTServer.Snapshot generateSnapshot(String roomId) {
+        OTServer otServer = otStates.get(roomId);
+        Room room = rooms.get(roomId);
+        if (otServer == null || room == null) return null;
+        return otServer.generateSnapshot(room.getWorkbook());
+    }
+
+    /**
      * 获取房间内所有客户端连接（可排除指定用户）
      */
     public List<ClientConnection> getOtherClients(String roomId, String excludeUserId) {

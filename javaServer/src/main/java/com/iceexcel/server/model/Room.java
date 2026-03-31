@@ -13,6 +13,7 @@ public class Room {
     private WorkbookData workbook;
     private List<CollabOperation> operations;
     private int revision;
+    private int lastSnapshotOpCount;
     private ConcurrentHashMap<String, ClientConnection> clients;
 
     public Room() {
@@ -40,6 +41,9 @@ public class Room {
 
     public int getRevision() { return revision; }
     public void setRevision(int revision) { this.revision = revision; }
+
+    public int getLastSnapshotOpCount() { return lastSnapshotOpCount; }
+    public void setLastSnapshotOpCount(int lastSnapshotOpCount) { this.lastSnapshotOpCount = lastSnapshotOpCount; }
 
     public ConcurrentHashMap<String, ClientConnection> getClients() { return clients; }
     public void setClients(ConcurrentHashMap<String, ClientConnection> clients) { this.clients = clients; }

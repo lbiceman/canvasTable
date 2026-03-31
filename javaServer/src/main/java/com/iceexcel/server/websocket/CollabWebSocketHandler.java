@@ -112,12 +112,41 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         String color = joinResult.getColor();
         Room room = joinResult.getRoom();
 
-        // 发送当前文档状态给新加入的客户端
-        ObjectNode statePayload = objectMapper.createObjectNode();
-        statePayload.set("workbook", objectMapper.valueToTree(room.getWorkbook()));
-        statePayload.put("revision", roomManager.getRevision(roomId));
-        statePayload.set("users", objectMapper.valueToTree(roomManager.getAllUsers(roomId)));
-        sendMessage(session, "state", statePayload);
+        int currentRevision = roomManager.getRevision(roomId);
+        int lastSnapshotOpCount = roomManager.getLastSnapshotOpCount(roomId);
+
+        // 检查操作计数，如果距离上次快照超过阈值，发送完整文档快照
+        if (currentRevision - lastSnapshotOpCount > SYNC_SNAPSHOT_THRESHOLD) {
+            OTServer.Snapshot snapshot = roomManager.generateSnapshot(roomId);
+            if (snapshot != null) {
+                ObjectNode snapshotPayload = objectMapper.createObjectNode();
+                snapshotPayload.set("workbook", objectMapper.valueToTree(snapshot.getWorkbook()));
+                snapshotPayload.put("revision", snapshot.getRevision());
+                snapshotPayload.set("users", objectMapper.valueToTree(roomManager.getAllUsers(roomId)));
+                sendMessage(session, "snapshot", snapshotPayload);
+
+                // 更新快照计数
+                roomManager.updateLastSnapshotOpCount(roomId);
+                log.info("房间 {} 发送快照给新用户 {}，修订号: {}", roomId, userId, snapshot.getRevision());
+            }
+        } else {
+            // 操作不多，发送当前状态让客户端自行重放操作
+            ObjectNode statePayload = objectMapper.createObjectNode();
+            statePayload.set("workbook", objectMapper.valueToTree(room.getWorkbook()));
+            statePayload.put("revision", currentRevision);
+            statePayload.set("users", objectMapper.valueToTree(roomManager.getAllUsers(roomId)));
+            sendMessage(session, "state", statePayload);
+
+            // 发送操作积压给新客户端
+            List<CollabOperation> ops = roomManager.getOperationsSince(roomId, 0);
+            for (CollabOperation op : ops) {
+                ObjectNode remoteOpPayload = objectMapper.createObjectNode();
+                remoteOpPayload.put("revision", op.getRevision());
+                remoteOpPayload.set("operation", objectMapper.valueToTree(op));
+                remoteOpPayload.put("userId", op.getUserId());
+                sendMessage(session, "remote_op", remoteOpPayload);
+            }
+        }
 
         // 通知房间内其他用户有新用户加入
         ObjectNode userJoinPayload = objectMapper.createObjectNode();
@@ -170,8 +199,12 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
      * 处理光标更新消息
      */
     private void handleCursor(String roomId, String userId, JsonNode payload) {
+        // 获取用户颜色以便广播给其他客户端
+        String color = roomManager.getUserColor(roomId, userId);
+
         ObjectNode cursorPayload = objectMapper.createObjectNode();
         cursorPayload.put("userId", userId);
+        cursorPayload.put("color", color);
         cursorPayload.set("selection", payload.get("selection"));
         broadcastToOthers(roomId, userId, "cursor", cursorPayload);
     }

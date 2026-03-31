@@ -1,6 +1,7 @@
 package com.iceexcel.server.service;
 
 import com.iceexcel.server.model.CollabOperation;
+import com.iceexcel.server.model.WorkbookData;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -73,6 +74,14 @@ public class OTServer {
         return new ArrayList<>(operations.subList(fromIndex, operations.size()));
     }
 
+    /**
+     * 生成文档快照
+     * 快照包含完整的文档状态（所有单元格值和样式）以及当前修订号
+     */
+    public Snapshot generateSnapshot(WorkbookData workbook) {
+        return new Snapshot(workbook, revision);
+    }
+
     // ============================================================
     // Getter / Setter
     // ============================================================
@@ -111,6 +120,28 @@ public class OTServer {
 
         public CollabOperation getTransformedOp() {
             return transformedOp;
+        }
+    }
+
+    /**
+     * 文档快照
+     * 包含完整的文档状态和当前修订号，用于快速同步大量操作积压的客户端
+     */
+    public static class Snapshot {
+        private final WorkbookData workbook;
+        private final int revision;
+
+        public Snapshot(WorkbookData workbook, int revision) {
+            this.workbook = workbook;
+            this.revision = revision;
+        }
+
+        public WorkbookData getWorkbook() {
+            return workbook;
+        }
+
+        public int getRevision() {
+            return revision;
         }
     }
 }

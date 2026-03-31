@@ -2,7 +2,7 @@ import { SpreadsheetApp } from './app';
 import themes from './themes.json';
 import { Modal } from './modal';
 
-export type ThemeType = 'light' | 'dark' | 'feishu';
+export type ThemeType = 'light' | 'dark' | 'feishu' | 'soft' | 'highContrast';
 
 export class UIControls {
   private app: SpreadsheetApp;
@@ -134,6 +134,14 @@ export class UIControls {
     const feishuOption = this.createThemeOption('feishu', themes.feishu.name, false);
     themeOptions.appendChild(feishuOption);
 
+    // 轻柔模式主题选项
+    const softOption = this.createThemeOption('soft', themes.soft.name, false);
+    themeOptions.appendChild(softOption);
+
+    // 高对比度主题选项
+    const highContrastOption = this.createThemeOption('highContrast', themes.highContrast.name, false);
+    themeOptions.appendChild(highContrastOption);
+
     group.appendChild(themeOptions);
     return group;
   }
@@ -154,7 +162,7 @@ export class UIControls {
     label.className = 'ui-theme-label';
 
     const icon = document.createElement('span');
-    icon.textContent = themeKey === 'light' ? '☀️' : themeKey === 'feishu' ? '🎨' : '🌙';
+    icon.textContent = themeKey === 'light' ? '☀️' : themeKey === 'feishu' ? '🎨' : themeKey === 'soft' ? '🍃' : themeKey === 'highContrast' ? '◐' : '🌙';
     icon.className = 'ui-theme-icon';
 
     option.appendChild(radio);
