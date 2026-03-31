@@ -1,6 +1,7 @@
-com\iceexcel\server\service\DataTypeFormattingApplierTest.class
-com\iceexcel\server\service\DataTypeFormattingModelTest.class
-com\iceexcel\server\service\CoreAlgorithmSmokeTest.class
 com\iceexcel\server\service\SpreadsheetDataFormatTest.class
 com\iceexcel\server\service\DataTypeFormattingOTTest.class
 com\iceexcel\server\service\DataTypeFormattingOpsTest.class
+com\iceexcel\server\service\DataTypeFormattingApplierTest.class
+com\iceexcel\server\service\DataTypeFormattingModelTest.class
+com\iceexcel\server\service\RoomManagerTest.class
+com\iceexcel\server\service\CoreAlgorithmSmokeTest.class

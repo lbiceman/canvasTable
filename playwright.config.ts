@@ -10,7 +10,7 @@ export default defineConfig({
   retries: 0,
   use: {
     baseURL: 'http://localhost:3000',
-    headless: true,
+    headless: false,
   },
   webServer: {
     command: 'npx vite --port 3000',

@@ -5,7 +5,9 @@ D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\IceExcelServ
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\AxesConfig.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\AxisConfig.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\BgColorOp.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\BorderSide.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\Cell.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellBorder.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellEditOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellFormat.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\CellMergeOp.java
@@ -41,9 +43,12 @@ D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\RowDel
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\RowInsertOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\RowResizeOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\Selection.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetBorderOp.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetFontFamilyOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetFormatOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetRichTextOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetSparklineOp.java
+D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetStrikethroughOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetValidationOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SetWrapTextOp.java
 D:\work\self\ice-excel\javaServer\src\main\java\com\iceexcel\server\model\SheetAddOp.java

@@ -6,6 +6,7 @@ com\iceexcel\server\service\RoomManager.class
 com\iceexcel\server\entity\OperationEntity.class
 com\iceexcel\server\service\OTServer.class
 com\iceexcel\server\model\RichTextSegment.class
+com\iceexcel\server\model\SetBorderOp.class
 com\iceexcel\server\model\RowInsertOp.class
 com\iceexcel\server\model\SetWrapTextOp.class
 com\iceexcel\server\model\BgColorOp.class
@@ -22,6 +23,7 @@ com\iceexcel\server\model\CellFormat.class
 com\iceexcel\server\model\FontUnderlineOp.class
 com\iceexcel\server\model\SetFormatOp.class
 com\iceexcel\server\model\CellRange.class
+com\iceexcel\server\model\SetFontFamilyOp.class
 com\iceexcel\server\model\SheetReorderOp.class
 com\iceexcel\server\model\FontSizeOp.class
 com\iceexcel\server\model\SheetDeleteOp.class
@@ -46,6 +48,7 @@ com\iceexcel\server\model\ClientConnection.class
 com\iceexcel\server\model\SparklineConfigData.class
 com\iceexcel\server\entity\RoomEntity.class
 com\iceexcel\server\repository\OperationRepository.class
+com\iceexcel\server\model\CellBorder.class
 com\iceexcel\server\model\SheetMeta.class
 com\iceexcel\server\config\WebSocketConfig.class
 com\iceexcel\server\model\AxesConfig.class
@@ -60,11 +63,13 @@ com\iceexcel\server\model\SheetAddOp.class
 com\iceexcel\server\model\SheetVisibilityOp.class
 com\iceexcel\server\model\Cell.class
 com\iceexcel\server\model\ConditionalFormatRule.class
+com\iceexcel\server\model\SetStrikethroughOp.class
 com\iceexcel\server\model\VerticalAlignOp.class
 com\iceexcel\server\service\OTServer$ReceiveResult.class
 com\iceexcel\server\model\SheetDuplicateOp.class
 com\iceexcel\server\model\CellMergeOp.class
 com\iceexcel\server\model\ColDeleteOp.class
+com\iceexcel\server\model\BorderSide.class
 com\iceexcel\server\model\ChartConfigData.class
 com\iceexcel\server\model\ChartPosition.class
 com\iceexcel\server\model\ChartUpdateOp.class
