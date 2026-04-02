@@ -845,17 +845,35 @@ export class SpreadsheetModel {
       this.contentCache[`${row}-${col}`] = content;
 
       // 自动类型检测：更新 rawValue 和 format（与 setCellContent 保持一致）
+      // 快速路径：空字符串或纯字母文本跳过昂贵的类型检测
       if (!cell.format || cell.isAutoFormat) {
-        const detection = DataTypeDetector.detect(content);
-        cell.dataType = detection.dataType;
-        cell.rawValue = detection.rawValue;
-        if (detection.format) {
-          cell.format = detection.format;
-          cell.isAutoFormat = true;
-        } else {
-          // 内容不再是可格式化的类型，清除自动格式
+        if (content === '') {
+          cell.dataType = 'text';
+          cell.rawValue = undefined;
           cell.format = undefined;
           cell.isAutoFormat = undefined;
+        } else {
+          // 快速判断：首字符不是数字、负号、货币符号、百分号相关字符时，直接标记为 text
+          const firstChar = content.charCodeAt(0);
+          const isDigitOrSign = (firstChar >= 48 && firstChar <= 57) || firstChar === 45; // 0-9 或 -
+          const isCurrency = firstChar === 165 || firstChar === 36 || firstChar === 8364 || firstChar === 163; // ¥$€£
+          if (!isDigitOrSign && !isCurrency) {
+            cell.dataType = 'text';
+            cell.rawValue = undefined;
+            cell.format = undefined;
+            cell.isAutoFormat = undefined;
+          } else {
+            const detection = DataTypeDetector.detect(content);
+            cell.dataType = detection.dataType;
+            cell.rawValue = detection.rawValue;
+            if (detection.format) {
+              cell.format = detection.format;
+              cell.isAutoFormat = true;
+            } else {
+              cell.format = undefined;
+              cell.isAutoFormat = undefined;
+            }
+          }
         }
       }
     }
@@ -2979,57 +2997,56 @@ export class SpreadsheetModel {
     if (cell.isMerged && cell.mergeParent) {
       const { row: parentRow, col: parentCol } = cell.mergeParent;
       const parentCell = this.data.cells[parentRow][parentCol];
-      return {
-        row: parentRow,
-        col: parentCol,
-        rowSpan: parentCell.rowSpan,
-        colSpan: parentCell.colSpan,
-        content: parentCell.content,
-        formulaContent: parentCell.formulaContent,
-        fontColor: parentCell.fontColor,
-        bgColor: parentCell.bgColor,
-        fontSize: parentCell.fontSize,
-        fontBold: parentCell.fontBold,
-        fontItalic: parentCell.fontItalic,
-        fontUnderline: parentCell.fontUnderline,
-        fontAlign: parentCell.fontAlign,
-        verticalAlign: parentCell.verticalAlign,
-        format: parentCell.format,
-        rawValue: parentCell.rawValue,
-        wrapText: parentCell.wrapText,
-        richText: parentCell.richText,
-        validation: parentCell.validation,
-        sparkline: parentCell.sparkline,
-        fontFamily: parentCell.fontFamily,
-        fontStrikethrough: parentCell.fontStrikethrough,
-      };
+      // 复用内部结果对象，减少 GC 压力
+      this._mergedCellResult.row = parentRow;
+      this._mergedCellResult.col = parentCol;
+      this._fillMergedCellResult(parentCell);
+      return this._mergedCellResult;
     }
 
     // 如果是合并父单元格或普通单元格
-    return {
-      row,
-      col,
-      rowSpan: cell.rowSpan,
-      colSpan: cell.colSpan,
-      content: cell.content,
-      formulaContent: cell.formulaContent,
-      fontColor: cell.fontColor,
-      bgColor: cell.bgColor,
-      fontSize: cell.fontSize,
-      fontBold: cell.fontBold,
-      fontItalic: cell.fontItalic,
-      fontUnderline: cell.fontUnderline,
-      fontAlign: cell.fontAlign,
-      verticalAlign: cell.verticalAlign,
-      format: cell.format,
-      rawValue: cell.rawValue,
-      wrapText: cell.wrapText,
-      richText: cell.richText,
-      validation: cell.validation,
-      sparkline: cell.sparkline,
-      fontFamily: cell.fontFamily,
-      fontStrikethrough: cell.fontStrikethrough,
-    };
+    this._mergedCellResult.row = row;
+    this._mergedCellResult.col = col;
+    this._fillMergedCellResult(cell);
+    return this._mergedCellResult;
+  }
+
+  /** 复用的 getMergedCellInfo 返回对象，避免每次调用都分配新对象 */
+  private _mergedCellResult: {
+    row: number; col: number; rowSpan: number; colSpan: number;
+    content: string; formulaContent?: string; fontColor?: string;
+    bgColor?: string; fontSize?: number; fontBold?: boolean;
+    fontItalic?: boolean; fontUnderline?: boolean;
+    fontAlign?: 'left' | 'center' | 'right';
+    verticalAlign?: 'top' | 'middle' | 'bottom';
+    format?: CellFormat; rawValue?: number; wrapText?: boolean;
+    richText?: RichTextSegment[]; validation?: ValidationRule;
+    sparkline?: SparklineConfig; fontFamily?: string; fontStrikethrough?: boolean;
+  } = { row: 0, col: 0, rowSpan: 1, colSpan: 1, content: '' };
+
+  /** 填充复用结果对象的字段 */
+  private _fillMergedCellResult(cell: Cell): void {
+    const r = this._mergedCellResult;
+    r.rowSpan = cell.rowSpan;
+    r.colSpan = cell.colSpan;
+    r.content = cell.content;
+    r.formulaContent = cell.formulaContent;
+    r.fontColor = cell.fontColor;
+    r.bgColor = cell.bgColor;
+    r.fontSize = cell.fontSize;
+    r.fontBold = cell.fontBold;
+    r.fontItalic = cell.fontItalic;
+    r.fontUnderline = cell.fontUnderline;
+    r.fontAlign = cell.fontAlign;
+    r.verticalAlign = cell.verticalAlign;
+    r.format = cell.format;
+    r.rawValue = cell.rawValue;
+    r.wrapText = cell.wrapText;
+    r.richText = cell.richText;
+    r.validation = cell.validation;
+    r.sparkline = cell.sparkline;
+    r.fontFamily = cell.fontFamily;
+    r.fontStrikethrough = cell.fontStrikethrough;
   }
 
   // 清理缓存

@@ -1,5 +1,5 @@
 import { SpreadsheetModel } from './model';
-import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment, BorderSide, CellBorder, EmbeddedImage } from './types';
+import { Viewport, Selection, RenderConfig, CellPosition, CellFormat, Cell, DataBarParams, IconInfo, RichTextSegment, BorderSide, EmbeddedImage } from './types';
 import type { RowColumnGroup } from './types';
 import { CursorAwareness } from './collaboration/cursor-awareness';
 import { NumberFormatter, DateFormatter } from './format-engine';
@@ -1460,6 +1460,37 @@ export class SpreadsheetRenderer {
    * 从当前单元格右侧开始，检查相邻空单元格，累加其宽度
    * 直到文本完全容纳或遇到非空单元格
    */
+
+  /**
+   * 二分查找截断文本，O(log n) 替代逐字符删除的 O(n)
+   * 返回截断后的文本（含省略号）和文本宽度
+   */
+  private truncateTextBinary(text: string, maxWidth: number): { text: string; width: number } {
+    const ellipsis = '...';
+    const ellipsisWidth = this.ctx.measureText(ellipsis).width;
+    const targetWidth = maxWidth - ellipsisWidth;
+
+    if (targetWidth <= 0) {
+      return { text: ellipsis, width: ellipsisWidth };
+    }
+
+    let low = 0;
+    let high = text.length;
+
+    while (low < high) {
+      const mid = (low + high + 1) >>> 1;
+      const w = this.ctx.measureText(text.slice(0, mid)).width;
+      if (w <= targetWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    const truncated = text.slice(0, low) + ellipsis;
+    return { text: truncated, width: this.ctx.measureText(truncated).width };
+  }
+
   private calculateOverflowWidth(
     row: number, col: number, textWidth: number, cellWidth: number
   ): number {
@@ -1526,6 +1557,12 @@ export class SpreadsheetRenderer {
       return;
     }
 
+    // 统一裁剪到数据区域，避免每个单元格都 save/restore + clip
+    this.ctx.save();
+    this.ctx.beginPath();
+    this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
+    this.ctx.clip();
+
     let currentY = headerHeight + offsetY;
 
     // 遍历可见行
@@ -1570,13 +1607,7 @@ export class SpreadsheetRenderer {
             totalHeight += this.model.getRowHeight(row + r);
           }
 
-          // 裁剪区域，避免绘制到标题区域
-          this.ctx.save();
-          this.ctx.beginPath();
-          this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
-          this.ctx.clip();
-
-          // save/restore 会重置字体，需要重新设置
+          // 字体设置（外层已有 clip，无需每个单元格 save/restore）
           const fontWeight = cellInfo.fontBold ? 'bold ' : '';
           let fontStyle = cellInfo.fontItalic ? 'italic ' : '';
           if (cellInfo.formulaContent) {
@@ -1620,7 +1651,6 @@ export class SpreadsheetRenderer {
               currentX + totalWidth / 2,
               currentY + totalHeight / 2
             );
-            this.ctx.restore();
             currentX += colWidth;
             continue;
           }
@@ -1701,19 +1731,15 @@ export class SpreadsheetRenderer {
                 // 溢出区域仍不够，在溢出宽度内截断
                 overflowWidth = overflowAvailable - totalWidth;
                 const truncMaxWidth = overflowAvailable - 2 * cellPadding - iconOffset;
-                while (text.length > 0 && textWidth > truncMaxWidth) {
-                  text = text.slice(0, -1);
-                  textWidth = this.ctx.measureText(text + '...').width;
-                }
-                text += '...';
+                const truncResult = this.truncateTextBinary(text, truncMaxWidth);
+                text = truncResult.text;
+                textWidth = truncResult.width;
               }
             } else if (fullTextWidth > maxTextWidth) {
-              // 非溢出场景的常规截断
-              while (text.length > 0 && textWidth > maxTextWidth) {
-                text = text.slice(0, -1);
-                textWidth = this.ctx.measureText(text + '...').width;
-              }
-              text += '...';
+              // 非溢出场景的常规截断（二分查找）
+              const truncResult = this.truncateTextBinary(text, maxTextWidth);
+              text = truncResult.text;
+              textWidth = truncResult.width;
             }
 
             // 如果有溢出，扩展裁剪区域以覆盖溢出部分
@@ -1825,8 +1851,6 @@ export class SpreadsheetRenderer {
           if (rawCell?.embeddedImage) {
             this.renderEmbeddedImage(rawCell.embeddedImage, currentX, currentY, totalWidth, totalHeight);
           }
-
-          this.ctx.restore();
         }
 
         currentX += colWidth;
@@ -1834,6 +1858,9 @@ export class SpreadsheetRenderer {
 
       currentY += rowHeight;
     }
+
+    // 恢复统一裁剪区域
+    this.ctx.restore();
   }
 
   /**
@@ -2092,80 +2119,66 @@ export class SpreadsheetRenderer {
     this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
     this.ctx.clip();
 
-    // 创建边界数组
-    const horizontalBorders: boolean[][] = [];
-    const verticalBorders: boolean[][] = [];
-
-    for (let row = this.viewport.startRow; row <= this.viewport.endRow + 1; row++) {
-      horizontalBorders[row] = [];
-      verticalBorders[row] = [];
-      for (let col = this.viewport.startCol; col <= this.viewport.endCol + 1; col++) {
-        horizontalBorders[row][col] = true;
-        verticalBorders[row][col] = true;
-      }
-    }
+    // 使用 Set 记录需要跳过的合并单元格内部边界（避免分配二维数组）
+    const skipHorizontal = new Set<number>();
+    const skipVertical = new Set<number>();
+    const { startRow, endRow, startCol, endCol } = this.viewport;
+    // 编码 key: row * 100000 + col，避免字符串拼接开销
+    const colRange = endCol - startCol + 2;
 
     // 处理合并单元格的边界
-    for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
-      for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
-        const cellInfo = this.model.getMergedCellInfo(row, col);
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cell = this.model.getCell(row, col);
+        if (!cell) continue;
+        const { rowSpan, colSpan } = cell;
+        if (rowSpan <= 1 && colSpan <= 1) continue;
 
-        if (cellInfo && (cellInfo.rowSpan > 1 || cellInfo.colSpan > 1)) {
-          const { row: startRow, col: startCol, rowSpan, colSpan } = cellInfo;
+        // 只处理合并父单元格
+        if (cell.isMerged) continue;
 
-          for (let r = startRow; r < startRow + rowSpan; r++) {
-            for (let c = startCol; c < startCol + colSpan - 1; c++) {
-              if (r >= this.viewport.startRow && r <= this.viewport.endRow &&
-                  c >= this.viewport.startCol && c <= this.viewport.endCol) {
-                verticalBorders[r][c] = false;
-              }
+        for (let r = row; r < row + rowSpan; r++) {
+          for (let c = col; c < col + colSpan - 1; c++) {
+            if (r >= startRow && r <= endRow && c >= startCol && c <= endCol) {
+              skipVertical.add(r * colRange + c);
             }
           }
-
-          for (let r = startRow; r < startRow + rowSpan - 1; r++) {
-            for (let c = startCol; c < startCol + colSpan; c++) {
-              if (r >= this.viewport.startRow && r <= this.viewport.endRow &&
-                  c >= this.viewport.startCol && c <= this.viewport.endCol) {
-                horizontalBorders[r][c] = false;
-              }
+        }
+        for (let r = row; r < row + rowSpan - 1; r++) {
+          for (let c = col; c < col + colSpan; c++) {
+            if (r >= startRow && r <= endRow && c >= startCol && c <= endCol) {
+              skipHorizontal.add(r * colRange + c);
             }
           }
         }
       }
     }
 
-    // 绘制网格线
+    // 批量绘制网格线：合并所有线段到一个 path，一次性 stroke
+    this.ctx.beginPath();
+
     let currentY = headerHeight + offsetY;
 
-    for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
-      // 跳过隐藏行
-      if (this.model.isRowHidden(row)) {
-        continue;
-      }
+    for (let row = startRow; row <= endRow; row++) {
+      if (this.model.isRowHidden(row)) continue;
 
       const rowHeight = this.model.getRowHeight(row);
       let currentX = headerWidth + offsetX;
 
-      for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
-        // 跳过隐藏列
-        if (this.model.isColHidden(col)) {
-          continue;
-        }
+      for (let col = startCol; col <= endCol; col++) {
+        if (this.model.isColHidden(col)) continue;
 
         const colWidth = this.model.getColWidth(col);
+        const key = row * colRange + col;
 
-        if (horizontalBorders[row][col]) {
-          this.ctx.beginPath();
+        if (!skipHorizontal.has(key)) {
           this.ctx.moveTo(currentX, currentY + rowHeight);
           this.ctx.lineTo(currentX + colWidth, currentY + rowHeight);
-          this.ctx.stroke();
         }
 
-        if (verticalBorders[row][col]) {
-          this.ctx.beginPath();
+        if (!skipVertical.has(key)) {
           this.ctx.moveTo(currentX + colWidth, currentY);
           this.ctx.lineTo(currentX + colWidth, currentY + rowHeight);
-          this.ctx.stroke();
         }
 
         currentX += colWidth;
@@ -2174,15 +2187,12 @@ export class SpreadsheetRenderer {
       currentY += rowHeight;
     }
 
-    // 绘制表格外边框
-    this.ctx.beginPath();
+    // 表格外边框
     this.ctx.moveTo(headerWidth, headerHeight);
     this.ctx.lineTo(this.canvasWidth, headerHeight);
-    this.ctx.stroke();
-
-    this.ctx.beginPath();
     this.ctx.moveTo(headerWidth, headerHeight);
     this.ctx.lineTo(headerWidth, this.canvasHeight);
+
     this.ctx.stroke();
 
     this.ctx.restore();
@@ -2349,18 +2359,17 @@ export class SpreadsheetRenderer {
     this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
     this.ctx.clip();
 
-    // 收集视口内所有有边框的单元格及其坐标信息
-    interface BorderCellInfo {
-      row: number;
-      col: number;
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-      border: CellBorder;
+    // 直接遍历视口，收集需要绘制的边框线段
+    // 使用数值 key 替代字符串拼接，减少 GC 压力
+    // key 编码：y * 100000 + x（对于水平边）或 x * 100000 + y（对于垂直边）
+    interface EdgeInfo {
+      side: BorderSide;
+      x1: number; y1: number; x2: number; y2: number;
+      priority: number; // row * 10000 + col，用于冲突解决
     }
 
-    const borderCells: BorderCellInfo[] = [];
+    const horizontalEdges = new Map<number, EdgeInfo>();
+    const verticalEdges = new Map<number, EdgeInfo>();
 
     let currentY = headerHeight + offsetY;
     for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
@@ -2374,15 +2383,49 @@ export class SpreadsheetRenderer {
 
         const cell = this.model.getCell(row, col);
         if (cell && cell.border) {
-          borderCells.push({
-            row,
-            col,
-            x: currentX,
-            y: currentY,
-            width: colWidth,
-            height: rowHeight,
-            border: cell.border,
-          });
+          const border = cell.border;
+          const x = Math.round(currentX);
+          const y = Math.round(currentY);
+          const x2 = Math.round(currentX + colWidth);
+          const y2 = Math.round(currentY + rowHeight);
+          const priority = row * 10000 + col;
+
+          // 上边框
+          if (border.top) {
+            const key = y * 100000 + x;
+            const existing = horizontalEdges.get(key);
+            if (!existing || border.top.width > existing.side.width ||
+                (border.top.width === existing.side.width && priority > existing.priority)) {
+              horizontalEdges.set(key, { side: border.top, x1: x, y1: y, x2, y2: y, priority });
+            }
+          }
+          // 下边框
+          if (border.bottom) {
+            const key = y2 * 100000 + x;
+            const existing = horizontalEdges.get(key);
+            if (!existing || border.bottom.width > existing.side.width ||
+                (border.bottom.width === existing.side.width && priority > existing.priority)) {
+              horizontalEdges.set(key, { side: border.bottom, x1: x, y1: y2, x2, y2, priority });
+            }
+          }
+          // 左边框
+          if (border.left) {
+            const key = x * 100000 + y;
+            const existing = verticalEdges.get(key);
+            if (!existing || border.left.width > existing.side.width ||
+                (border.left.width === existing.side.width && priority > existing.priority)) {
+              verticalEdges.set(key, { side: border.left, x1: x, y1: y, x2: x, y2, priority });
+            }
+          }
+          // 右边框
+          if (border.right) {
+            const key = x2 * 100000 + y;
+            const existing = verticalEdges.get(key);
+            if (!existing || border.right.width > existing.side.width ||
+                (border.right.width === existing.side.width && priority > existing.priority)) {
+              verticalEdges.set(key, { side: border.right, x1: x2, y1: y, x2, y2, priority });
+            }
+          }
         }
 
         currentX += colWidth;
@@ -2390,154 +2433,71 @@ export class SpreadsheetRenderer {
       currentY += rowHeight;
     }
 
-    // 共享边冲突解决：构建边框映射，key 为边的像素坐标标识
-    // 水平边 key: `h_${y}_${x1}_${x2}`，垂直边 key: `v_${x}_${y1}_${y2}`
-    interface ResolvedBorder {
-      side: BorderSide;
-      row: number;
-      col: number;
+    // 按样式分组批量绘制，减少状态切换
+    // 收集所有边到统一数组
+    const allEdges: EdgeInfo[] = [];
+    for (const edge of horizontalEdges.values()) allEdges.push(edge);
+    for (const edge of verticalEdges.values()) allEdges.push(edge);
+
+    // 按 color + style + width 分组
+    const groups = new Map<string, EdgeInfo[]>();
+    for (const edge of allEdges) {
+      const groupKey = `${edge.side.color}_${edge.side.style}_${edge.side.width}`;
+      let group = groups.get(groupKey);
+      if (!group) { group = []; groups.set(groupKey, group); }
+      group.push(edge);
     }
 
-    const horizontalEdges = new Map<string, ResolvedBorder>();
-    const verticalEdges = new Map<string, ResolvedBorder>();
+    // 批量绘制每组
+    for (const edges of groups.values()) {
+      const { color, style, width } = edges[0].side;
+      this.ctx.strokeStyle = color;
 
-    // 判断新边框是否应覆盖已有边框（宽度大者优先；宽度相同时行号/列号较大者优先）
-    const shouldOverride = (
-      existing: ResolvedBorder,
-      newSide: BorderSide,
-      newRow: number,
-      newCol: number,
-      isHorizontal: boolean
-    ): boolean => {
-      if (newSide.width > existing.side.width) return true;
-      if (newSide.width < existing.side.width) return false;
-      // 宽度相同，水平边比较行号，垂直边比较列号
-      if (isHorizontal) return newRow > existing.row;
-      return newCol > existing.col;
-    };
-
-    // 注册边框到映射表
-    for (const info of borderCells) {
-      const { row, col, x, y, width, height, border } = info;
-
-      // 上边框
-      if (border.top) {
-        const key = `h_${Math.round(y)}_${Math.round(x)}_${Math.round(x + width)}`;
-        const existing = horizontalEdges.get(key);
-        if (!existing || shouldOverride(existing, border.top, row, col, true)) {
-          horizontalEdges.set(key, { side: border.top, row, col });
-        }
-      }
-
-      // 下边框
-      if (border.bottom) {
-        const key = `h_${Math.round(y + height)}_${Math.round(x)}_${Math.round(x + width)}`;
-        const existing = horizontalEdges.get(key);
-        if (!existing || shouldOverride(existing, border.bottom, row, col, true)) {
-          horizontalEdges.set(key, { side: border.bottom, row, col });
-        }
-      }
-
-      // 左边框
-      if (border.left) {
-        const key = `v_${Math.round(x)}_${Math.round(y)}_${Math.round(y + height)}`;
-        const existing = verticalEdges.get(key);
-        if (!existing || shouldOverride(existing, border.left, row, col, false)) {
-          verticalEdges.set(key, { side: border.left, row, col });
-        }
-      }
-
-      // 右边框
-      if (border.right) {
-        const key = `v_${Math.round(x + width)}_${Math.round(y)}_${Math.round(y + height)}`;
-        const existing = verticalEdges.get(key);
-        if (!existing || shouldOverride(existing, border.right, row, col, false)) {
-          verticalEdges.set(key, { side: border.right, row, col });
-        }
-      }
-    }
-
-    // 绘制单条边框线的辅助方法
-    const drawBorderLine = (
-      side: BorderSide,
-      x1: number,
-      y1: number,
-      x2: number,
-      y2: number
-    ): void => {
-      this.ctx.strokeStyle = side.color;
-
-      if (side.style === 'double') {
-        // 双线：绘制两条平行线，间距 2px，每条线宽 1px
+      if (style === 'double') {
         this.ctx.lineWidth = 1;
         this.ctx.setLineDash([]);
-
-        const isHorizontal = Math.abs(y1 - y2) < 0.5;
-        if (isHorizontal) {
-          // 水平双线：上下各偏移 1px
-          this.ctx.beginPath();
-          this.ctx.moveTo(x1, y1 - 1);
-          this.ctx.lineTo(x2, y2 - 1);
-          this.ctx.stroke();
-
-          this.ctx.beginPath();
-          this.ctx.moveTo(x1, y1 + 1);
-          this.ctx.lineTo(x2, y2 + 1);
-          this.ctx.stroke();
-        } else {
-          // 垂直双线：左右各偏移 1px
-          this.ctx.beginPath();
-          this.ctx.moveTo(x1 - 1, y1);
-          this.ctx.lineTo(x2 - 1, y2);
-          this.ctx.stroke();
-
-          this.ctx.beginPath();
-          this.ctx.moveTo(x1 + 1, y1);
-          this.ctx.lineTo(x2 + 1, y2);
-          this.ctx.stroke();
+        for (const e of edges) {
+          const isH = Math.abs(e.y1 - e.y2) < 0.5;
+          if (isH) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(e.x1, e.y1 - 1); this.ctx.lineTo(e.x2, e.y2 - 1); this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(e.x1, e.y1 + 1); this.ctx.lineTo(e.x2, e.y2 + 1); this.ctx.stroke();
+          } else {
+            this.ctx.beginPath();
+            this.ctx.moveTo(e.x1 - 1, e.y1); this.ctx.lineTo(e.x2 - 1, e.y2); this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(e.x1 + 1, e.y1); this.ctx.lineTo(e.x2 + 1, e.y2); this.ctx.stroke();
+          }
         }
       } else {
-        // 非双线：根据线型设置 setLineDash
-        this.ctx.lineWidth = side.width;
-        switch (side.style) {
-          case 'dashed':
-            this.ctx.setLineDash([6, 3]);
-            break;
-          case 'dotted':
-            this.ctx.setLineDash([2, 2]);
-            break;
-          case 'solid':
-          default:
-            this.ctx.setLineDash([]);
-            break;
+        this.ctx.lineWidth = width;
+        switch (style) {
+          case 'dashed': this.ctx.setLineDash([6, 3]); break;
+          case 'dotted': this.ctx.setLineDash([2, 2]); break;
+          default: this.ctx.setLineDash([]); break;
         }
 
-        this.ctx.beginPath();
-        this.ctx.moveTo(x1, y1);
-        this.ctx.lineTo(x2, y2);
-        this.ctx.stroke();
+        // solid 线可以合并到一个 path
+        if (style === 'solid' || !style) {
+          this.ctx.beginPath();
+          for (const e of edges) {
+            this.ctx.moveTo(e.x1, e.y1);
+            this.ctx.lineTo(e.x2, e.y2);
+          }
+          this.ctx.stroke();
+        } else {
+          // dashed/dotted 需要单独 stroke（setLineDash 按路径起点计算）
+          for (const e of edges) {
+            this.ctx.beginPath();
+            this.ctx.moveTo(e.x1, e.y1);
+            this.ctx.lineTo(e.x2, e.y2);
+            this.ctx.stroke();
+          }
+        }
       }
-    };
-
-    // 绘制所有已解决冲突的水平边框
-    for (const [key, resolved] of horizontalEdges) {
-      const parts = key.split('_');
-      const y = parseInt(parts[1], 10);
-      const x1 = parseInt(parts[2], 10);
-      const x2 = parseInt(parts[3], 10);
-      drawBorderLine(resolved.side, x1, y, x2, y);
     }
 
-    // 绘制所有已解决冲突的垂直边框
-    for (const [key, resolved] of verticalEdges) {
-      const parts = key.split('_');
-      const x = parseInt(parts[1], 10);
-      const y1 = parseInt(parts[2], 10);
-      const y2 = parseInt(parts[3], 10);
-      drawBorderLine(resolved.side, x, y1, x, y2);
-    }
-
-    // 恢复 Canvas 状态（清除 lineDash 和裁剪）
     this.ctx.setLineDash([]);
     this.ctx.restore();
   }
