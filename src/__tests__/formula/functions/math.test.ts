@@ -303,3 +303,173 @@ describe('registerMathFunctions', () => {
     }
   });
 });
+
+
+// ============================================================
+// ROUNDUP 函数测试
+// ============================================================
+
+describe('ROUNDUP', () => {
+  it('正数向远离零方向舍入：ROUNDUP(3.141, 2) = 3.15', () => {
+    expect(callFn('ROUNDUP', [3.141, 2])).toBeCloseTo(3.15, 10);
+  });
+
+  it('负数向远离零方向舍入：ROUNDUP(-3.141, 2) = -3.15', () => {
+    expect(callFn('ROUNDUP', [-3.141, 2])).toBeCloseTo(-3.15, 10);
+  });
+
+  it('已是精确值不变：ROUNDUP(3.14, 2) = 3.14', () => {
+    expect(callFn('ROUNDUP', [3.14, 2])).toBeCloseTo(3.14, 10);
+  });
+
+  it('零值应返回 0', () => {
+    expect(callFn('ROUNDUP', [0, 2])).toBe(0);
+  });
+
+  it('整数输入：ROUNDUP(5, 0) = 5', () => {
+    expect(callFn('ROUNDUP', [5, 0])).toBe(5);
+  });
+
+  it('ROUNDUP(3.2, 0) = 4', () => {
+    expect(callFn('ROUNDUP', [3.2, 0])).toBe(4);
+  });
+
+  it('ROUNDUP(-3.2, 0) = -4', () => {
+    expect(callFn('ROUNDUP', [-3.2, 0])).toBe(-4);
+  });
+
+  it('非数值参数应返回 #VALUE!', () => {
+    const result = callFn('ROUNDUP', ['abc', 2]);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#VALUE!');
+  });
+});
+
+
+// ============================================================
+// ROUNDDOWN 函数测试
+// ============================================================
+
+describe('ROUNDDOWN', () => {
+  it('正数向接近零方向舍入：ROUNDDOWN(3.149, 2) = 3.14', () => {
+    expect(callFn('ROUNDDOWN', [3.149, 2])).toBeCloseTo(3.14, 10);
+  });
+
+  it('负数向接近零方向舍入：ROUNDDOWN(-3.149, 2) = -3.14', () => {
+    expect(callFn('ROUNDDOWN', [-3.149, 2])).toBeCloseTo(-3.14, 10);
+  });
+
+  it('已是精确值不变：ROUNDDOWN(3.14, 2) = 3.14', () => {
+    expect(callFn('ROUNDDOWN', [3.14, 2])).toBeCloseTo(3.14, 10);
+  });
+
+  it('零值应返回 0', () => {
+    expect(callFn('ROUNDDOWN', [0, 2])).toBe(0);
+  });
+
+  it('整数输入：ROUNDDOWN(5, 0) = 5', () => {
+    expect(callFn('ROUNDDOWN', [5, 0])).toBe(5);
+  });
+
+  it('ROUNDDOWN(3.9, 0) = 3', () => {
+    expect(callFn('ROUNDDOWN', [3.9, 0])).toBe(3);
+  });
+
+  it('ROUNDDOWN(-3.9, 0) = -3', () => {
+    expect(callFn('ROUNDDOWN', [-3.9, 0])).toBe(-3);
+  });
+
+  it('非数值参数应返回 #VALUE!', () => {
+    const result = callFn('ROUNDDOWN', ['abc', 2]);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#VALUE!');
+  });
+});
+
+
+// ============================================================
+// INT 函数测试
+// ============================================================
+
+describe('INT', () => {
+  it('正数取整：INT(3.7) = 3', () => {
+    expect(callFn('INT', [3.7])).toBe(3);
+  });
+
+  it('负数取整（向负无穷）：INT(-3.2) = -4', () => {
+    expect(callFn('INT', [-3.2])).toBe(-4);
+  });
+
+  it('INT(-3.7) = -4', () => {
+    expect(callFn('INT', [-3.7])).toBe(-4);
+  });
+
+  it('整数输入不变：INT(5) = 5', () => {
+    expect(callFn('INT', [5])).toBe(5);
+  });
+
+  it('零值：INT(0) = 0', () => {
+    expect(callFn('INT', [0])).toBe(0);
+  });
+
+  it('INT(0.9) = 0', () => {
+    expect(callFn('INT', [0.9])).toBe(0);
+  });
+
+  it('INT(-0.1) = -1', () => {
+    expect(callFn('INT', [-0.1])).toBe(-1);
+  });
+
+  it('非数值参数应返回 #VALUE!', () => {
+    const result = callFn('INT', ['abc']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#VALUE!');
+  });
+});
+
+
+// ============================================================
+// TRUNC 函数测试
+// ============================================================
+
+describe('TRUNC', () => {
+  it('正数截断：TRUNC(3.7) = 3', () => {
+    expect(callFn('TRUNC', [3.7])).toBe(3);
+  });
+
+  it('负数截断（向零方向）：TRUNC(-3.7) = -3', () => {
+    expect(callFn('TRUNC', [-3.7])).toBe(-3);
+  });
+
+  it('指定小数位数：TRUNC(3.149, 2) = 3.14', () => {
+    expect(callFn('TRUNC', [3.149, 2])).toBeCloseTo(3.14, 10);
+  });
+
+  it('负数指定小数位数：TRUNC(-3.149, 2) = -3.14', () => {
+    expect(callFn('TRUNC', [-3.149, 2])).toBeCloseTo(-3.14, 10);
+  });
+
+  it('整数输入不变：TRUNC(5) = 5', () => {
+    expect(callFn('TRUNC', [5])).toBe(5);
+  });
+
+  it('零值：TRUNC(0) = 0', () => {
+    expect(callFn('TRUNC', [0])).toBe(0);
+  });
+
+  it('TRUNC(0.9) = 0', () => {
+    expect(callFn('TRUNC', [0.9])).toBe(0);
+  });
+
+  it('TRUNC(-0.9) = -0', () => {
+    // TRUNC 向零方向截断，Math.sign(-0.9) * Math.floor(0.9) = -1 * 0 = -0
+    const result = callFn('TRUNC', [-0.9]);
+    expect(result).toEqual(-0);
+  });
+
+  it('非数值参数应返回 #VALUE!', () => {
+    const result = callFn('TRUNC', ['abc']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#VALUE!');
+  });
+});

@@ -363,6 +363,9 @@ export class SpreadsheetApp {
     this.formulaBar.onCancel(() => {
       this.updateSelectedCellInfo();
     });
+
+    // 将 AutoComplete 和 FunctionRegistry 注入到 InlineEditor，共享同一实例
+    this.inlineEditor.setAutoComplete(this.formulaBar.getAutoComplete(), registry);
   }
 
   /**

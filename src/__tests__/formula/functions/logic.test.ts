@@ -365,3 +365,83 @@ describe('registerLogicFunctions', () => {
     }
   });
 });
+
+
+// ============================================================
+// IFNA 函数测试
+// ============================================================
+
+describe('IFNA', () => {
+  it('#N/A 错误应被拦截并返回替代值', () => {
+    const naErr = makeErr('#N/A', '不可用');
+    expect(callFn('IFNA', [naErr, '未找到'])).toBe('未找到');
+  });
+
+  it('#N/A 错误时替代值为数字应正确返回', () => {
+    const naErr = makeErr('#N/A', '不可用');
+    expect(callFn('IFNA', [naErr, 0])).toBe(0);
+  });
+
+  it('非 #N/A 错误 #VALUE! 应原样传播', () => {
+    const err = makeErr('#VALUE!', '值错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#VALUE!');
+  });
+
+  it('非 #N/A 错误 #REF! 应原样传播', () => {
+    const err = makeErr('#REF!', '引用错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#REF!');
+  });
+
+  it('非 #N/A 错误 #DIV/0! 应原样传播', () => {
+    const err = makeErr('#DIV/0!', '除零错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#DIV/0!');
+  });
+
+  it('非 #N/A 错误 #NAME? 应原样传播', () => {
+    const err = makeErr('#NAME?', '名称错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#NAME?');
+  });
+
+  it('非 #N/A 错误 #NUM! 应原样传播', () => {
+    const err = makeErr('#NUM!', '数值错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#NUM!');
+  });
+
+  it('非 #N/A 错误 #NULL! 应原样传播', () => {
+    const err = makeErr('#NULL!', '空值错误');
+    const result = callFn('IFNA', [err, '替代']);
+    expect(isError(result)).toBe(true);
+    if (isError(result)) expect(result.type).toBe('#NULL!');
+  });
+
+  it('正常数值应直接返回', () => {
+    expect(callFn('IFNA', [42, '替代'])).toBe(42);
+  });
+
+  it('正常字符串应直接返回', () => {
+    expect(callFn('IFNA', ['hello', '替代'])).toBe('hello');
+  });
+
+  it('正常布尔值应直接返回', () => {
+    expect(callFn('IFNA', [true, '替代'])).toBe(true);
+    expect(callFn('IFNA', [false, '替代'])).toBe(false);
+  });
+
+  it('零值应直接返回（不被视为错误）', () => {
+    expect(callFn('IFNA', [0, '替代'])).toBe(0);
+  });
+
+  it('空字符串应直接返回（不被视为错误）', () => {
+    expect(callFn('IFNA', ['', '替代'])).toBe('');
+  });
+});

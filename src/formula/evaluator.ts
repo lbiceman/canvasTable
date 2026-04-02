@@ -76,7 +76,7 @@ export function toBoolean(value: FormulaValue): boolean {
 // ============================================================
 // 不传播错误的特殊函数集合（这些函数自行处理错误参数）
 // ============================================================
-const ERROR_HANDLING_FUNCTIONS = new Set(['IFERROR', 'IF', 'IFS', 'SWITCH']);
+const ERROR_HANDLING_FUNCTIONS = new Set(['IFERROR', 'IFNA', 'IF', 'IFS', 'SWITCH']);
 
 // ============================================================
 // Evaluator 类

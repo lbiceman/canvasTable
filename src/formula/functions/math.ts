@@ -1,6 +1,6 @@
 // ============================================================
-// 数学函数：ABS, ROUND, CEILING, FLOOR, MOD, POWER, SQRT,
-//           MAX, MIN, AVERAGE
+// 数学函数：ABS, ROUND, ROUNDUP, ROUNDDOWN, CEILING, FLOOR,
+//           MOD, POWER, SQRT, MAX, MIN, AVERAGE, INT, TRUNC
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -260,6 +260,88 @@ export function registerMathFunctions(registry: FunctionRegistry): void {
       }
       const sum = numbers.reduce((acc, n) => acc + n, 0);
       return sum / numbers.length;
+    },
+  });
+
+  // ROUNDUP - 向远离零方向舍入
+  registry.register({
+    name: 'ROUNDUP',
+    category: 'math',
+    description: '将数值向远离零的方向舍入到指定小数位数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'number', description: '需要舍入的数值', type: 'number' },
+      { name: 'num_digits', description: '小数位数', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      const digits = toNumber(args[1]);
+      if (isError(digits)) return digits;
+      if (num === 0) return 0;
+      const factor = Math.pow(10, digits);
+      return Math.sign(num) * Math.ceil(Math.abs(num) * factor) / factor;
+    },
+  });
+
+  // ROUNDDOWN - 向接近零方向舍入
+  registry.register({
+    name: 'ROUNDDOWN',
+    category: 'math',
+    description: '将数值向接近零的方向舍入到指定小数位数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'number', description: '需要舍入的数值', type: 'number' },
+      { name: 'num_digits', description: '小数位数', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      const digits = toNumber(args[1]);
+      if (isError(digits)) return digits;
+      if (num === 0) return 0;
+      const factor = Math.pow(10, digits);
+      return Math.sign(num) * Math.floor(Math.abs(num) * factor) / factor;
+    },
+  });
+
+  // INT - 向负无穷取整
+  registry.register({
+    name: 'INT',
+    category: 'math',
+    description: '返回小于或等于参数的最大整数',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'number', description: '需要取整的数值', type: 'number' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      return Math.floor(num);
+    },
+  });
+
+  // TRUNC - 截断小数部分（向零方向）
+  registry.register({
+    name: 'TRUNC',
+    category: 'math',
+    description: '截断数值的小数部分',
+    minArgs: 1,
+    maxArgs: 2,
+    params: [
+      { name: 'number', description: '需要截断的数值', type: 'number' },
+      { name: 'num_digits', description: '保留的小数位数，默认为 0', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      // num_digits 默认为 0
+      const digits = args.length > 1 ? toNumber(args[1]) : 0;
+      if (isError(digits)) return digits;
+      if (num === 0) return 0;
+      const factor = Math.pow(10, digits);
+      return Math.sign(num) * Math.floor(Math.abs(num) * factor) / factor;
     },
   });
 }

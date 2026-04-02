@@ -696,13 +696,13 @@ export class SheetManager {
 
     // 构建替换用的新前缀
     const newPrefix = this.needsQuoting(newName) ? `'${newName}'!` : `${newName}!`;
+    const formulaEngine = FormulaEngine.getInstance();
 
     for (const [_sheetId, sheetData] of this.sheetDataMap) {
       const model = sheetData.model;
       const data = model.getData();
       const rows = data.cells.length;
       const cols = data.cells[0]?.length ?? 0;
-      const formulaEngine = FormulaEngine.getInstance();
 
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
@@ -717,13 +717,24 @@ export class SheetManager {
             const updatedFormula = this.replaceSheetNameInFormula(formula, oldName, newPrefix);
             cell.formulaContent = updatedFormula;
 
-            // 重新计算公式
+            // 切换 cellGetter 到当前工作表的 model，确保同 Sheet 引用正确求值
+            formulaEngine.setCellGetter((row: number, col: number) => {
+              return model.getCell(row, col);
+            });
             formulaEngine.clearCellCache(r, c);
             const result = formulaEngine.evaluate(updatedFormula, r, c);
             cell.content = result.value.toString();
           }
         }
       }
+    }
+
+    // 恢复 cellGetter 到当前活动工作表的 model
+    const activeData = this.sheetDataMap.get(this.activeSheetId);
+    if (activeData) {
+      formulaEngine.setCellGetter((row: number, col: number) => {
+        return activeData.model.getCell(row, col);
+      });
     }
   }
 
@@ -775,6 +786,11 @@ export class SheetManager {
       const rows = data.cells.length;
       const cols = data.cells[0]?.length ?? 0;
 
+      // 切换 cellGetter 到当前工作表的 model，确保同 Sheet 引用正确求值
+      formulaEngine.setCellGetter((row: number, col: number) => {
+        return model.getCell(row, col);
+      });
+
       for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           const cell = data.cells[r][c];
@@ -791,6 +807,14 @@ export class SheetManager {
           }
         }
       }
+    }
+
+    // 恢复 cellGetter 到当前活动工作表的 model
+    const activeData = this.sheetDataMap.get(this.activeSheetId);
+    if (activeData) {
+      formulaEngine.setCellGetter((row: number, col: number) => {
+        return activeData.model.getCell(row, col);
+      });
     }
   }
 

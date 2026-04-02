@@ -368,3 +368,83 @@ describe('registerTextFunctions', () => {
     }
   });
 });
+
+
+// ============================================================
+// TEXTJOIN 函数测试
+// ============================================================
+
+describe('TEXTJOIN', () => {
+  it('基本分隔符连接', () => {
+    // TEXTJOIN(",", TRUE, "a", "b", "c") => "a,b,c"
+    expect(callFn('TEXTJOIN', [',', true, 'a', 'b', 'c'])).toBe('a,b,c');
+  });
+
+  it('使用空格作为分隔符', () => {
+    expect(callFn('TEXTJOIN', [' ', true, 'Hello', 'World'])).toBe('Hello World');
+  });
+
+  it('ignore_empty=TRUE 应跳过空字符串', () => {
+    // TEXTJOIN(",", TRUE, "a", "", "b", "", "c") => "a,b,c"
+    expect(callFn('TEXTJOIN', [',', true, 'a', '', 'b', '', 'c'])).toBe('a,b,c');
+  });
+
+  it('ignore_empty=FALSE 应保留空字符串（产生连续分隔符）', () => {
+    // TEXTJOIN(",", FALSE, "a", "", "b") => "a,,b"
+    expect(callFn('TEXTJOIN', [',', false, 'a', '', 'b'])).toBe('a,,b');
+  });
+
+  it('ignore_empty=FALSE 全部为空字符串', () => {
+    // TEXTJOIN(",", FALSE, "", "", "") => ",,"
+    expect(callFn('TEXTJOIN', [',', false, '', '', ''])).toBe(',,');
+  });
+
+  it('ignore_empty=TRUE 全部为空字符串应返回空', () => {
+    expect(callFn('TEXTJOIN', [',', true, '', '', ''])).toBe('');
+  });
+
+  it('区域引用展平', () => {
+    // 模拟区域引用：二维数组 [["a", "b"], ["c", "d"]]
+    const range: FormulaValue = [['a', 'b'], ['c', 'd']];
+    expect(callFn('TEXTJOIN', ['-', true, range])).toBe('a-b-c-d');
+  });
+
+  it('区域引用中含空字符串且 ignore_empty=TRUE', () => {
+    const range: FormulaValue = [['a', ''], ['', 'b']];
+    expect(callFn('TEXTJOIN', [',', true, range])).toBe('a,b');
+  });
+
+  it('区域引用中含空字符串且 ignore_empty=FALSE', () => {
+    const range: FormulaValue = [['a', ''], ['', 'b']];
+    expect(callFn('TEXTJOIN', [',', false, range])).toBe('a,,,b');
+  });
+
+  it('空分隔符应直接拼接', () => {
+    expect(callFn('TEXTJOIN', ['', true, 'a', 'b', 'c'])).toBe('abc');
+  });
+
+  it('单个文本参数', () => {
+    expect(callFn('TEXTJOIN', [',', true, 'hello'])).toBe('hello');
+  });
+
+  it('数值参数应转为字符串', () => {
+    expect(callFn('TEXTJOIN', [',', true, 1, 2, 3])).toBe('1,2,3');
+  });
+
+  it('布尔参数应转为字符串', () => {
+    expect(callFn('TEXTJOIN', [',', true, true, false])).toBe('TRUE,FALSE');
+  });
+
+  it('分隔符为错误值应传播错误', () => {
+    const err = { type: '#VALUE!' as const, message: '错误' };
+    const result = callFn('TEXTJOIN', [err, true, 'a', 'b']);
+    expect(isError(result)).toBe(true);
+  });
+
+  it('区域引用中含错误值应传播错误', () => {
+    const err = { type: '#REF!' as const, message: '引用错误' };
+    const range: FormulaValue = [['a', err as unknown as FormulaValue]];
+    const result = callFn('TEXTJOIN', [',', true, range]);
+    expect(isError(result)).toBe(true);
+  });
+});

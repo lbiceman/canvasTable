@@ -1,4 +1,7 @@
 import type { RichTextSegment } from './types';
+import type { AutoComplete, AutoCompleteSuggestion } from './formula-bar/autocomplete';
+import type { FunctionRegistry } from './formula/function-registry';
+import type { FunctionParam } from './formula/types';
 
 export class InlineEditor {
   private editorElement: HTMLDivElement;
@@ -13,6 +16,12 @@ export class InlineEditor {
   private arrayFormulaSaveCallback: ((value: string) => void) | null = null;
   private isSaving: boolean = false;
   private isComposing: boolean = false;
+
+  // 自动补全相关属性
+  private dropdownEl: HTMLDivElement | null = null;
+  private paramHintEl: HTMLDivElement | null = null;
+  private autoComplete: AutoComplete | null = null;
+  private functionRegistry: FunctionRegistry | null = null;
 
   constructor() {
     // 创建编辑器容器元素
@@ -56,6 +65,40 @@ export class InlineEditor {
     this.inputElement.addEventListener('keydown', (event: KeyboardEvent) => {
       // IME 组合输入期间不处理按键
       if (event.isComposing || event.keyCode === 229) return;
+
+      // 自动补全可见时，拦截导航键
+      if (this.autoComplete?.isVisible) {
+        switch (event.key) {
+          case 'ArrowDown':
+            event.preventDefault();
+            this.autoComplete.moveDown();
+            this.renderDropdown();
+            return;
+          case 'ArrowUp':
+            event.preventDefault();
+            this.autoComplete.moveUp();
+            this.renderDropdown();
+            return;
+          case 'Tab':
+            event.preventDefault();
+            this.confirmAutoComplete();
+            return;
+          case 'Enter':
+            // 非 Alt/Ctrl+Shift 组合时，确认自动补全选中项
+            if (!event.altKey && !(event.ctrlKey && event.shiftKey) && !(event.metaKey && event.shiftKey)) {
+              event.preventDefault();
+              this.confirmAutoComplete();
+              return;
+            }
+            break;
+          case 'Escape':
+            event.preventDefault();
+            this.autoComplete.dismiss();
+            this.hideDropdown();
+            return;
+        }
+      }
+
       if (event.key === 'Enter' && event.altKey) {
         event.preventDefault();
         this.insertNewlineAtCursor();
@@ -76,7 +119,17 @@ export class InlineEditor {
     this.inputElement.addEventListener('blur', () => {
       // IME 组合输入期间不触发保存，等 compositionend 后再处理
       if (this.isComposing) return;
-      this.save();
+      // 延迟保存，允许点击自动补全下拉列表
+      setTimeout(() => {
+        if (!this.isActive || this.isSaving) return;
+        this.save();
+      }, 150);
+    });
+
+    // 监听 input 事件，触发自动补全和参数提示
+    this.inputElement.addEventListener('input', () => {
+      this.updateAutoComplete();
+      this.updateParamHint();
     });
 
     this.richTextEditor.addEventListener('keydown', (event: KeyboardEvent) => {
@@ -121,6 +174,9 @@ export class InlineEditor {
     this.inputElement.value = content;
     this.inputElement.focus();
     this.inputElement.setSelectionRange(content.length, content.length);
+
+    // 初始化自动补全下拉列表和参数提示 DOM（如尚未创建）
+    this.ensureAutoCompleteDom();
   }
 
   // 显示富文本编辑器
@@ -214,6 +270,12 @@ export class InlineEditor {
     return this.richTextMode;
   }
 
+  // 注入 AutoComplete 和 FunctionRegistry 依赖
+  public setAutoComplete(autoComplete: AutoComplete, registry: FunctionRegistry): void {
+    this.autoComplete = autoComplete;
+    this.functionRegistry = registry;
+  }
+
   // 保存编辑内容
   private save(): void {
     if (!this.isActive || this.isSaving) return;
@@ -249,6 +311,12 @@ export class InlineEditor {
     this.richTextSaveCallback = null;
     this.currentRow = -1;
     this.currentCol = -1;
+    // 关闭自动补全和参数提示
+    this.hideDropdown();
+    this.hideParamHint();
+    if (this.autoComplete) {
+      this.autoComplete.dismiss();
+    }
   }
 
   // 在光标位置插入换行符（Alt+Enter）
@@ -416,5 +484,307 @@ export class InlineEditor {
       (a.fontColor || '') === (b.fontColor || '') &&
       (a.fontSize || 0) === (b.fontSize || 0)
     );
+  }
+
+  // ============================================================
+  // 自动补全相关方法
+  // ============================================================
+
+  // 确保自动补全下拉列表和参数提示 DOM 已创建
+  private ensureAutoCompleteDom(): void {
+    if (!this.dropdownEl) {
+      this.dropdownEl = document.createElement('div');
+      this.dropdownEl.className = 'autocomplete-dropdown';
+      this.dropdownEl.style.display = 'none';
+      this.dropdownEl.style.position = 'absolute';
+      this.dropdownEl.style.zIndex = '200';
+      document.body.appendChild(this.dropdownEl);
+    }
+    if (!this.paramHintEl) {
+      this.paramHintEl = document.createElement('div');
+      this.paramHintEl.className = 'param-hint';
+      this.paramHintEl.style.display = 'none';
+      this.paramHintEl.style.position = 'absolute';
+      this.paramHintEl.style.zIndex = '199';
+      document.body.appendChild(this.paramHintEl);
+    }
+  }
+
+  // 更新自动补全候选列表
+  private updateAutoComplete(): void {
+    if (!this.autoComplete) return;
+
+    const value = this.inputElement.value;
+    const cursorPos = this.inputElement.selectionStart ?? value.length;
+
+    // 提取当前正在输入的函数名前缀
+    const prefix = this.extractFunctionPrefix(value, cursorPos);
+
+    if (prefix && prefix.length > 0) {
+      this.autoComplete.search(prefix);
+      if (this.autoComplete.isVisible) {
+        this.renderDropdown();
+        this.showDropdown();
+      } else {
+        this.hideDropdown();
+      }
+    } else {
+      this.autoComplete.dismiss();
+      this.hideDropdown();
+    }
+  }
+
+  /**
+   * 从输入值和光标位置提取函数名前缀
+   * 向左扫描直到遇到非字母字符
+   */
+  private extractFunctionPrefix(value: string, cursorPos: number): string {
+    let start = cursorPos;
+    while (start > 0 && /[a-zA-Z]/.test(value[start - 1])) {
+      start--;
+    }
+    const prefix = value.slice(start, cursorPos);
+    // 只有在 = 号之后才触发自动补全
+    if (!value.includes('=')) {
+      return '';
+    }
+    return prefix;
+  }
+
+  // 确认自动补全选中项
+  private confirmAutoComplete(): void {
+    if (!this.autoComplete) return;
+
+    const selected = this.autoComplete.confirm();
+    if (!selected) return;
+
+    const value = this.inputElement.value;
+    const cursorPos = this.inputElement.selectionStart ?? value.length;
+
+    // 找到前缀的起始位置
+    let start = cursorPos;
+    while (start > 0 && /[a-zA-Z]/.test(value[start - 1])) {
+      start--;
+    }
+
+    // 构建插入文本：函数名 + 左括号，命名范围只插入名称
+    const insertText = selected.source === 'function'
+      ? `${selected.name}(`
+      : selected.name;
+
+    // 替换前缀为完整函数名
+    const newValue = value.slice(0, start) + insertText + value.slice(cursorPos);
+    this.inputElement.value = newValue;
+
+    // 设置光标位置
+    const newCursorPos = start + insertText.length;
+    this.inputElement.setSelectionRange(newCursorPos, newCursorPos);
+
+    // 隐藏下拉列表，更新参数提示
+    this.hideDropdown();
+    this.updateParamHint();
+  }
+
+  // 渲染下拉列表
+  private renderDropdown(): void {
+    if (!this.dropdownEl || !this.autoComplete) return;
+
+    const suggestions = this.autoComplete.getSuggestions();
+    const selectedIndex = this.autoComplete.getSelectedIndex();
+
+    this.dropdownEl.innerHTML = '';
+
+    suggestions.forEach((suggestion: AutoCompleteSuggestion, index: number) => {
+      const item = document.createElement('div');
+      item.className = 'autocomplete-item';
+      if (index === selectedIndex) {
+        item.classList.add('selected');
+      }
+
+      // 函数名
+      const nameSpan = document.createElement('span');
+      nameSpan.className = 'autocomplete-name';
+      nameSpan.textContent = suggestion.name;
+      item.appendChild(nameSpan);
+
+      // 类别
+      const categorySpan = document.createElement('span');
+      categorySpan.className = 'autocomplete-category';
+      categorySpan.textContent = suggestion.category;
+      item.appendChild(categorySpan);
+
+      // 描述
+      const descSpan = document.createElement('span');
+      descSpan.className = 'autocomplete-desc';
+      descSpan.textContent = suggestion.description;
+      item.appendChild(descSpan);
+
+      // 点击选择
+      item.addEventListener('mousedown', (e: MouseEvent) => {
+        e.preventDefault();
+        // 设置选中索引后确认
+        while (this.autoComplete!.getSelectedIndex() !== index) {
+          this.autoComplete!.moveDown();
+        }
+        this.confirmAutoComplete();
+      });
+
+      this.dropdownEl!.appendChild(item);
+    });
+  }
+
+  // 显示下拉列表，定位在编辑器下方
+  private showDropdown(): void {
+    if (!this.dropdownEl) return;
+    // 定位在编辑器下方
+    const editorRect = this.editorElement.getBoundingClientRect();
+    this.dropdownEl.style.left = `${editorRect.left}px`;
+    this.dropdownEl.style.top = `${editorRect.bottom}px`;
+    this.dropdownEl.style.display = 'block';
+  }
+
+  // 隐藏下拉列表
+  private hideDropdown(): void {
+    if (this.dropdownEl) {
+      this.dropdownEl.style.display = 'none';
+    }
+  }
+
+  // ============================================================
+  // 参数提示相关方法
+  // ============================================================
+
+  // 更新参数提示
+  private updateParamHint(): void {
+    if (!this.functionRegistry) return;
+
+    const value = this.inputElement.value;
+    const cursorPos = this.inputElement.selectionStart ?? value.length;
+
+    const hintInfo = this.detectParamContext(value, cursorPos);
+    if (hintInfo) {
+      this.renderParamHint(hintInfo);
+      this.showParamHint();
+    } else {
+      this.hideParamHint();
+    }
+  }
+
+  /**
+   * 检测光标是否在函数括号内，并返回参数提示信息
+   * 从光标位置向左扫描，找到最近的未匹配左括号及其前面的函数名
+   */
+  private detectParamContext(value: string, cursorPos: number): { functionName: string; params: FunctionParam[]; activeIndex: number } | null {
+    if (!this.functionRegistry) return null;
+
+    let parenDepth = 0;
+    let commaCount = 0;
+
+    // 从光标位置向左扫描
+    for (let i = cursorPos - 1; i >= 0; i--) {
+      const ch = value[i];
+      if (ch === ')') {
+        parenDepth++;
+      } else if (ch === '(') {
+        if (parenDepth === 0) {
+          // 找到未匹配的左括号，提取前面的函数名
+          const funcEnd = i;
+          let funcStart = funcEnd;
+          while (funcStart > 0 && /[a-zA-Z]/.test(value[funcStart - 1])) {
+            funcStart--;
+          }
+          const funcName = value.slice(funcStart, funcEnd).toUpperCase();
+          if (funcName.length === 0) return null;
+
+          // 从注册表获取函数定义
+          const funcDef = this.functionRegistry.get(funcName);
+          if (!funcDef) return null;
+
+          return {
+            functionName: funcDef.name,
+            params: funcDef.params,
+            activeIndex: commaCount,
+          };
+        }
+        parenDepth--;
+      } else if (ch === ',' && parenDepth === 0) {
+        commaCount++;
+      }
+    }
+
+    return null;
+  }
+
+  // 渲染参数提示
+  private renderParamHint(info: { functionName: string; params: FunctionParam[]; activeIndex: number }): void {
+    if (!this.paramHintEl) return;
+
+    this.paramHintEl.innerHTML = '';
+
+    // 函数名标题
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'param-hint-title';
+    titleSpan.textContent = `${info.functionName}(`;
+    this.paramHintEl.appendChild(titleSpan);
+
+    // 参数列表
+    info.params.forEach((param: FunctionParam, index: number) => {
+      if (index > 0) {
+        const comma = document.createElement('span');
+        comma.textContent = ', ';
+        this.paramHintEl!.appendChild(comma);
+      }
+
+      const paramSpan = document.createElement('span');
+      paramSpan.className = 'param-hint-param';
+      const optionalMark = param.optional ? '?' : '';
+      paramSpan.textContent = `${param.name}${optionalMark}`;
+
+      // 高亮当前参数
+      if (index === info.activeIndex) {
+        paramSpan.classList.add('active');
+        paramSpan.style.fontWeight = 'bold';
+      }
+
+      // 添加参数描述 tooltip
+      paramSpan.title = param.description;
+      this.paramHintEl!.appendChild(paramSpan);
+    });
+
+    const closeParen = document.createElement('span');
+    closeParen.textContent = ')';
+    this.paramHintEl.appendChild(closeParen);
+
+    // 如果有当前参数的描述，显示在下方
+    if (info.activeIndex < info.params.length) {
+      const activeParam = info.params[info.activeIndex];
+      const descDiv = document.createElement('div');
+      descDiv.className = 'param-hint-desc';
+      descDiv.textContent = `${activeParam.name}: ${activeParam.description}`;
+      this.paramHintEl.appendChild(descDiv);
+    }
+  }
+
+  // 显示参数提示，定位在编辑器下方
+  private showParamHint(): void {
+    if (!this.paramHintEl) return;
+    const editorRect = this.editorElement.getBoundingClientRect();
+    // 如果下拉列表可见，参数提示定位在下拉列表下方
+    if (this.dropdownEl && this.dropdownEl.style.display !== 'none') {
+      const dropdownRect = this.dropdownEl.getBoundingClientRect();
+      this.paramHintEl.style.left = `${editorRect.left}px`;
+      this.paramHintEl.style.top = `${dropdownRect.bottom}px`;
+    } else {
+      this.paramHintEl.style.left = `${editorRect.left}px`;
+      this.paramHintEl.style.top = `${editorRect.bottom}px`;
+    }
+    this.paramHintEl.style.display = 'block';
+  }
+
+  // 隐藏参数提示
+  private hideParamHint(): void {
+    if (this.paramHintEl) {
+      this.paramHintEl.style.display = 'none';
+    }
   }
 }

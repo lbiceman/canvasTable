@@ -391,4 +391,74 @@ describe('Tokenizer', () => {
       expect(tokens[2].position).toBe(3); // B2
     });
   });
+
+  // ============================================================
+  // 单引号包裹的 Sheet 名称引用
+  // ============================================================
+  describe('单引号 Sheet 名称引用', () => {
+    it("'Sheet 1'!A1 格式解析", () => {
+      const tokens = tokenizer.tokenize("'Sheet 1'!A1");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', 'Sheet 1!A1'],
+        ['EOF', ''],
+      ]);
+    });
+
+    it("含空格的 Sheet 名称：'My Sheet'!B2", () => {
+      const tokens = tokenizer.tokenize("'My Sheet'!B2");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', 'My Sheet!B2'],
+        ['EOF', ''],
+      ]);
+    });
+
+    it("含特殊字符的 Sheet 名称：'Data-2024'!C3", () => {
+      const tokens = tokenizer.tokenize("'Data-2024'!C3");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', 'Data-2024!C3'],
+        ['EOF', ''],
+      ]);
+    });
+
+    it("含点号的 Sheet 名称：'Q1.Sales'!D4", () => {
+      const tokens = tokenizer.tokenize("'Q1.Sales'!D4");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', 'Q1.Sales!D4'],
+        ['EOF', ''],
+      ]);
+    });
+
+    it("含转义单引号的 Sheet 名称：'Tom''s Sheet'!A1", () => {
+      const tokens = tokenizer.tokenize("'Tom''s Sheet'!A1");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', "Tom's Sheet!A1"],
+        ['EOF', ''],
+      ]);
+    });
+
+    it("绝对引用：'Sheet 1'!$A$1", () => {
+      const tokens = tokenizer.tokenize("'Sheet 1'!$A$1");
+      expect(typesAndValues(tokens)).toEqual([
+        ['SheetRef', 'Sheet 1!$A$1'],
+        ['EOF', ''],
+      ]);
+    });
+
+    it('单引号未闭合时应生成不完整的 SheetRef token', () => {
+      // 未闭合的单引号：'Sheet 1!A1（缺少闭合引号）
+      const tokens = tokenizer.tokenize("'Sheet 1");
+      // 应该生成一个 SheetRef token（解析失败但不崩溃）
+      expect(tokens.length).toBeGreaterThanOrEqual(2); // 至少有 SheetRef + EOF
+      expect(tokens[tokens.length - 1].type).toBe('EOF');
+    });
+
+    it('在复杂公式中使用单引号 Sheet 引用', () => {
+      const tokens = tokenizer.tokenize("SUM('Sheet 1'!A1:B10)");
+      const types = tokens.map((t) => t.type);
+      expect(types[0]).toBe('Function'); // SUM
+      expect(types[1]).toBe('LeftParen'); // (
+      expect(types[2]).toBe('SheetRef'); // 'Sheet 1'!A1
+      expect(tokens[2].value).toBe('Sheet 1!A1');
+    });
+  });
 });

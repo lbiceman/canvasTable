@@ -647,7 +647,11 @@ export class FormulaEngine {
     const content = this.getCellContent(row, col, sheetName);
 
     if (content === '#REF!') {
-      return makeError('#REF!', '引用的工作表不存在');
+      // 跨 Sheet 引用时，#REF! 表示工作表不存在或单元格超出范围
+      const msg = sheetName
+        ? `引用的工作表 "${sheetName}" 不存在或单元格超出范围`
+        : '单元格引用无效';
+      return makeError('#REF!', msg);
     }
 
     // 如果内容是公式，递归求值

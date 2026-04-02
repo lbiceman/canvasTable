@@ -185,6 +185,25 @@ export function registerLogicFunctions(registry: FunctionRegistry): void {
     },
   });
 
+  // IFNA - 仅拦截 #N/A 错误
+  registry.register({
+    name: 'IFNA',
+    category: 'logic',
+    description: '如果第一个参数是 #N/A 错误则返回第二个参数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'value', description: '需要检查的值', type: 'any' },
+      { name: 'value_if_na', description: '#N/A 时返回的值', type: 'any' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const value = args[0];
+      // 仅拦截 #N/A，其他错误原样传播
+      if (isError(value) && value.type === '#N/A') return args[1];
+      return value;
+    },
+  });
+
   // SWITCH - 表达式匹配
   registry.register({
     name: 'SWITCH',

@@ -143,6 +143,12 @@ export class Tokenizer {
         continue;
       }
 
+      // 单引号开头 — 可能是带引号的 Sheet 引用（如 'Sheet 1'!A1）
+      if (ch === "'") {
+        pos = this.readQuotedSheetRef(input, pos, tokens);
+        continue;
+      }
+
       // 字母开头 — 可能是布尔值、单元格引用、Sheet 引用、函数名或命名范围
       if (isAlpha(ch)) {
         pos = this.readIdentifier(input, pos, tokens);
@@ -281,6 +287,54 @@ export class Tokenizer {
     }
 
     tokens.push({ type: 'SheetRef', value: input.slice(start, i), position: start });
+    return i;
+  }
+
+  /**
+   * 读取单引号包裹的 Sheet 引用（如 'Sheet 1'!A1、'My Sheet'!$B$2）
+   * 从 ' 读取到匹配的 '，然后期望 !，再读取单元格引用
+   * token value 格式为 "Sheet 1!A1"（Sheet 名称不包含外层单引号）
+   */
+  private readQuotedSheetRef(input: string, pos: number, tokens: Token[]): number {
+    const start = pos;
+    let i = pos + 1; // 跳过开头的单引号
+
+    // 读取 Sheet 名称（直到匹配的闭合单引号）
+    let sheetName = '';
+    while (i < input.length) {
+      if (input[i] === "'") {
+        // 检查是否为转义单引号 ''（两个连续单引号表示一个字面单引号）
+        if (i + 1 < input.length && input[i + 1] === "'") {
+          sheetName += "'";
+          i += 2;
+        } else {
+          // 闭合单引号
+          i++; // 跳过闭合单引号
+          break;
+        }
+      } else {
+        sheetName += input[i];
+        i++;
+      }
+    }
+
+    // 期望 ! 分隔符
+    if (i < input.length && input[i] === '!') {
+      i++; // 跳过 !
+
+      // 读取后面的单元格引用
+      const cellLen = matchCellRef(input, i);
+      if (cellLen > 0) {
+        const cellRef = input.slice(i, i + cellLen);
+        i += cellLen;
+        // value 格式为 "SheetName!CellRef"，不包含外层单引号
+        tokens.push({ type: 'SheetRef', value: `${sheetName}!${cellRef}`, position: start });
+        return i;
+      }
+    }
+
+    // 解析失败（单引号未闭合或缺少 !），跳过整段
+    tokens.push({ type: 'SheetRef', value: `${sheetName}!`, position: start });
     return i;
   }
 }

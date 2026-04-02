@@ -389,6 +389,57 @@ export function registerTextFunctions(registry: FunctionRegistry): void {
     },
   });
 
+  // TEXTJOIN - 使用分隔符连接多个文本值
+  registry.register({
+    name: 'TEXTJOIN',
+    category: 'text',
+    description: '使用分隔符连接多个文本值，支持忽略空值',
+    minArgs: 3,
+    maxArgs: -1,
+    params: [
+      { name: 'delimiter', description: '分隔符', type: 'string' },
+      { name: 'ignore_empty', description: '是否忽略空值', type: 'boolean' },
+      { name: 'text1', description: '要连接的文本', type: 'any' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      // 提取分隔符
+      const delimiter = toText(args[0]);
+      if (isError(delimiter)) return delimiter;
+
+      // 提取 ignore_empty 参数
+      const ignoreEmptyRaw = args[1];
+      if (isError(ignoreEmptyRaw)) return ignoreEmptyRaw;
+      const ignoreEmpty = Boolean(ignoreEmptyRaw);
+
+      // 从第 3 个参数开始，展平区域引用为一维字符串数组
+      const texts: string[] = [];
+      for (let i = 2; i < args.length; i++) {
+        const arg = args[i];
+        if (Array.isArray(arg)) {
+          // 区域引用：逐行逐列展平
+          for (const row of arg as FormulaValue[][]) {
+            for (const cell of row) {
+              if (isError(cell)) return cell;
+              const cellText = toText(cell);
+              if (isError(cellText)) return cellText;
+              texts.push(cellText);
+            }
+          }
+        } else {
+          if (isError(arg)) return arg;
+          const text = toText(arg);
+          if (isError(text)) return text;
+          texts.push(text);
+        }
+      }
+
+      // 根据 ignore_empty 决定是否跳过空字符串
+      const filtered = ignoreEmpty ? texts.filter((t) => t !== '') : texts;
+
+      return filtered.join(delimiter);
+    },
+  });
+
   // TEXT - 将数值格式化为文本
   registry.register({
     name: 'TEXT',
