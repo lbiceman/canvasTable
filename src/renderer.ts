@@ -3537,6 +3537,180 @@ export class SpreadsheetRenderer {
     this.ctx.restore();
   }
 
+  // ============================================================
+  // 行高自适应：单元格高度测量
+  // ============================================================
+
+  /**
+   * 测量单元格在当前列宽下的所需高度
+   * 处理 wrapText 换行和 richText 多片段场景
+   *
+   * @param row - 行索引
+   * @param col - 列索引
+   * @returns 所需高度（像素），最小值为 DEFAULT_ROW_HEIGHT(25)
+   */
+  public measureCellHeight(row: number, col: number): number {
+    const DEFAULT_ROW_HEIGHT = 25;
+    const cell = this.model.getCell(row, col);
+    if (!cell) return DEFAULT_ROW_HEIGHT;
+
+    const { cellPadding, fontFamily } = this.config;
+    const colWidth = this.model.getColWidth(col);
+    const maxTextWidth = colWidth - cellPadding * 2;
+
+    if (maxTextWidth <= 0) return DEFAULT_ROW_HEIGHT;
+
+    const defaultFontSize = cell.fontSize || this.cellFontSize;
+    const lineSpacing = 1.4; // 与 renderWrappedText 保持一致
+
+    // 【富文本】优先处理 richText 多片段场景
+    if (cell.richText && cell.richText.length > 0) {
+      return Math.max(this.measureRichTextHeight(cell.richText, maxTextWidth, defaultFontSize, cellPadding, lineSpacing), DEFAULT_ROW_HEIGHT);
+    }
+
+    // 获取格式化后的显示文本
+    const displayText = this.getFormattedDisplayText({
+      content: cell.content,
+      format: cell.format,
+      rawValue: cell.rawValue,
+    });
+
+    if (!displayText) return DEFAULT_ROW_HEIGHT;
+
+    // 仅在 wrapText 或内容包含 \n 时计算多行高度
+    const needWrap = cell.wrapText || displayText.includes('\n');
+    if (!needWrap) return DEFAULT_ROW_HEIGHT;
+
+    // 设置 ctx.font 为单元格字体属性
+    const fontWeight = cell.fontBold ? 'bold ' : '';
+    const fontStyle = cell.fontItalic ? 'italic ' : '';
+    const cellFontFamily = cell.fontFamily || fontFamily;
+    this.ctx.font = `${fontStyle}${fontWeight}${defaultFontSize}px ${cellFontFamily}`;
+
+    // 按 \n 分割段落，每段按列宽逐字拆分为多行（与 renderWrappedText 逻辑一致）
+    const paragraphs = displayText.split('\n');
+    let lineCount = 0;
+
+    for (const paragraph of paragraphs) {
+      if (paragraph === '') {
+        lineCount++;
+        continue;
+      }
+
+      let currentLine = '';
+      for (let i = 0; i < paragraph.length; i++) {
+        const testLine = currentLine + paragraph[i];
+        const testWidth = this.ctx.measureText(testLine).width;
+
+        if (testWidth > maxTextWidth && currentLine.length > 0) {
+          lineCount++;
+          currentLine = paragraph[i];
+        } else {
+          currentLine = testLine;
+        }
+      }
+      if (currentLine.length > 0) {
+        lineCount++;
+      }
+    }
+
+    if (lineCount === 0) return DEFAULT_ROW_HEIGHT;
+
+    const lineHeight = defaultFontSize * lineSpacing;
+    const totalHeight = lineCount * lineHeight + cellPadding * 2;
+
+    return Math.max(Math.ceil(totalHeight), DEFAULT_ROW_HEIGHT);
+  }
+
+  /**
+   * 测量富文本在指定宽度下的所需高度
+   * 遍历每个片段，按各自字体属性测量宽度，累计宽度超过列宽时换行
+   *
+   * @param segments - 富文本片段数组
+   * @param maxTextWidth - 可用文本宽度（列宽减去 padding）
+   * @param defaultFontSize - 默认字号
+   * @param cellPadding - 单元格内边距
+   * @param lineSpacing - 行间距倍数
+   * @returns 所需高度（像素）
+   */
+  private measureRichTextHeight(
+    segments: RichTextSegment[],
+    maxTextWidth: number,
+    defaultFontSize: number,
+    cellPadding: number,
+    lineSpacing: number
+  ): number {
+    const { fontFamily } = this.config;
+
+    // 将所有片段的文本逐字符展开，记录每个字符的字号和字体
+    interface CharInfo {
+      char: string;
+      fontSize: number;
+      font: string;
+    }
+
+    const chars: CharInfo[] = [];
+    for (const segment of segments) {
+      const fontSize = segment.fontSize || defaultFontSize;
+      const fontWeight = segment.fontBold ? 'bold ' : '';
+      const fontStyle = segment.fontItalic ? 'italic ' : '';
+      const font = `${fontStyle}${fontWeight}${fontSize}px ${fontFamily}`;
+
+      for (const char of segment.text) {
+        chars.push({ char, fontSize, font });
+      }
+    }
+
+    if (chars.length === 0) return defaultFontSize * lineSpacing + cellPadding * 2;
+
+    // 逐字符测量，按行累计宽度，超过 maxTextWidth 时换行
+    let currentLineWidth = 0;
+    let currentLineMaxFontSize = 0;
+    let currentFont = '';
+    const lineMaxFontSizes: number[] = [];
+
+    for (const { char, fontSize, font } of chars) {
+      // 换行符直接换行
+      if (char === '\n') {
+        lineMaxFontSizes.push(currentLineMaxFontSize || defaultFontSize);
+        currentLineWidth = 0;
+        currentLineMaxFontSize = 0;
+        continue;
+      }
+
+      // 切换字体时更新 ctx.font
+      if (font !== currentFont) {
+        this.ctx.font = font;
+        currentFont = font;
+      }
+
+      const charWidth = this.ctx.measureText(char).width;
+
+      if (currentLineWidth + charWidth > maxTextWidth && currentLineWidth > 0) {
+        // 当前行已满，换行
+        lineMaxFontSizes.push(currentLineMaxFontSize || defaultFontSize);
+        currentLineWidth = charWidth;
+        currentLineMaxFontSize = fontSize;
+      } else {
+        currentLineWidth += charWidth;
+        if (fontSize > currentLineMaxFontSize) {
+          currentLineMaxFontSize = fontSize;
+        }
+      }
+    }
+
+    // 最后一行
+    lineMaxFontSizes.push(currentLineMaxFontSize || defaultFontSize);
+
+    // 计算总高度：每行高度 = 该行最大 fontSize × lineSpacing
+    let totalHeight = 0;
+    for (const maxFs of lineMaxFontSizes) {
+      totalHeight += maxFs * lineSpacing;
+    }
+
+    return Math.ceil(totalHeight + cellPadding * 2);
+  }
+
   /**
    * 设置格式刷模式激活状态
    * 激活时光标变为十字准星，退出时恢复默认

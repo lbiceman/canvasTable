@@ -1355,6 +1355,18 @@ function renderStatusBar(appContainer: HTMLElement): void {
   statusItem2.appendChild(cellCount);
   statusBar.appendChild(statusItem2);
 
+  // === 第三个 .status-item：选区统计信息 ===
+  const statusItem3 = document.createElement('div');
+  statusItem3.className = 'status-item';
+
+  const selectionStats = document.createElement('span');
+  selectionStats.id = 'selection-stats';
+  selectionStats.className = 'selection-stats';
+  selectionStats.style.display = 'none';
+
+  statusItem3.appendChild(selectionStats);
+  statusBar.appendChild(statusItem3);
+
   appContainer.appendChild(statusBar);
 }
 

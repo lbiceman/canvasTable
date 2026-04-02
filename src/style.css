@@ -486,6 +486,14 @@ button svg {
   color: var(--theme-status-text);
 }
 
+/* 选区统计信息样式 */
+.selection-stats {
+  font-size: 12px;
+  color: var(--theme-status-text);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;

@@ -1,5 +1,43 @@
 import type { FillPattern, FillDirection } from './types';
 
+// ============================================================
+// 预定义序列常量
+// ============================================================
+
+/** 已知序列定义 */
+interface KnownSequence {
+  pattern: RegExp;
+  values: string[];
+}
+
+/** 预定义序列表（星期、月份、季度等） */
+const KNOWN_SEQUENCES: KnownSequence[] = [
+  // 中文星期（完整）
+  { pattern: /^星期[一二三四五六日]$/, values: ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日'] },
+  // 中文星期（简写）
+  { pattern: /^周[一二三四五六日]$/, values: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] },
+  // 中文月份
+  { pattern: /^(一|二|三|四|五|六|七|八|九|十|十一|十二)月$/, values: ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月'] },
+  // 数字月份
+  { pattern: /^(1|2|3|4|5|6|7|8|9|10|11|12)月$/, values: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'] },
+  // 英文星期（完整）
+  { pattern: /^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)$/i, values: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] },
+  // 英文星期（缩写）
+  { pattern: /^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/i, values: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] },
+  // 英文月份（完整）
+  { pattern: /^(January|February|March|April|May|June|July|August|September|October|November|December)$/i, values: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] },
+  // 英文月份（缩写）
+  { pattern: /^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$/i, values: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] },
+  // 季度
+  { pattern: /^Q[1-4]$/, values: ['Q1', 'Q2', 'Q3', 'Q4'] },
+  // 中文季度
+  { pattern: /^第[一二三四]季度$/, values: ['第一季度', '第二季度', '第三季度', '第四季度'] },
+];
+
+// ============================================================
+// 日期格式与工具函数
+// ============================================================
+
 /**
  * 日期格式定义
  * format: 正则表达式匹配模式
@@ -82,9 +120,12 @@ function addDays(date: Date, days: number): Date {
 export class FillSeriesEngine {
   /**
    * 推断源数据的填充模式
-   * 1. 全部为数字 → 计算等差 → 数字递增/递减
-   * 2. 全部为日期 → 计算日期间隔 → 日期递增/递减
-   * 3. 其他 → 文本复制模式
+   * 优先级：
+   * 1. 预定义序列匹配（星期、月份、季度等）
+   * 2. 带数字后缀的文本模式（如"第1季度"、"Item1"）
+   * 3. 全部为数字 → 计算等差 → 数字递增/递减
+   * 4. 全部为日期 → 计算日期间隔 → 日期递增/递减
+   * 5. 其他 → 文本复制模式
    */
   public static inferPattern(values: string[]): FillPattern {
     // 空数组：返回文本复制模式
@@ -92,20 +133,37 @@ export class FillSeriesEngine {
       return { type: 'text', step: 0, values: [] };
     }
 
-    // 尝试数字模式
+    // 1. 尝试预定义序列匹配
+    const seqMatch = FillSeriesEngine.matchKnownSequence(values);
+    if (seqMatch) {
+      return {
+        type: 'sequence',
+        step: 1,
+        values,
+        sequenceValues: seqMatch.values,
+      };
+    }
+
+    // 2. 尝试带数字后缀的文本模式
+    const textNumMatch = FillSeriesEngine.matchTextNumber(values);
+    if (textNumMatch) {
+      return textNumMatch;
+    }
+
+    // 3. 尝试数字模式
     if (FillSeriesEngine.isAllNumbers(values)) {
       const nums = values.map(Number);
       const step = FillSeriesEngine.calcNumberStep(nums);
       return { type: 'number', step, values };
     }
 
-    // 尝试日期模式
+    // 4. 尝试日期模式
     if (FillSeriesEngine.isAllDates(values)) {
       const step = FillSeriesEngine.calcDateStep(values);
       return { type: 'date', step, values };
     }
 
-    // 文本复制模式
+    // 5. 文本复制模式
     return { type: 'text', step: 0, values };
   }
 
@@ -130,9 +188,155 @@ export class FillSeriesEngine {
         return FillSeriesEngine.generateNumbers(pattern, count, direction);
       case 'date':
         return FillSeriesEngine.generateDates(pattern, count, direction);
+      case 'sequence':
+        return FillSeriesEngine.generateSequence(pattern, count, direction);
+      case 'textNumber':
+        return FillSeriesEngine.generateTextNumber(pattern, count, direction);
       case 'text':
         return FillSeriesEngine.generateText(pattern, count);
     }
+  }
+
+  /**
+   * 检查所有源值是否匹配同一预定义序列
+   * @returns 匹配的序列定义，未匹配返回 null
+   */
+  private static matchKnownSequence(values: string[]): KnownSequence | null {
+    for (const seq of KNOWN_SEQUENCES) {
+      if (values.every((v) => seq.pattern.test(v.trim()))) {
+        return seq;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 检查所有源值是否为带数字后缀的文本模式
+   * 匹配格式：前缀文本 + 数字 + 可选后缀文本（如"Item1"、"第1季度"）
+   * 注意：排除纯数字和日期格式，避免误匹配
+   * @returns 匹配的 FillPattern，未匹配返回 null
+   */
+  private static matchTextNumber(values: string[]): FillPattern | null {
+    // 如果所有值都是数字或日期，不应匹配 textNumber
+    if (FillSeriesEngine.isAllNumbers(values) || FillSeriesEngine.isAllDates(values)) {
+      return null;
+    }
+
+    const regex = /^(.+?)(\d+)(.*)$/;
+    const matches = values.map((v) => v.trim().match(regex));
+
+    // 所有值都必须匹配
+    if (matches.some((m) => m === null)) {
+      return null;
+    }
+
+    // 所有值的前缀和后缀必须一致
+    const prefix = matches[0]![1];
+    const suffix = matches[0]![3];
+    if (!matches.every((m) => m![1] === prefix && m![3] === suffix)) {
+      return null;
+    }
+
+    // 计算数字步长
+    const nums = matches.map((m) => parseInt(m![2], 10));
+    let step = 1;
+    if (nums.length >= 2) {
+      const firstDiff = nums[1] - nums[0];
+      const isConstant = nums.every((_, i) => {
+        if (i === 0) return true;
+        return nums[i] - nums[i - 1] === firstDiff;
+      });
+      step = isConstant ? firstDiff : 1;
+    }
+
+    return {
+      type: 'textNumber',
+      step,
+      values,
+      textPrefix: prefix,
+      textSuffix: suffix,
+    };
+  }
+
+  /**
+   * 生成预定义序列填充数据
+   * 从序列中找到最后一个（或第一个）源值的位置，按步长循环生成
+   * - down/right：从最后一个源值位置向后循环
+   * - up/left：从第一个源值位置向前循环（逆序）
+   */
+  private static generateSequence(
+    pattern: FillPattern,
+    count: number,
+    direction: FillDirection
+  ): string[] {
+    const seqValues = pattern.sequenceValues!;
+    const seqLen = seqValues.length;
+    const result: string[] = [];
+
+    if (direction === 'down' || direction === 'right') {
+      // 找到最后一个源值在序列中的位置
+      const lastValue = pattern.values[pattern.values.length - 1].trim();
+      const lastIndex = seqValues.indexOf(lastValue);
+      if (lastIndex === -1) return FillSeriesEngine.generateText(pattern, count);
+
+      for (let i = 1; i <= count; i++) {
+        const idx = (lastIndex + i) % seqLen;
+        result.push(seqValues[idx]);
+      }
+    } else {
+      // up/left：从第一个源值位置向前循环
+      const firstValue = pattern.values[0].trim();
+      const firstIndex = seqValues.indexOf(firstValue);
+      if (firstIndex === -1) return FillSeriesEngine.generateText(pattern, count);
+
+      for (let i = 1; i <= count; i++) {
+        const idx = ((firstIndex - i) % seqLen + seqLen) % seqLen;
+        result.push(seqValues[idx]);
+      }
+      // 反转使得离源数据最近的值在数组末尾
+      result.reverse();
+    }
+
+    return result;
+  }
+
+  /**
+   * 生成文本+数字递增填充数据
+   * 保持文本前缀/后缀不变，数字部分按步长递增或递减
+   * - down/right：从最后一个源值的数字部分递增
+   * - up/left：从第一个源值的数字部分递减
+   */
+  private static generateTextNumber(
+    pattern: FillPattern,
+    count: number,
+    direction: FillDirection
+  ): string[] {
+    const { step, values, textPrefix, textSuffix } = pattern;
+    const regex = /^(.+?)(\d+)(.*)$/;
+    const result: string[] = [];
+
+    if (direction === 'down' || direction === 'right') {
+      const lastMatch = values[values.length - 1].trim().match(regex);
+      if (!lastMatch) return [];
+      const lastNum = parseInt(lastMatch[2], 10);
+
+      for (let i = 1; i <= count; i++) {
+        result.push(`${textPrefix}${lastNum + step * i}${textSuffix}`);
+      }
+    } else {
+      // up/left：从第一个值的数字部分递减
+      const firstMatch = values[0].trim().match(regex);
+      if (!firstMatch) return [];
+      const firstNum = parseInt(firstMatch[2], 10);
+
+      for (let i = 1; i <= count; i++) {
+        result.push(`${textPrefix}${firstNum - step * i}${textSuffix}`);
+      }
+      // 反转使得离源数据最近的值在数组末尾
+      result.reverse();
+    }
+
+    return result;
   }
 
   /** 判断所有值是否都是有效数字 */

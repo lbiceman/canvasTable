@@ -352,9 +352,12 @@ export type FillDirection = 'down' | 'up' | 'right' | 'left';
 
 /** 填充模式 */
 export interface FillPattern {
-  type: 'number' | 'date' | 'text';
+  type: 'number' | 'date' | 'text' | 'sequence' | 'textNumber';
   step: number;          // 数字步长或日期天数间隔
   values: string[];      // 源值（用于文本复制填充）
+  sequenceValues?: string[];  // 预定义序列的完整值列表
+  textPrefix?: string;        // 文本+数字模式的前缀
+  textSuffix?: string;        // 文本+数字模式的后缀
 }
 
 /** 选择性粘贴模式 */

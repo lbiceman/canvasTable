@@ -1,7 +1,7 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
-import type { FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder, EmbeddedImage } from './types';
+import type { Cell, FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder, EmbeddedImage } from './types';
 import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
@@ -31,6 +31,7 @@ import { Modal } from './modal';
 import type { CellContextMenuCallbacks } from './cell-context-menu';
 import { PivotTable } from './pivot-table/pivot-table';
 import { PivotTablePanel } from './pivot-table/pivot-table-panel';
+import { NumberFormatter, DateFormatter } from './format-engine';
 import { ScriptEngine } from './script/script-engine';
 import { ScriptEditor } from './script/script-editor';
 import { PluginManager } from './plugin/plugin-manager';
@@ -3489,6 +3490,20 @@ export class SpreadsheetApp {
     const x = event.clientX - rect.left;
     const y = event.clientY - rect.top;
 
+    // 【列宽自适应】双击列标题右侧边界时，自动调整列宽
+    const colResizeIndex = this.renderer.getColResizeAtPosition(x, y);
+    if (colResizeIndex !== null) {
+      this.autoFitColumnWidth(colResizeIndex);
+      return;
+    }
+
+    // 【行高自适应】双击行标题下侧边界时，自动调整行高
+    const rowResizeIndex = this.renderer.getRowResizeAtPosition(x, y);
+    if (rowResizeIndex !== null) {
+      this.autoFitRowHeight(rowResizeIndex);
+      return;
+    }
+
     // 【图表交互】双击图表时打开编辑面板
     const { headerWidth, headerHeight } = this.renderer.getConfig();
     const viewport = this.renderer.getViewport();
@@ -3610,6 +3625,143 @@ export class SpreadsheetApp {
           );
         }
       }
+    }
+  }
+
+  /**
+   * 列宽自适应：遍历所有有数据的行，测量该列最大内容宽度并设置列宽
+   * 使用离屏 Canvas 的 measureText() 测量文本宽度，考虑字体大小、字体族、加粗状态
+   * 记录撤销历史（type: resizeCol），最小列宽 30px
+   */
+  private autoFitColumnWidth(colIndex: number): void {
+    const config = this.renderer.getConfig();
+    const { cellPadding, fontFamily, fontSize } = config;
+
+    // 创建离屏 Canvas 用于文本测量
+    const offscreen = document.createElement('canvas');
+    const ctx = offscreen.getContext('2d')!;
+
+    let maxContentWidth = 0;
+    const rowCount = this.model.getRowCount();
+
+    // 遍历所有行（不仅是可见行），计算该列最大内容宽度
+    for (let row = 0; row < rowCount; row++) {
+      const cell = this.model.getCell(row, colIndex);
+      if (!cell || (!cell.content && !cell.formulaContent)) continue;
+
+      // 获取格式化后的显示文本
+      const displayText = this.getDisplayTextForCell(cell);
+      if (!displayText) continue;
+
+      // 设置 ctx.font 为单元格的字体属性
+      const cellFontSize = cell.fontSize || fontSize;
+      const cellFontFamily = cell.fontFamily || fontFamily;
+      const fontWeight = cell.fontBold ? 'bold ' : '';
+      const fontStyle = cell.fontItalic ? 'italic ' : '';
+      ctx.font = `${fontStyle}${fontWeight}${cellFontSize}px ${cellFontFamily}`;
+
+      // 测量文本宽度
+      const textWidth = ctx.measureText(displayText).width;
+      if (textWidth > maxContentWidth) {
+        maxContentWidth = textWidth;
+      }
+    }
+
+    // 计算新列宽：最大内容宽度 + cellPadding * 2，最小值 30px
+    const newWidth = Math.max(Math.ceil(maxContentWidth + cellPadding * 2), 30);
+
+    // 获取旧列宽，记录撤销历史
+    const oldWidth = this.model.getColWidth(colIndex);
+    if (newWidth !== oldWidth) {
+      this.model.getHistoryManager().record({
+        type: 'resizeCol',
+        data: { col: colIndex, width: newWidth },
+        undoData: { col: colIndex, width: oldWidth }
+      });
+
+      // 设置新列宽（不重复记录历史）
+      this.model.setColWidth(colIndex, newWidth, false);
+
+      // 重新渲染
+      this.renderer.render();
+      this.updateScrollbars();
+      this.updateUndoRedoButtons();
+    }
+  }
+
+  /**
+   * 获取单元格格式化后的显示文本（供 autoFitColumnWidth 使用）
+   * 复用 renderer 中 getFormattedDisplayText 的逻辑
+   */
+  private getDisplayTextForCell(cell: Cell): string {
+    const { format, rawValue, content } = cell;
+
+    // 有 format + rawValue 时，调用对应格式化引擎
+    if (format && rawValue !== undefined) {
+      const { category, pattern } = format;
+
+      // 数字/货币/百分比/科学计数法 → NumberFormatter
+      if (category === 'number' || category === 'currency' || category === 'percentage' || category === 'scientific') {
+        return NumberFormatter.format(rawValue, pattern);
+      }
+
+      // 日期/时间/日期时间 → DateFormatter
+      if (category === 'date' || category === 'time' || category === 'datetime') {
+        return DateFormatter.format(rawValue, pattern);
+      }
+    }
+
+    // 无格式或通用格式 → 使用原始 content
+    return content;
+  }
+
+  /**
+   * 行高自适应：遍历该行所有列，调用 renderer.measureCellHeight() 取最大值
+   * 设置行高为 max(maxHeight, 25)，记录撤销历史（type: resizeRow）
+   *
+   * @param rowIndex - 需要自适应行高的行索引
+   */
+  private autoFitRowHeight(rowIndex: number): void {
+    const DEFAULT_ROW_HEIGHT = 25;
+    const colCount = this.model.getColCount();
+
+    // 找到该行最后一个有数据的列
+    let lastDataCol = 0;
+    for (let col = colCount - 1; col >= 0; col--) {
+      const cell = this.model.getCell(rowIndex, col);
+      if (cell && (cell.content || cell.richText?.length)) {
+        lastDataCol = col;
+        break;
+      }
+    }
+
+    // 遍历该行所有有数据的列，取最大高度
+    let maxHeight = DEFAULT_ROW_HEIGHT;
+    for (let col = 0; col <= lastDataCol; col++) {
+      const cellHeight = this.renderer.measureCellHeight(rowIndex, col);
+      if (cellHeight > maxHeight) {
+        maxHeight = cellHeight;
+      }
+    }
+
+    const newHeight = Math.max(maxHeight, DEFAULT_ROW_HEIGHT);
+
+    // 获取旧行高，记录撤销历史
+    const oldHeight = this.model.getRowHeight(rowIndex);
+    if (newHeight !== oldHeight) {
+      this.model.getHistoryManager().record({
+        type: 'resizeRow',
+        data: { row: rowIndex, height: newHeight },
+        undoData: { row: rowIndex, height: oldHeight }
+      });
+
+      // 设置新行高（不重复记录历史）
+      this.model.setRowHeight(rowIndex, newHeight, false);
+
+      // 重新渲染
+      this.renderer.render();
+      this.updateScrollbars();
+      this.updateUndoRedoButtons();
     }
   }
 
@@ -6328,6 +6480,18 @@ export class SpreadsheetApp {
         // 更新换行按钮状态
         this.updateWrapTextUI(cellInfo.wrapText || false);
 
+        // 更新字体颜色选择器状态
+        const fontColorInput = document.getElementById('font-color') as HTMLInputElement | null;
+        if (fontColorInput) {
+          fontColorInput.value = cellInfo.fontColor || '#333333';
+        }
+
+        // 更新背景颜色选择器状态
+        const bgColorInput = document.getElementById('bg-color') as HTMLInputElement | null;
+        if (bgColorInput) {
+          bgColorInput.value = cellInfo.bgColor || '#ffffff';
+        }
+
         // 更新字体族下拉显示（选中单元格时同步显示当前字体族）
         // 检查选区内是否所有单元格字体族一致
         const { startRow: selStartRow, startCol: selStartCol, endRow: selEndRow, endCol: selEndCol } = activeSelection;
@@ -6362,6 +6526,96 @@ export class SpreadsheetApp {
 
     // 更新"插入图表"按钮状态
     this.updateInsertChartButtonState();
+
+    // 更新选区统计信息
+    this.updateSelectionStats();
+  }
+
+  /**
+   * 计算当前选区的统计信息（SUM、AVERAGE、COUNT、MIN、MAX）
+   * 遍历活动选区内的所有单元格，提取数值并计算统计值
+   */
+  private computeSelectionStats(): { sum: number; average: number; count: number; min: number; max: number; totalCells: number } | null {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return null;
+
+    const { startRow, startCol, endRow, endCol } = activeSelection;
+    const minRow = Math.min(startRow, endRow);
+    const maxRow = Math.max(startRow, endRow);
+    const minCol = Math.min(startCol, endCol);
+    const maxCol = Math.max(startCol, endCol);
+
+    const totalCells = (maxRow - minRow + 1) * (maxCol - minCol + 1);
+
+    // 单个单元格不显示统计
+    if (totalCells <= 1) return null;
+
+    let sum = 0;
+    let count = 0;
+    let min = Infinity;
+    let max = -Infinity;
+
+    for (let r = minRow; r <= maxRow; r++) {
+      for (let c = minCol; c <= maxCol; c++) {
+        const cell = this.model.getCell(r, c);
+        if (!cell) continue;
+
+        // 跳过被合并的子单元格（避免重复计算）
+        if (cell.isMerged && cell.mergeParent) continue;
+
+        // 优先使用 rawValue（数值类型检测后的原始值），其次尝试解析 content
+        let numValue: number | undefined;
+        if (cell.rawValue !== undefined && cell.rawValue !== null) {
+          numValue = cell.rawValue;
+        } else if (cell.content !== '' && cell.content !== undefined) {
+          const parsed = Number(cell.content);
+          if (!isNaN(parsed) && cell.content.trim() !== '') {
+            numValue = parsed;
+          }
+        }
+
+        if (numValue !== undefined && isFinite(numValue)) {
+          sum += numValue;
+          count++;
+          if (numValue < min) min = numValue;
+          if (numValue > max) max = numValue;
+        }
+      }
+    }
+
+    if (count === 0) return null;
+
+    return {
+      sum,
+      average: sum / count,
+      count,
+      min,
+      max,
+      totalCells,
+    };
+  }
+
+  /**
+   * 更新状态栏选区统计信息显示
+   * 多单元格选区且包含数值时显示统计，否则隐藏
+   */
+  private updateSelectionStats(): void {
+    const statsEl = document.getElementById('selection-stats');
+    if (!statsEl) return;
+
+    const stats = this.computeSelectionStats();
+    if (!stats) {
+      statsEl.style.display = 'none';
+      return;
+    }
+
+    // 格式化数值：整数不显示小数，非整数保留 2 位
+    const fmt = (v: number): string => {
+      return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(2);
+    };
+
+    statsEl.textContent = `求和=${fmt(stats.sum)}  平均值=${fmt(stats.average)}  计数=${stats.count}  最小值=${fmt(stats.min)}  最大值=${fmt(stats.max)}`;
+    statsEl.style.display = 'inline';
   }
 
   // 将列索引转换为字母（A, B, C, ..., Z, AA, AB, ...）
