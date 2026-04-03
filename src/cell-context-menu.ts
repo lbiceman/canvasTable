@@ -33,6 +33,8 @@ export interface CellContextMenuCallbacks {
   onSort: () => void;
   onFilter: () => void;
   hasClipboardData: () => boolean;
+  onInsertComment: (row: number, col: number) => void;
+  onFormatCells: () => void;
 }
 
 export class CellContextMenu {
@@ -222,6 +224,13 @@ export class CellContextMenu {
       // 格式操作
       { label: '格式刷', action: () => this.callbacks.onFormatPainter() },
       { label: '清除格式', action: () => this.callbacks.onClearFormat() },
+      { label: '设置单元格格式', action: () => this.callbacks.onFormatCells() },
+
+      // 分隔线
+      { label: '', action: () => {}, separator: true },
+
+      // 批注
+      { label: '插入批注', action: () => this.callbacks.onInsertComment(row, col) },
 
       // 分隔线
       { label: '', action: () => {}, separator: true },

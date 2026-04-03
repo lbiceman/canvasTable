@@ -10,24 +10,24 @@
 
 ## P1 公式能力补齐
 
-- [ ] 高频函数补齐：SUMIF, SUMIFS, COUNTIF, COUNTIFS, AVERAGEIF
-- [ ] IFERROR, IFNA, IFS
-- [ ] INDEX + MATCH 组合
-- [ ] CONCATENATE / TEXTJOIN
-- [ ] LEFT, RIGHT, MID, FIND, SUBSTITUTE（确认是否已有）
-- [ ] ROUND 系列：ROUNDUP, ROUNDDOWN, INT, TRUNC
-- [ ] 跨 Sheet 引用验证 — `Sheet1!A1` 和 `Sheet1!A1:B10` 语法完整支持
-- [ ] 公式自动补全 — 输入 `=SU` 时弹出候选列表
+- [x] 高频函数补齐：SUMIF, SUMIFS, COUNTIF, COUNTIFS, AVERAGEIF
+- [x] IFERROR, IFNA, IFS
+- [x] INDEX + MATCH 组合
+- [x] CONCATENATE / TEXTJOIN
+- [x] LEFT, RIGHT, MID, FIND, SUBSTITUTE（确认是否已有）
+- [x] ROUND 系列：ROUNDUP, ROUNDDOWN, INT, TRUNC
+- [x] 跨 Sheet 引用验证 — `Sheet1!A1` 和 `Sheet1!A1:B10` 语法完整支持
+- [x] 公式自动补全 — 输入 `=SU` 时弹出候选列表
 
 ## P2 体验完善
 
-- [ ] 工具栏状态同步 — 选中加粗单元格时加粗按钮高亮，选中有背景色的单元格时颜色选择器同步
-- [ ] 右键菜单补全 — 插入批注、设置单元格格式对话框、选择性粘贴入口
-- [ ] 单元格格式对话框 — 数字格式、对齐、字体、边框、填充的统一设置面板
-- [ ] 冻结窗格 UI — 当前有冻结功能但需要确认 UI 入口是否直观
-- [ ] 名称框交互 — 点击名称框输入 `A1:B10` 跳转并选中区域
-- [ ] 打印预览优化 — 分页预览、页眉页脚设置
-- [ ] 键盘快捷键补全 — Ctrl+B/I/U 加粗/斜体/下划线、Ctrl+1 打开格式对话框、Ctrl+; 插入当前日期
+- [x] 工具栏状态同步 — 选中加粗单元格时加粗按钮高亮，选中有背景色的单元格时颜色选择器同步
+- [x] 右键菜单补全 — 插入批注、设置单元格格式对话框、选择性粘贴入口
+- [x] 单元格格式对话框 — 数字格式、对齐、字体、边框、填充的统一设置面板
+- [x] 冻结窗格 UI — 当前有冻结功能但需要确认 UI 入口是否直观
+- [x] 名称框交互 — 点击名称框输入 `A1:B10` 跳转并选中区域
+- [x] 打印预览优化 — 分页预览、页眉页脚设置
+- [x] 键盘快捷键补全 — Ctrl+B/I/U 加粗/斜体/下划线、Ctrl+1 打开格式对话框、Ctrl+; 插入当前日期
 
 ## P3 数据能力
 

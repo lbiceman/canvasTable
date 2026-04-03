@@ -41,6 +41,8 @@ import { PrintArea } from './print-export/print-area';
 import { HeaderFooter } from './print-export/header-footer';
 import type { SheetPrintMetadata } from './print-export/print-metadata';
 import { PrintPreviewDialog } from './print-export/print-preview-dialog';
+import { FormatDialog } from './format-dialog';
+import type { FormatDialogValues } from './format-dialog';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -1994,6 +1996,41 @@ export class SpreadsheetApp {
       return;
     }
 
+    // Ctrl+B / Cmd+B：切换加粗
+    if ((event.ctrlKey || event.metaKey) && event.key === 'b') {
+      event.preventDefault();
+      this.handleFontBoldChange();
+      return;
+    }
+
+    // Ctrl+I / Cmd+I：切换斜体
+    if ((event.ctrlKey || event.metaKey) && event.key === 'i') {
+      event.preventDefault();
+      this.handleFontItalicChange();
+      return;
+    }
+
+    // Ctrl+U / Cmd+U：切换下划线
+    if ((event.ctrlKey || event.metaKey) && event.key === 'u') {
+      event.preventDefault();
+      this.handleFontUnderlineChange();
+      return;
+    }
+
+    // Ctrl+1 / Cmd+1：打开格式对话框
+    if ((event.ctrlKey || event.metaKey) && event.key === '1') {
+      event.preventDefault();
+      this.openFormatDialog();
+      return;
+    }
+
+    // Ctrl+; / Cmd+;：插入当前日期
+    if ((event.ctrlKey || event.metaKey) && event.key === ';') {
+      event.preventDefault();
+      this.insertCurrentDate();
+      return;
+    }
+
     // 方向键导航
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
       event.preventDefault();
@@ -2447,6 +2484,8 @@ export class SpreadsheetApp {
   private internalClipboard: InternalClipboard | null = null;
   // 选择性粘贴对话框
   private pasteSpecialDialog: PasteSpecialDialog;
+  // 格式对话框
+  private formatDialog: FormatDialog = new FormatDialog();
 
   // 处理复制
   private handleCopy(): void {
@@ -5085,6 +5124,9 @@ export class SpreadsheetApp {
     this.model.setFreezeRows(newFreezeRows);
     this.model.setFreezeCols(newFreezeCols);
 
+    // 更新冻结按钮高亮状态
+    this.updateFreezeButtonState(newFreezeRows, newFreezeCols);
+
     // 记录到历史管理器
     this.model.getHistoryManager().record({
       type: 'freeze',
@@ -5093,6 +5135,175 @@ export class SpreadsheetApp {
     });
 
     this.renderer.render();
+    this.updateUndoRedoButtons();
+  }
+
+  /**
+   * 更新冻结按钮高亮状态
+   * 冻结激活时添加 active 类，取消冻结时移除
+   */
+  private updateFreezeButtonState(freezeRows: number, freezeCols: number): void {
+    const freezeBtn = document.getElementById('freeze-btn');
+    if (freezeBtn) {
+      const isActive = freezeRows > 0 || freezeCols > 0;
+      freezeBtn.classList.toggle('active', isActive);
+    }
+  }
+
+  /**
+   * 打开格式对话框
+   * 读取当前选中单元格的格式信息，打开对话框，确认后应用设置
+   */
+  private openFormatDialog(): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    const { startRow, startCol } = activeSelection;
+    const cell = this.model.getCell(startRow, startCol);
+
+    // 构建当前单元格的格式值
+    const initialValues: FormatDialogValues = {
+      formatCategory: cell?.format?.category,
+      formatPattern: cell?.format?.pattern,
+      currencySymbol: cell?.format?.currencySymbol,
+      fontAlign: cell?.fontAlign,
+      verticalAlign: cell?.verticalAlign,
+      wrapText: cell?.wrapText,
+      fontFamily: cell?.fontFamily,
+      fontSize: cell?.fontSize,
+      fontBold: cell?.fontBold,
+      fontItalic: cell?.fontItalic,
+      fontUnderline: cell?.fontUnderline,
+      fontStrikethrough: cell?.fontStrikethrough,
+      fontColor: cell?.fontColor,
+      border: cell?.border,
+      bgColor: cell?.bgColor,
+    };
+
+    this.formatDialog.open(initialValues, (values: FormatDialogValues) => {
+      this.applyFormatDialogValues(values);
+    });
+  }
+
+  /**
+   * 将格式对话框的设置应用到选中单元格
+   */
+  private applyFormatDialogValues(values: FormatDialogValues): void {
+    const selections = this.multiSelection.getSelections();
+    if (selections.length === 0) return;
+
+    for (const sel of selections) {
+      const { startRow, startCol, endRow, endCol } = sel;
+
+      // 数字格式
+      if (values.formatCategory) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.model.setCellFormat(r, c, {
+              category: values.formatCategory,
+              pattern: values.formatPattern || '',
+              currencySymbol: values.currencySymbol,
+            });
+          }
+        }
+      }
+
+      // 对齐
+      if (values.fontAlign) {
+        this.model.setRangeFontAlign(startRow, startCol, endRow, endCol, values.fontAlign);
+      }
+      if (values.verticalAlign) {
+        this.model.setRangeVerticalAlign(startRow, startCol, endRow, endCol, values.verticalAlign);
+      }
+      if (values.wrapText !== undefined) {
+        this.model.setRangeWrapText(startRow, startCol, endRow, endCol, values.wrapText);
+      }
+
+      // 字体
+      if (values.fontFamily) {
+        this.model.setRangeFontFamily(startRow, startCol, endRow, endCol, values.fontFamily);
+      }
+      if (values.fontSize) {
+        this.model.setRangeFontSize(startRow, startCol, endRow, endCol, values.fontSize);
+      }
+      if (values.fontBold !== undefined) {
+        this.model.setRangeFontBold(startRow, startCol, endRow, endCol, values.fontBold);
+      }
+      if (values.fontItalic !== undefined) {
+        this.model.setRangeFontItalic(startRow, startCol, endRow, endCol, values.fontItalic);
+      }
+      if (values.fontUnderline !== undefined) {
+        this.model.setRangeFontUnderline(startRow, startCol, endRow, endCol, values.fontUnderline);
+      }
+      if (values.fontStrikethrough !== undefined) {
+        this.model.setRangeFontStrikethrough(startRow, startCol, endRow, endCol, values.fontStrikethrough);
+      }
+      if (values.fontColor) {
+        this.model.setRangeFontColor(startRow, startCol, endRow, endCol, values.fontColor);
+      }
+
+      // 边框
+      if (values.border) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            const cell = this.model.getCell(r, c);
+            if (cell) {
+              cell.border = { ...values.border };
+            }
+          }
+        }
+      }
+
+      // 填充（背景色）
+      if (values.bgColor) {
+        this.model.setRangeBgColor(startRow, startCol, endRow, endCol, values.bgColor);
+      }
+    }
+
+    this.renderer.render();
+    this.updateSelectedCellInfo();
+    this.updateUndoRedoButtons();
+  }
+
+  /**
+   * 处理插入批注
+   * 弹出输入对话框，设置批注到指定单元格
+   */
+  private handleInsertComment(row: number, col: number): void {
+    const existingComment = this.model.getCellComment(row, col);
+    const comment = prompt('请输入批注内容：', existingComment);
+    if (comment !== null) {
+      this.model.setCellComment(row, col, comment);
+      this.renderer.render();
+    }
+  }
+
+  /**
+   * 插入当前日期到选中单元格
+   * 格式：yyyy/MM/dd
+   */
+  private insertCurrentDate(): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    const { startRow, startCol } = activeSelection;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const dateStr = `${year}/${month}/${day}`;
+
+    this.model.setCellContent(startRow, startCol, dateStr);
+    this.renderer.render();
+    this.updateSelectedCellInfo();
     this.updateUndoRedoButtons();
   }
 
@@ -7112,6 +7323,8 @@ export class SpreadsheetApp {
         }
       },
       hasClipboardData: () => this.internalClipboard !== null && this.internalClipboard !== undefined,
+      onInsertComment: (row: number, col: number) => this.handleInsertComment(row, col),
+      onFormatCells: () => this.openFormatDialog(),
     };
     this.cellContextMenu = new CellContextMenu(contextMenuCallbacks);
 

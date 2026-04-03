@@ -1851,6 +1851,11 @@ export class SpreadsheetRenderer {
           if (rawCell?.embeddedImage) {
             this.renderEmbeddedImage(rawCell.embeddedImage, currentX, currentY, totalWidth, totalHeight);
           }
+
+          // 【批注标记】有批注的单元格右上角绘制红色三角
+          if (rawCell?.comment) {
+            this.renderCommentIndicator(currentX, currentY, totalWidth);
+          }
         }
 
         currentX += colWidth;
@@ -2099,6 +2104,26 @@ export class SpreadsheetRenderer {
     this.ctx.moveTo(arrowX, arrowY);
     this.ctx.lineTo(arrowX + arrowSize, arrowY);
     this.ctx.lineTo(arrowX + arrowSize / 2, arrowY + arrowSize / 2);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.restore();
+  }
+
+  /**
+   * 绘制批注标记
+   * 在单元格右上角绘制一个红色小三角形，指示该单元格有批注
+   */
+  private renderCommentIndicator(cellX: number, cellY: number, cellWidth: number): void {
+    const size = 6;
+    const x = cellX + cellWidth - size;
+    const y = cellY;
+
+    this.ctx.save();
+    this.ctx.fillStyle = '#ff0000';
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y);
+    this.ctx.lineTo(x + size, y);
+    this.ctx.lineTo(x + size, y + size);
     this.ctx.closePath();
     this.ctx.fill();
     this.ctx.restore();

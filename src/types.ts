@@ -200,6 +200,9 @@ export interface Cell {
 
   // === Worker 公式计算状态 ===
   isComputing?: boolean;           // 公式正在 Worker 中计算
+
+  // === 批注 ===
+  comment?: string;                // 单元格批注内容
 }
 
 // 表格数据结构

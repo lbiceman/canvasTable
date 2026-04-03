@@ -884,6 +884,59 @@ export class SpreadsheetModel {
     this.notifyCellDirty(row, col);
   }
 
+  // ============================================================
+  // 批注管理
+  // ============================================================
+
+  /**
+   * 设置单元格批注
+   * @param row 行索引
+   * @param col 列索引
+   * @param comment 批注内容，空字符串表示清除批注
+   */
+  public setCellComment(row: number, col: number, comment: string): void {
+    if (!this.isValidPosition(row, col)) return;
+
+    const cell = this.data.cells[row][col];
+    let targetRow = row;
+    let targetCol = col;
+
+    // 如果是被合并的单元格，设置合并父单元格的批注
+    if (cell.isMerged && cell.mergeParent) {
+      targetRow = cell.mergeParent.row;
+      targetCol = cell.mergeParent.col;
+    }
+
+    const targetCell = this.data.cells[targetRow][targetCol];
+    const oldComment = targetCell.comment || '';
+
+    if (oldComment === comment) return;
+
+    // 记录历史
+    this.historyManager.record({
+      type: 'setCellContent',
+      data: { row: targetRow, col: targetCol, comment },
+      undoData: { row: targetRow, col: targetCol, comment: oldComment }
+    });
+
+    targetCell.comment = comment || undefined;
+    this.isDirty = true;
+    this.notifyCellDirty(targetRow, targetCol);
+  }
+
+  /**
+   * 获取单元格批注
+   */
+  public getCellComment(row: number, col: number): string {
+    if (!this.isValidPosition(row, col)) return '';
+    const cell = this.data.cells[row][col];
+    if (cell.isMerged && cell.mergeParent) {
+      const parent = this.data.cells[cell.mergeParent.row]?.[cell.mergeParent.col];
+      return parent?.comment || '';
+    }
+    return cell.comment || '';
+  }
+
   // 设置单元格字体颜色
   public setCellFontColor(row: number, col: number, color: string): void {
     if (!this.isValidPosition(row, col)) {
