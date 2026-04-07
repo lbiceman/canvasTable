@@ -34,6 +34,114 @@ const cloneOp = <T extends CollabOperation>(op: T): T => {
   return JSON.parse(JSON.stringify(op)) as T;
 };
 
+// ============================================================
+// 公式引用地址调整（行列插删时自动调整公式中的单元格引用）
+// ============================================================
+
+/**
+ * 将列索引转换为列字母（0=A, 1=B, ..., 25=Z, 26=AA, ...）
+ */
+const colIndexToLetter = (index: number): string => {
+  let result = '';
+  let n = index;
+  while (n >= 0) {
+    result = String.fromCharCode((n % 26) + 65) + result;
+    n = Math.floor(n / 26) - 1;
+  }
+  return result;
+};
+
+/**
+ * 将列字母转换为列索引（A=0, B=1, ..., Z=25, AA=26, ...）
+ */
+const colLetterToIdx = (letters: string): number => {
+  let index = 0;
+  const upper = letters.toUpperCase();
+  for (let i = 0; i < upper.length; i++) {
+    index = index * 26 + (upper.charCodeAt(i) - 64);
+  }
+  return index - 1;
+};
+
+/**
+ * 调整公式中的单元格引用（行插入时）
+ * 将公式中所有行号 >= insertRow 的引用向下偏移 count 行
+ */
+const adjustFormulaForRowInsert = (
+  formula: string,
+  insertRow: number,
+  count: number
+): string => {
+  // 匹配单元格引用：可选 $ 前缀的列字母 + 可选 $ 前缀的行号
+  return formula.replace(/(\$?[A-Z]+)(\$?)(\d+)/gi, (_match, colPart: string, dollarSign: string, rowStr: string) => {
+    const row = parseInt(rowStr, 10) - 1; // 转为 0-based
+    if (row >= insertRow) {
+      return `${colPart}${dollarSign}${row + count + 1}`; // 转回 1-based
+    }
+    return `${colPart}${dollarSign}${rowStr}`;
+  });
+};
+
+/**
+ * 调整公式中的单元格引用（行删除时）
+ * 将公式中行号在删除范围内的引用替换为 #REF!，其余向上偏移
+ */
+const adjustFormulaForRowDelete = (
+  formula: string,
+  deleteRow: number,
+  count: number
+): string => {
+  return formula.replace(/(\$?[A-Z]+)(\$?)(\d+)/gi, (_match, colPart: string, dollarSign: string, rowStr: string) => {
+    const row = parseInt(rowStr, 10) - 1; // 转为 0-based
+    if (row >= deleteRow && row < deleteRow + count) {
+      return '#REF!';
+    }
+    if (row >= deleteRow + count) {
+      return `${colPart}${dollarSign}${row - count + 1}`; // 转回 1-based
+    }
+    return `${colPart}${dollarSign}${rowStr}`;
+  });
+};
+
+/**
+ * 调整公式中的单元格引用（列插入时）
+ * 将公式中所有列索引 >= insertCol 的引用向右偏移 count 列
+ */
+const adjustFormulaForColInsert = (
+  formula: string,
+  insertCol: number,
+  count: number
+): string => {
+  return formula.replace(/(\$?)([A-Z]+)(\$?\d+)/gi, (_match, dollarSign: string, colLetters: string, rowPart: string) => {
+    const col = colLetterToIdx(colLetters);
+    if (col >= insertCol) {
+      return `${dollarSign}${colIndexToLetter(col + count)}${rowPart}`;
+    }
+    return `${dollarSign}${colLetters}${rowPart}`;
+  });
+};
+
+/**
+ * 调整公式中的单元格引用（列删除时）
+ * 将公式中列索引在删除范围内的引用替换为 #REF!，其余向左偏移
+ */
+const adjustFormulaForColDelete = (
+  formula: string,
+  deleteCol: number,
+  count: number
+): string => {
+  return formula.replace(/(\$?)([A-Z]+)(\$?\d+)/gi, (_match, dollarSign: string, colLetters: string, rowPart: string) => {
+    const col = colLetterToIdx(colLetters);
+    if (col >= deleteCol && col < deleteCol + count) {
+      return '#REF!';
+    }
+    if (col >= deleteCol + count) {
+      return `${dollarSign}${colIndexToLetter(col - count)}${rowPart}`;
+    }
+    return `${dollarSign}${colLetters}${rowPart}`;
+  });
+};
+
 /**
  * 判断位置是否在拆分区域内
  */
@@ -128,6 +236,10 @@ const transformCellEditVsRowInsert = (
 ): CellEditOp => {
   const result = cloneOp(op);
   result.row = adjustRowForInsert(op.row, insertOp);
+  // 公式引用地址调整：行插入时偏移公式中的行号
+  if (result.content.startsWith('=')) {
+    result.content = adjustFormulaForRowInsert(result.content, insertOp.rowIndex, insertOp.count);
+  }
   return result;
 };
 
@@ -270,6 +382,10 @@ const transformCellEditVsRowDelete = (
   if (newRow === null) return null; // 编辑的行被删除，操作变为空操作
   const result = cloneOp(op);
   result.row = newRow;
+  // 公式引用地址调整：行删除时偏移或替换公式中的行号
+  if (result.content.startsWith('=')) {
+    result.content = adjustFormulaForRowDelete(result.content, deleteOp.rowIndex, deleteOp.count);
+  }
   return result;
 };
 
@@ -277,14 +393,40 @@ const transformCellMergeVsRowDelete = (
   op: CellMergeOp,
   deleteOp: RowDeleteOp
 ): CellMergeOp | null => {
-  const newStartRow = adjustRowForDelete(op.startRow, deleteOp);
-  const newEndRow = adjustRowForDelete(op.endRow, deleteOp);
-  // 如果合并区域的任一端被删除，整个合并操作变为空操作
-  if (newStartRow === null || newEndRow === null) return null;
-  const result = cloneOp(op);
-  result.startRow = newStartRow;
-  result.endRow = newEndRow;
-  return result;
+  const delStart = deleteOp.rowIndex;
+  const delEnd = deleteOp.rowIndex + deleteOp.count;
+
+  // 合并区域完全在删除范围内 → 操作取消
+  if (op.startRow >= delStart && op.endRow < delEnd) {
+    return null;
+  }
+  // 左侧部分重叠（合并区域起始行被删除）→ 操作取消
+  if (op.startRow >= delStart && op.startRow < delEnd && op.endRow >= delEnd) {
+    return null;
+  }
+  // 右侧部分重叠（合并区域结束行被删除）→ 操作取消
+  if (op.startRow < delStart && op.endRow >= delStart && op.endRow < delEnd) {
+    return null;
+  }
+  // 删除范围完全在合并区域内部 → 合并区域收缩
+  if (op.startRow < delStart && delEnd <= op.endRow + 1) {
+    const result = cloneOp(op);
+    result.endRow = op.endRow - deleteOp.count;
+    // 收缩后如果只剩一行一列，合并无意义
+    if (result.startRow === result.endRow && result.startCol === result.endCol) {
+      return null;
+    }
+    return result;
+  }
+  // 合并区域完全在删除范围右侧 → 偏移
+  if (op.startRow >= delEnd) {
+    const result = cloneOp(op);
+    result.startRow = op.startRow - deleteOp.count;
+    result.endRow = op.endRow - deleteOp.count;
+    return result;
+  }
+  // 合并区域完全在删除范围左侧 → 不变
+  return cloneOp(op);
 };
 
 const transformCellSplitVsRowDelete = (
@@ -537,6 +679,10 @@ const transformCellEditVsColInsert = (
 ): CellEditOp => {
   const result = cloneOp(op);
   result.col = adjustColForInsert(op.col, insertOp);
+  // 公式引用地址调整：列插入时偏移公式中的列字母
+  if (result.content.startsWith('=')) {
+    result.content = adjustFormulaForColInsert(result.content, insertOp.colIndex, insertOp.count);
+  }
   return result;
 };
 
@@ -712,6 +858,10 @@ const transformCellEditVsColDelete = (
   if (newCol === null) return null;
   const result = cloneOp(op);
   result.col = newCol;
+  // 公式引用地址调整：列删除时偏移或替换公式中的列字母
+  if (result.content.startsWith('=')) {
+    result.content = adjustFormulaForColDelete(result.content, deleteOp.colIndex, deleteOp.count);
+  }
   return result;
 };
 
@@ -1522,6 +1672,14 @@ const transformSingle = (
 // ============================================================
 // 公开 API
 // ============================================================
+
+// 导出公式引用调整函数（供测试使用）
+export {
+  adjustFormulaForRowInsert,
+  adjustFormulaForRowDelete,
+  adjustFormulaForColInsert,
+  adjustFormulaForColDelete,
+};
 
 /**
  * OT 转换函数：返回转换后的操作对 [a', b']

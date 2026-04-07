@@ -68,6 +68,10 @@ export class WebSocketClient {
   private handlers: Map<MessageType, MessageHandler[]> = new Map();
   // 离线操作缓冲队列
   private offlineQueue: string[] = [];
+  // 重连成功回调
+  private reconnectCallback: (() => void) | null = null;
+  // 连接状态变化回调
+  private statusChangeCallback: ((status: ConnectionStatus) => void) | null = null;
 
   /**
    * 连接到协同服务器
@@ -171,6 +175,21 @@ export class WebSocketClient {
     return this.reconnectAttempts;
   }
 
+  /**
+   * 注册重连成功回调
+   * 当 WebSocket 从断开状态重新连接成功时触发
+   */
+  onReconnect(callback: () => void): void {
+    this.reconnectCallback = callback;
+  }
+
+  /**
+   * 注册连接状态变化回调
+   */
+  onStatusChange(callback: (status: ConnectionStatus) => void): void {
+    this.statusChangeCallback = callback;
+  }
+
   // ============================================================
   // 内部方法
   // ============================================================
@@ -189,8 +208,14 @@ export class WebSocketClient {
     }
 
     this.ws.onopen = () => {
+      // 判断是否为重连（之前有过连接尝试）
+      const isReconnect = this.reconnectAttempts > 0;
+
       this.status = 'connected';
       this.reconnectAttempts = 0;
+
+      // 通知连接状态变化
+      this.statusChangeCallback?.('connected');
 
       // 发送加入房间消息
       const joinMessage: WebSocketMessage = {
@@ -202,6 +227,11 @@ export class WebSocketClient {
         },
       };
       this.ws!.send(JSON.stringify(joinMessage));
+
+      // 重连成功时触发回调（在 join 消息发送后）
+      if (isReconnect && this.reconnectCallback) {
+        this.reconnectCallback();
+      }
 
       // 刷新离线缓冲队列
       this.flushOfflineQueue();
@@ -215,6 +245,7 @@ export class WebSocketClient {
       this.ws = null;
       if (!this.intentionalClose) {
         this.status = 'disconnected';
+        this.statusChangeCallback?.('disconnected');
         this.handleReconnect();
       }
     };
@@ -267,6 +298,7 @@ export class WebSocketClient {
     const delay = calculateReconnectDelay(this.reconnectAttempts);
     this.reconnectAttempts++;
     this.status = 'connecting';
+    this.statusChangeCallback?.('connecting');
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

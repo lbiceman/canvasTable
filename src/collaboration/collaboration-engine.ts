@@ -12,6 +12,7 @@ import { OTClient, OTClientCallbacks } from './ot-client';
 import { WebSocketClient, ConnectionStatus } from './websocket-client';
 import { CursorAwareness } from './cursor-awareness';
 import { invertOperation, ModelReader } from './ot';
+import { OfflineBuffer } from './offline-buffer';
 import { SpreadsheetModel } from '../model';
 import { Selection, SpreadsheetData } from '../types';
 
@@ -140,6 +141,7 @@ export class CollaborationEngine {
   private wsClient: WebSocketClient;
   private cursorAwareness: CursorAwareness;
   private historyManager: CollabHistoryManager;
+  private offlineBuffer: OfflineBuffer;
 
   private model: SpreadsheetModel | null = null;
   private applyOperation: OperationApplier | null = null;
@@ -153,6 +155,7 @@ export class CollaborationEngine {
     this.wsClient = new WebSocketClient();
     this.cursorAwareness = new CursorAwareness();
     this.historyManager = new CollabHistoryManager();
+    this.offlineBuffer = new OfflineBuffer();
   }
 
   /**
@@ -185,6 +188,16 @@ export class CollaborationEngine {
     // 注册 WebSocket 消息处理器
     this.registerMessageHandlers();
 
+    // 注册重连回调：重连后重新同步状态
+    this.wsClient.onReconnect(() => {
+      this.handleReconnect();
+    });
+
+    // 注册连接状态变化回调
+    this.wsClient.onStatusChange((status: ConnectionStatus) => {
+      this.callbacks.onConnectionStatusChange?.(status);
+    });
+
     // 连接到服务器
     this.wsClient.connect(serverUrl, roomId, this.userId);
 
@@ -200,6 +213,7 @@ export class CollaborationEngine {
     this.wsClient.disconnect();
     this.cursorAwareness.destroy();
     this.historyManager.clear();
+    this.offlineBuffer.clear();
     this.otClient = null;
     this.model = null;
     this.applyOperation = null;
@@ -212,7 +226,7 @@ export class CollaborationEngine {
    * 由 SpreadsheetApp 在用户执行编辑时调用
    */
   submitOperation(op: CollabOperation): void {
-    if (!this.initialized || !this.otClient) return;
+    if (!this.initialized) return;
 
     // 设置操作的用户信息
     const taggedOp: CollabOperation = {
@@ -223,6 +237,12 @@ export class CollaborationEngine {
 
     // 记录到协同历史栈
     this.historyManager.pushLocal(taggedOp);
+
+    // 如果 OT 客户端尚未初始化（断线重连中），缓存到离线缓冲区
+    if (!this.otClient) {
+      this.offlineBuffer.buffer(taggedOp);
+      return;
+    }
 
     // 提交到 OT 客户端（会自动发送到服务器或缓冲）
     this.otClient.applyLocal(taggedOp);
@@ -418,6 +438,15 @@ export class CollaborationEngine {
       this.callbacks.onDocumentSync?.(syncData as SpreadsheetData | Record<string, unknown>);
     }
     this.callbacks.onConnectionStatusChange?.('connected');
+
+    // 重连后重放离线缓冲区中的操作
+    if (this.offlineBuffer.hasOperations()) {
+      const offlineOps = this.offlineBuffer.flush();
+      for (const op of offlineOps) {
+        this.otClient.applyLocal(op);
+      }
+      this.callbacks.onSyncStatusChange?.(this.getPendingCount());
+    }
   }
 
   /**
@@ -516,5 +545,24 @@ export class CollaborationEngine {
         return model.getColWidth(col);
       },
     };
+  }
+
+  /**
+   * 处理重连：WebSocket 重新连接成功后调用
+   *
+   * 重连后服务器会发送 state 消息，handleStateMessage 会重新初始化 OTClient。
+   * 此方法在 state 消息处理完成后，将离线缓冲区中的操作重新提交到 OT 通道。
+   */
+  private handleReconnect(): void {
+    // state 消息会在 onopen 后由服务器推送，
+    // handleStateMessage 中会重新初始化 OTClient 并处理离线操作
+    // 这里不需要额外操作，因为 handleStateMessage 已经处理了重连逻辑
+  }
+
+  /**
+   * 获取离线缓冲区中的操作数量（用于状态显示和测试）
+   */
+  getOfflineBufferSize(): number {
+    return this.offlineBuffer.size();
   }
 }

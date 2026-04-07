@@ -172,7 +172,7 @@ export class CursorAwareness {
       }
 
       // 绘制选择区域半透明背景
-      const bgColor = this.hexToRgba(user.color, 0.08);
+      const bgColor = this.hexToRgba(user.color, 0.15);
       ctx.fillStyle = bgColor;
       ctx.fillRect(startX, startY, width, height);
 
