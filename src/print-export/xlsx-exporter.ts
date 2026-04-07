@@ -4,7 +4,7 @@
 // ============================================================
 
 import ExcelJS from 'exceljs';
-import type { Cell, CellBorder, CellFormat, BorderSide, SheetMeta } from '../types';
+import type { Cell, CellBorder, CellFormat, BorderSide, SheetMeta, ConditionalFormatRule } from '../types';
 
 // ============================================================
 // 最小接口定义 — 避免循环依赖
@@ -23,6 +23,7 @@ interface SpreadsheetModelLike {
   getColCount(): number;
   getRowHeight(row: number): number;
   getColWidth(col: number): number;
+  getConditionalFormats?(): ConditionalFormatRule[];
 }
 
 // ============================================================
@@ -227,6 +228,122 @@ export class XlsxExporter {
         }
       }
     }
+
+    // 导出条件格式规则
+    if (model.getConditionalFormats) {
+      this.exportConditionalFormats(worksheet, model.getConditionalFormats());
+    }
+  }
+
+  /**
+   * 导出条件格式规则到 ExcelJS 工作表
+   * 将 ice-excel ConditionalFormatRule 转换为 ExcelJS 条件格式
+   */
+  private exportConditionalFormats(
+    worksheet: ExcelJS.Worksheet,
+    rules: ConditionalFormatRule[]
+  ): void {
+    for (const rule of rules) {
+      const { startRow, startCol, endRow, endCol } = rule.range;
+      // 转换为 Excel 单元格引用（1-based）
+      const ref = `${this.colToLetter(startCol)}${startRow + 1}:${this.colToLetter(endCol)}${endRow + 1}`;
+
+      const excelRule = this.mapConditionToExcel(rule);
+      if (!excelRule) continue;
+
+      // ExcelJS 条件格式 API
+      worksheet.addConditionalFormatting({
+        ref,
+        rules: [excelRule],
+      });
+    }
+  }
+
+  /**
+   * 将 ice-excel 条件格式规则映射为 ExcelJS 条件格式规则
+   */
+  private mapConditionToExcel(
+    rule: ConditionalFormatRule
+  ): ExcelJS.ConditionalFormattingRule | null {
+    const condition = rule.condition;
+    const style: Partial<ExcelJS.Style> = {};
+
+    // 构建样式
+    if (rule.style.fontColor) {
+      const argb = cssColorToArgb(rule.style.fontColor);
+      if (argb) {
+        style.font = { color: { argb } };
+      }
+    }
+    if (rule.style.bgColor) {
+      const argb = cssColorToArgb(rule.style.bgColor);
+      if (argb) {
+        style.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb } };
+      }
+    }
+
+    switch (condition.type) {
+      case 'greaterThan':
+        return {
+          type: 'cellIs',
+          operator: 'greaterThan',
+          formulae: [condition.value],
+          style,
+          priority: rule.priority,
+        } as ExcelJS.ConditionalFormattingRule;
+
+      case 'lessThan':
+        return {
+          type: 'cellIs',
+          operator: 'lessThan',
+          formulae: [condition.value],
+          style,
+          priority: rule.priority,
+        } as ExcelJS.ConditionalFormattingRule;
+
+      case 'equals':
+        return {
+          type: 'cellIs',
+          operator: 'equal',
+          formulae: [condition.value],
+          style,
+          priority: rule.priority,
+        } as ExcelJS.ConditionalFormattingRule;
+
+      case 'between':
+        return {
+          type: 'cellIs',
+          operator: 'between',
+          formulae: [condition.min, condition.max],
+          style,
+          priority: rule.priority,
+        } as ExcelJS.ConditionalFormattingRule;
+
+      case 'textContains':
+        return {
+          type: 'containsText',
+          operator: 'containsText',
+          text: condition.text,
+          style,
+          priority: rule.priority,
+        } as ExcelJS.ConditionalFormattingRule;
+
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * 将 0-based 列索引转换为 Excel 列字母（如 0→A, 25→Z, 26→AA）
+   */
+  private colToLetter(col: number): string {
+    let result = '';
+    let n = col;
+    while (n >= 0) {
+      result = String.fromCharCode(65 + (n % 26)) + result;
+      n = Math.floor(n / 26) - 1;
+    }
+    return result;
   }
 
   /**

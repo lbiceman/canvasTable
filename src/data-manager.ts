@@ -1,7 +1,7 @@
 import { SpreadsheetModel } from './model';
 import { Modal } from './modal';
 import type { SheetManager } from './sheet-manager';
-import type { CsvExportOptions } from './print-export/types';
+import type { CsvExportOptions, CsvImportOptions } from './print-export/types';
 import type { PageConfig } from './print-export/page-config';
 import type { HeaderFooter } from './print-export/header-footer';
 import type { PrintArea } from './print-export/print-area';
@@ -394,5 +394,191 @@ export class DataManager {
     };
     const exporter = new PdfExporter(modelLike, pageConfig, headerFooter, printArea);
     await exporter.export(filename);
+  }
+
+  /**
+   * 从 CSV 文件导入数据
+   * 自动检测编码（UTF-8 / GBK / Shift-JIS），解析后写入当前工作表
+   *
+   * @param file - 用户选择的 .csv 文件
+   * @param options - 导入选项（可选编码、分隔符）
+   * @returns 导入结果
+   */
+  public async importFromCsv(
+    file: File,
+    options?: CsvImportOptions
+  ): Promise<{ success: boolean; errors: string[]; warnings: string[] }> {
+    const warnings: string[] = [];
+
+    try {
+      const { EncodingDetector } = await import('./print-export/encoding-detector');
+      const detector = new EncodingDetector();
+
+      // 读取文件为字节数组
+      const arrayBuffer = await file.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+
+      // 检测或使用指定编码
+      let encoding = options?.encoding;
+      if (!encoding) {
+        const detectResult = detector.detect(bytes);
+        encoding = detectResult.encoding;
+        if (detectResult.confidence < 0.7) {
+          warnings.push(`编码检测置信度较低 (${(detectResult.confidence * 100).toFixed(0)}%)，使用 ${encoding}`);
+        }
+      }
+
+      // 解码文本
+      const text = detector.decode(bytes, encoding);
+
+      // 检测分隔符
+      const delimiter = options?.delimiter ?? this.detectCsvDelimiter(text);
+
+      // 解析 CSV
+      const rows = this.parseCsvText(text, delimiter);
+
+      if (rows.length === 0) {
+        return { success: false, errors: ['CSV 文件为空'], warnings };
+      }
+
+      // 写入模型
+      const maxCols = Math.max(...rows.map((r) => r.length));
+      for (let r = 0; r < rows.length; r++) {
+        for (let c = 0; c < maxCols; c++) {
+          const value = rows[r][c] ?? '';
+          if (value) {
+            this.model.setCellContent(r, c, value);
+          }
+        }
+      }
+
+      warnings.push(`已导入 ${rows.length} 行 × ${maxCols} 列，编码：${encoding}`);
+      return { success: true, errors: [], warnings };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '未知错误';
+      return { success: false, errors: [`CSV 导入失败：${message}`], warnings };
+    }
+  }
+
+  /**
+   * 大文件 XLSX 流式导入
+   * 使用分块处理策略，避免阻塞浏览器主线程
+   *
+   * @param file - 用户选择的 .xlsx 文件
+   * @param onProgress - 进度回调（可选）
+   * @returns 导入结果
+   */
+  public async importFromXlsxStream(
+    file: File,
+    onProgress?: (progress: { phase: string; percent: number; message: string }) => void
+  ): Promise<{ success: boolean; errors: string[]; warnings: string[] }> {
+    const { XlsxStreamImporter } = await import('./print-export/xlsx-stream-importer');
+    const importer = new XlsxStreamImporter();
+
+    if (onProgress) {
+      importer.setProgressCallback(onProgress);
+    }
+
+    const result = await importer.import(file);
+
+    // 导入成功且包含工作簿数据时，通过 SheetManager 加载
+    if (result.success && this.sheetManager) {
+      const resultWithData = result as { success: boolean; errors: string[]; warnings: string[]; workbookData?: Record<string, unknown> };
+      if (resultWithData.workbookData) {
+        const json = JSON.stringify(resultWithData.workbookData);
+        this.sheetManager.deserializeWorkbook(json);
+      }
+    }
+
+    return { success: result.success, errors: result.errors, warnings: result.warnings };
+  }
+
+  /**
+   * 检测 CSV 分隔符（逗号或制表符）
+   * 统计前 5 行中逗号和制表符的出现次数
+   */
+  private detectCsvDelimiter(text: string): string {
+    const lines = text.split('\n').slice(0, 5);
+    let commaCount = 0;
+    let tabCount = 0;
+
+    for (const line of lines) {
+      commaCount += (line.match(/,/g) || []).length;
+      tabCount += (line.match(/\t/g) || []).length;
+    }
+
+    return tabCount > commaCount ? '\t' : ',';
+  }
+
+  /**
+   * 解析 CSV 文本为二维字符串数组
+   * 遵循 RFC 4180 规范（支持双引号转义）
+   */
+  private parseCsvText(text: string, delimiter: string): string[][] {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+    let i = 0;
+
+    while (i < text.length) {
+      const char = text[i];
+
+      if (inQuotes) {
+        if (char === '"') {
+          // 双引号转义
+          if (i + 1 < text.length && text[i + 1] === '"') {
+            currentField += '"';
+            i += 2;
+          } else {
+            inQuotes = false;
+            i++;
+          }
+        } else {
+          currentField += char;
+          i++;
+        }
+      } else {
+        if (char === '"') {
+          inQuotes = true;
+          i++;
+        } else if (char === delimiter) {
+          currentRow.push(currentField);
+          currentField = '';
+          i++;
+        } else if (char === '\r') {
+          // 处理 \r\n 和 \r
+          currentRow.push(currentField);
+          currentField = '';
+          if (currentRow.length > 0 || currentRow.some((f) => f !== '')) {
+            rows.push(currentRow);
+          }
+          currentRow = [];
+          i++;
+          if (i < text.length && text[i] === '\n') {
+            i++;
+          }
+        } else if (char === '\n') {
+          currentRow.push(currentField);
+          currentField = '';
+          if (currentRow.length > 0 || currentRow.some((f) => f !== '')) {
+            rows.push(currentRow);
+          }
+          currentRow = [];
+          i++;
+        } else {
+          currentField += char;
+          i++;
+        }
+      }
+    }
+
+    // 处理最后一个字段
+    if (currentField || currentRow.length > 0) {
+      currentRow.push(currentField);
+      rows.push(currentRow);
+    }
+
+    return rows;
   }
 }

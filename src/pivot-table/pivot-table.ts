@@ -26,6 +26,16 @@ export interface PivotFilterConfig extends PivotFieldConfig {
   selectedValues: Set<string>;  // 勾选的值
 }
 
+/** 透视表排序配置 */
+export interface PivotSortConfig {
+  /** 排序依据：label=行标签, value=聚合值 */
+  by: 'label' | 'value';
+  /** 排序字段索引（label 时为行字段索引，value 时为值字段索引） */
+  fieldIndex: number;
+  /** 排序方向 */
+  direction: 'asc' | 'desc';
+}
+
 /** 透视表完整配置 */
 export interface PivotConfig {
   sourceRange: { startRow: number; startCol: number; endRow: number; endCol: number };
@@ -33,6 +43,7 @@ export interface PivotConfig {
   colFields: PivotFieldConfig[];
   valueFields: PivotValueConfig[];
   filterFields: PivotFilterConfig[];
+  sort?: PivotSortConfig;
 }
 
 /** 透视表计算结果 */
@@ -175,11 +186,59 @@ export class PivotTable {
 
     // 无列字段时的简单模式
     if (colFields.length === 0) {
-      return this.computeWithoutColFields(filteredRows, rowFields, valueFields);
+      const result = this.computeWithoutColFields(filteredRows, rowFields, valueFields);
+      if (config.sort) {
+        this.sortResult(result, config.sort);
+      }
+      return result;
     }
 
     // 有列字段时的展开模式
-    return this.computeWithColFields(filteredRows, rowFields, colFields, valueFields);
+    const result = this.computeWithColFields(filteredRows, rowFields, colFields, valueFields);
+    if (config.sort) {
+      this.sortResult(result, config.sort);
+    }
+    return result;
+  }
+
+  /**
+   * 对透视表结果进行排序
+   * 仅排序非小计行，小计行保持在对应分组末尾
+   */
+  sortResult(result: PivotResult, sort: PivotSortConfig): void {
+    // 分离数据行和小计行
+    const dataRows = result.rows.filter((r) => !r.isSubtotal);
+    const subtotalRows = result.rows.filter((r) => r.isSubtotal);
+
+    // 排序数据行
+    dataRows.sort((a, b) => {
+      let aVal: string | number;
+      let bVal: string | number;
+
+      if (sort.by === 'label') {
+        aVal = a.labels[sort.fieldIndex] ?? '';
+        bVal = b.labels[sort.fieldIndex] ?? '';
+      } else {
+        aVal = a.values[sort.fieldIndex] ?? 0;
+        bVal = b.values[sort.fieldIndex] ?? 0;
+      }
+
+      // 数值比较
+      const aNum = typeof aVal === 'number' ? aVal : Number(aVal);
+      const bNum = typeof bVal === 'number' ? bVal : Number(bVal);
+
+      let cmp: number;
+      if (!isNaN(aNum) && !isNaN(bNum)) {
+        cmp = aNum - bNum;
+      } else {
+        cmp = String(aVal).localeCompare(String(bVal), 'zh-CN');
+      }
+
+      return sort.direction === 'desc' ? -cmp : cmp;
+    });
+
+    // 重建行数组：数据行 + 小计行在末尾
+    result.rows = [...dataRows, ...subtotalRows];
   }
 
   /**

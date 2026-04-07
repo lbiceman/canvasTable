@@ -12,6 +12,7 @@ import type {
   PivotConfig,
   PivotResult,
   AggregateFunction,
+  PivotSortConfig,
 } from './pivot-table';
 import { SpreadsheetModel } from '../model';
 import type { Selection } from '../types';
@@ -54,6 +55,9 @@ export class PivotTablePanel {
   // 聚合方式选择菜单
   private aggMenu: HTMLDivElement | null = null;
 
+  // 排序配置
+  private sortConfig: PivotSortConfig | null = null;
+
   constructor(pivotTable: PivotTable, model: SpreadsheetModel) {
     this.pivotTable = pivotTable;
     this.model = model;
@@ -85,6 +89,7 @@ export class PivotTablePanel {
     this.valueFields = [];
     this.filterFields = [];
     this.currentResult = null;
+    this.sortConfig = null;
 
     // 创建面板 DOM
     this.createPanel();
@@ -679,6 +684,7 @@ export class PivotTablePanel {
       colFields: this.colFields,
       valueFields: this.valueFields,
       filterFields: this.filterFields,
+      sort: this.sortConfig ?? undefined,
     };
 
     try {
@@ -704,6 +710,83 @@ export class PivotTablePanel {
     // 构建预览表格
     const table = document.createElement('table');
     table.className = 'pivot-preview-table';
+
+    // 排序控件区域
+    const sortBar = document.createElement('div');
+    sortBar.className = 'pivot-sort-bar';
+    sortBar.style.cssText = 'margin-bottom:6px;display:flex;gap:6px;align-items:center;font-size:12px;';
+
+    const sortLabel = document.createElement('span');
+    sortLabel.textContent = '排序：';
+    sortBar.appendChild(sortLabel);
+
+    // 排序方式选择
+    const sortBySelect = document.createElement('select');
+    sortBySelect.style.cssText = 'font-size:12px;padding:2px 4px;';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = 'none';
+    noneOpt.textContent = '无';
+    sortBySelect.appendChild(noneOpt);
+
+    // 行标签排序选项
+    this.rowFields.forEach((f, idx) => {
+      const opt = document.createElement('option');
+      opt.value = `label:${idx}`;
+      opt.textContent = `${f.fieldName}（标签）`;
+      if (this.sortConfig?.by === 'label' && this.sortConfig.fieldIndex === idx) {
+        opt.selected = true;
+      }
+      sortBySelect.appendChild(opt);
+    });
+
+    // 值字段排序选项
+    this.valueFields.forEach((f, idx) => {
+      const opt = document.createElement('option');
+      opt.value = `value:${idx}`;
+      opt.textContent = `${f.fieldName}（值）`;
+      if (this.sortConfig?.by === 'value' && this.sortConfig.fieldIndex === idx) {
+        opt.selected = true;
+      }
+      sortBySelect.appendChild(opt);
+    });
+
+    sortBar.appendChild(sortBySelect);
+
+    // 排序方向
+    const dirSelect = document.createElement('select');
+    dirSelect.style.cssText = 'font-size:12px;padding:2px 4px;';
+    const ascOpt = document.createElement('option');
+    ascOpt.value = 'asc';
+    ascOpt.textContent = '升序';
+    const descOpt = document.createElement('option');
+    descOpt.value = 'desc';
+    descOpt.textContent = '降序';
+    if (this.sortConfig?.direction === 'desc') descOpt.selected = true;
+    dirSelect.appendChild(ascOpt);
+    dirSelect.appendChild(descOpt);
+    sortBar.appendChild(dirSelect);
+
+    // 排序变更事件
+    const onSortChange = (): void => {
+      const val = sortBySelect.value;
+      if (val === 'none') {
+        this.sortConfig = null;
+      } else {
+        const [by, indexStr] = val.split(':');
+        this.sortConfig = {
+          by: by as 'label' | 'value',
+          fieldIndex: parseInt(indexStr, 10),
+          direction: dirSelect.value as 'asc' | 'desc',
+        };
+      }
+      this.scheduleRecompute();
+    };
+
+    sortBySelect.addEventListener('change', onSortChange);
+    dirSelect.addEventListener('change', onSortChange);
+
+    preview.innerHTML = '';
+    preview.appendChild(sortBar);
 
     // 表头
     const thead = document.createElement('thead');
@@ -756,7 +839,6 @@ export class PivotTablePanel {
 
     table.appendChild(tbody);
 
-    preview.innerHTML = '';
     preview.appendChild(table);
   }
 

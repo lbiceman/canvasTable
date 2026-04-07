@@ -88,3 +88,31 @@ export interface ImportResult {
   errors: string[];
   warnings: string[];
 }
+
+/** CSV 导入选项 */
+export interface CsvImportOptions {
+  /** 手动指定编码（不指定则自动检测） */
+  encoding?: string;
+  /** 分隔符（默认自动检测：逗号或制表符） */
+  delimiter?: string;
+}
+
+/** 大文件导入进度回调 */
+export interface StreamImportProgress {
+  /** 当前阶段：reading=读取文件, parsing=解析数据, building=构建模型 */
+  phase: 'reading' | 'parsing' | 'building';
+  /** 进度百分比 0-100 */
+  percent: number;
+  /** 描述信息 */
+  message: string;
+}
+
+/** 排序配置 */
+export interface PivotSortConfig {
+  /** 排序字段类型：label=行标签, value=聚合值 */
+  by: 'label' | 'value';
+  /** 排序字段索引（label 时为行字段索引，value 时为值字段索引） */
+  fieldIndex: number;
+  /** 排序方向 */
+  direction: 'asc' | 'desc';
+}

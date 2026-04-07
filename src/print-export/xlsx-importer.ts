@@ -13,6 +13,9 @@ import type {
   SheetMeta,
   WorkbookData,
   WorkbookSheetEntry,
+  ConditionalFormatRule,
+  ConditionalFormatCondition,
+  ConditionalFormatStyle,
 } from '../types';
 import type { ImportResult } from './types';
 
@@ -404,12 +407,170 @@ export class XlsxImporter {
       });
     });
 
+    // 解析条件格式规则
+    const conditionalFormats = this.parseConditionalFormats(worksheet, warnings);
+
     return {
       cells,
       rowHeights,
       colWidths,
       charts: [],
+      ...(conditionalFormats.length > 0 ? { conditionalFormats } : {}),
     };
+  }
+
+  /**
+   * 解析工作表中的条件格式规则
+   * 将 ExcelJS 条件格式转换为 ice-excel ConditionalFormatRule 格式
+   */
+  private parseConditionalFormats(
+    worksheet: ExcelJS.Worksheet,
+    warnings: string[]
+  ): ConditionalFormatRule[] {
+    const rules: ConditionalFormatRule[] = [];
+
+    // ExcelJS 通过 worksheet.conditionalFormattings 暴露条件格式
+    // eslint-disable-next-line -- ExcelJS 条件格式 API 类型不完整
+    const wsModel = worksheet.model as unknown as Record<string, unknown>;
+    const cfRules = wsModel['conditionalFormattings'] as Array<Record<string, unknown>> | undefined;
+
+    if (!cfRules || !Array.isArray(cfRules)) {
+      return rules;
+    }
+
+    let priority = 1;
+
+    for (const cfGroup of cfRules) {
+      // 每个条件格式组包含 ref（范围）和 rules（规则数组）
+      const ref = cfGroup['ref'] as string | undefined;
+      if (!ref) continue;
+
+      // 解析范围（如 "A1:C10"）
+      const range = this.decodeMergeRange(ref);
+      if (!range) continue;
+
+      const groupRules = cfGroup['rules'] as Array<Record<string, unknown>> | undefined;
+      if (!groupRules || !Array.isArray(groupRules)) continue;
+
+      for (const rule of groupRules) {
+        const parsed = this.parseConditionalFormatRule(rule, range, priority, warnings);
+        if (parsed) {
+          rules.push(parsed);
+          priority++;
+        }
+      }
+    }
+
+    return rules;
+  }
+
+  /**
+   * 解析单条条件格式规则
+   */
+  private parseConditionalFormatRule(
+    rule: Record<string, unknown>,
+    range: { top: number; left: number; bottom: number; right: number },
+    priority: number,
+    _warnings: string[]
+  ): ConditionalFormatRule | null {
+    const type = rule['type'] as string | undefined;
+    const operator = rule['operator'] as string | undefined;
+    const formulae = rule['formulae'] as unknown[] | undefined;
+    const style = rule['style'] as Record<string, unknown> | undefined;
+
+    // 构建条件
+    const condition = this.mapExcelCondition(type, operator, formulae);
+    if (!condition) return null;
+
+    // 构建样式
+    const cfStyle: ConditionalFormatStyle = {};
+    if (style) {
+      const font = style['font'] as Record<string, unknown> | undefined;
+      const fill = style['fill'] as Record<string, unknown> | undefined;
+
+      if (font?.color) {
+        const fontColor = font.color as Record<string, unknown>;
+        if (fontColor.argb) {
+          cfStyle.fontColor = argbToCssColor(fontColor.argb as string);
+        }
+      }
+
+      if (fill) {
+        const bgColor = fill['bgColor'] as Record<string, unknown> | undefined;
+        const fgColor = fill['fgColor'] as Record<string, unknown> | undefined;
+        const colorSource = fgColor ?? bgColor;
+        if (colorSource?.argb) {
+          cfStyle.bgColor = argbToCssColor(colorSource.argb as string);
+        }
+      }
+    }
+
+    return {
+      id: generateUUID(),
+      range: {
+        startRow: range.top,
+        startCol: range.left,
+        endRow: range.bottom,
+        endCol: range.right,
+      },
+      priority,
+      condition,
+      style: cfStyle,
+    };
+  }
+
+  /**
+   * 将 ExcelJS 条件类型映射到 ice-excel 条件格式条件
+   */
+  private mapExcelCondition(
+    type: string | undefined,
+    operator: string | undefined,
+    formulae: unknown[] | undefined
+  ): ConditionalFormatCondition | null {
+    if (type === 'cellIs' && operator && formulae) {
+      const val = formulae[0];
+
+      switch (operator) {
+        case 'greaterThan': {
+          const num = Number(val);
+          if (!isNaN(num)) return { type: 'greaterThan', value: num };
+          break;
+        }
+        case 'lessThan': {
+          const num = Number(val);
+          if (!isNaN(num)) return { type: 'lessThan', value: num };
+          break;
+        }
+        case 'equal': {
+          const num = Number(val);
+          if (!isNaN(num)) return { type: 'equals', value: num };
+          return { type: 'equals', value: String(val) };
+        }
+        case 'between': {
+          const min = Number(formulae[0]);
+          const max = Number(formulae[1]);
+          if (!isNaN(min) && !isNaN(max)) return { type: 'between', min, max };
+          break;
+        }
+      }
+    }
+
+    if (type === 'containsText' && formulae) {
+      const text = String(formulae[0] ?? '');
+      return { type: 'textContains', text };
+    }
+
+    if (type === 'beginsWith' && formulae) {
+      const text = String(formulae[0] ?? '');
+      return { type: 'textStartsWith', text };
+    }
+
+    if (type === 'endsWith' && formulae) {
+      const text = String(formulae[0] ?? '');
+      return { type: 'textEndsWith', text };
+    }
+
+    return null;
   }
 
   /**
@@ -580,7 +741,7 @@ export class XlsxImporter {
    *
    * 这是 XlsxExporter.mapCellStyle() 的逆操作
    */
-  private mapStyleToCell(style: Partial<ExcelJS.Style>): Partial<Cell> {
+  public mapStyleToCell(style: Partial<ExcelJS.Style>): Partial<Cell> {
     const result: Partial<Cell> = {};
 
     // 字体样式映射
