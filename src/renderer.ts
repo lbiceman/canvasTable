@@ -14,6 +14,7 @@ import type { ReorderDragState } from './row-col-reorder';
 import { DPRManager } from './dpr-manager';
 import { DirtyRegionTracker } from './dirty-region-tracker';
 import type { DirtyRect } from './dirty-region-tracker';
+import { FrozenPaneCache } from './frozen-pane-cache';
 
 export class SpreadsheetRenderer {
   private canvas: HTMLCanvasElement;
@@ -107,6 +108,9 @@ export class SpreadsheetRenderer {
   // 脏区域追踪器（增量渲染）
   private dirtyTracker: DirtyRegionTracker;
 
+  // 冻结窗格离屏缓存（OffscreenCanvas）
+  private frozenPaneCache: FrozenPaneCache;
+
   constructor(
     canvas: HTMLCanvasElement,
     model: SpreadsheetModel,
@@ -149,6 +153,9 @@ export class SpreadsheetRenderer {
     // 初始化脏区域追踪器（增量渲染）
     this.dirtyTracker = new DirtyRegionTracker(this.canvasWidth, this.canvasHeight);
 
+    // 初始化冻结窗格离屏缓存
+    this.frozenPaneCache = new FrozenPaneCache();
+
     // 计算初始视口范围
     this.updateViewport();
   }
@@ -183,6 +190,14 @@ export class SpreadsheetRenderer {
   // 设置图表浮动层
   public setChartOverlay(chartOverlay: ChartOverlay | null): void {
     this.chartOverlay = chartOverlay;
+  }
+
+  /**
+   * 使冻结窗格缓存失效（数据变更时调用）
+   * 下一帧渲染时会重新绘制冻结区域
+   */
+  public invalidateFrozenCache(): void {
+    this.frozenPaneCache.invalidateAll();
   }
 
   // 设置排序筛选模型引用
@@ -815,7 +830,6 @@ export class SpreadsheetRenderer {
         let cellX = headerWidth + this.viewport.offsetX;
         for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
           if (this.model.isColHidden(col)) continue;
-          // 跳过冻结列区域（由左上角交叉区域处理）
           if (col < freezeCols) {
             cellX += this.model.getColWidth(col);
             continue;
@@ -861,30 +875,61 @@ export class SpreadsheetRenderer {
       this.ctx.restore();
     }
 
-    // === 3. 渲染左上角交叉区域（行列都固定） ===
+    // === 3. 渲染左上角交叉区域（行列都固定，使用 OffscreenCanvas 缓存） ===
     if (freezeRows > 0 && freezeCols > 0) {
-      this.ctx.save();
-      this.ctx.beginPath();
-      this.ctx.rect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
-      this.ctx.clip();
+      const cornerCache = this.frozenPaneCache.getFrozenCornerCache(frozenColWidth, frozenRowHeight);
 
-      // 先用背景色清除该区域
-      this.ctx.fillStyle = this.themeColors.background;
-      this.ctx.fillRect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+      if (cornerCache && cornerCache.valid) {
+        // 缓存有效，直接绘制到主 Canvas
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+        this.ctx.clip();
+        this.frozenPaneCache.drawToMain(this.ctx, cornerCache, headerWidth, headerHeight);
+        this.ctx.restore();
+      } else {
+        // 缓存无效，重新渲染到主 Canvas 并尝试捕获到缓存
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.rect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+        this.ctx.clip();
 
-      let cellY = headerHeight;
-      for (let row = 0; row < freezeRows; row++) {
-        const rowHeight = this.model.getRowHeight(row);
-        let cellX = headerWidth;
-        for (let col = 0; col < freezeCols; col++) {
-          if (this.model.isColHidden(col)) continue;
-          renderFrozenCell(row, col, cellX, cellY);
-          cellX += this.model.getColWidth(col);
+        // 先用背景色清除该区域
+        this.ctx.fillStyle = this.themeColors.background;
+        this.ctx.fillRect(headerWidth, headerHeight, frozenColWidth, frozenRowHeight);
+
+        let cellY = headerHeight;
+        for (let row = 0; row < freezeRows; row++) {
+          const rowHeight = this.model.getRowHeight(row);
+          let cellX = headerWidth;
+          for (let col = 0; col < freezeCols; col++) {
+            if (this.model.isColHidden(col)) continue;
+            renderFrozenCell(row, col, cellX, cellY);
+            cellX += this.model.getColWidth(col);
+          }
+          cellY += rowHeight;
         }
-        cellY += rowHeight;
-      }
 
-      this.ctx.restore();
+        this.ctx.restore();
+
+        // 将渲染结果捕获到 OffscreenCanvas 缓存
+        if (cornerCache) {
+          const dpr = this.dprManager.getDPR();
+          const srcX = headerWidth * dpr;
+          const srcY = headerHeight * dpr;
+          const srcW = frozenColWidth * dpr;
+          const srcH = frozenRowHeight * dpr;
+
+          // 从主 Canvas 复制像素到 OffscreenCanvas
+          try {
+            const imageData = this.ctx.getImageData(srcX, srcY, srcW, srcH);
+            cornerCache.ctx.putImageData(imageData, 0, 0);
+            cornerCache.valid = true;
+          } catch (_e) {
+            // getImageData 可能因跨域等原因失败，忽略缓存
+          }
+        }
+      }
     }
 
     // === 4. 绘制冻结分隔线 ===
@@ -1563,6 +1608,13 @@ export class SpreadsheetRenderer {
     this.ctx.rect(headerWidth, headerHeight, this.canvasWidth - headerWidth, this.canvasHeight - headerHeight);
     this.ctx.clip();
 
+    // ===== 性能优化：第一遍批量绘制所有背景色 =====
+    // 将背景色绘制与文本绘制分离，减少 ctx.fillStyle 切换次数
+    this.renderCellBackgrounds(cfEngine, sfActive);
+
+    // ===== 缓存上一次设置的 font 字符串，避免重复赋值 =====
+    let lastFont = '';
+
     let currentY = headerHeight + offsetY;
 
     // 遍历可见行
@@ -1608,6 +1660,7 @@ export class SpreadsheetRenderer {
           }
 
           // 字体设置（外层已有 clip，无需每个单元格 save/restore）
+          // 性能优化：缓存 font 字符串，避免重复赋值 Canvas 上下文
           const fontWeight = cellInfo.fontBold ? 'bold ' : '';
           let fontStyle = cellInfo.fontItalic ? 'italic ' : '';
           if (cellInfo.formulaContent) {
@@ -1615,7 +1668,11 @@ export class SpreadsheetRenderer {
           }
           // 使用单元格自定义字体族，未设置时回退到默认字体族
           const cellFontFamily = cellInfo.fontFamily || fontFamily;
-          this.ctx.font = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${cellFontFamily}`;
+          const newFont = `${fontStyle}${fontWeight}${cellInfo.fontSize || this.cellFontSize}px ${cellFontFamily}`;
+          if (newFont !== lastFont) {
+            this.ctx.font = newFont;
+            lastFont = newFont;
+          }
 
           // 记录是否需要绘制下划线
           let needUnderline = cellInfo.fontUnderline;
@@ -1626,13 +1683,7 @@ export class SpreadsheetRenderer {
           const cfVisuals = rawCell ? this.getConditionalFormatVisuals(cfEngine, cellInfo.row, cellInfo.col, rawCell) : null;
 
           // 确定最终背景色：条件格式覆盖 > 单元格自定义颜色
-          const effectiveBgColor = cfResult?.bgColor || cellInfo.bgColor;
-
-          // 绘制背景颜色
-          if (effectiveBgColor) {
-            this.ctx.fillStyle = effectiveBgColor;
-            this.ctx.fillRect(currentX, currentY, totalWidth, totalHeight);
-          }
+          // 背景色已在 renderCellBackgrounds 批量绘制，此处跳过
 
           // 【条件格式】绘制数据条背景
           if (cfVisuals?.dataBar) {
@@ -1866,6 +1917,82 @@ export class SpreadsheetRenderer {
 
     // 恢复统一裁剪区域
     this.ctx.restore();
+  }
+
+  /**
+   * 批量绘制所有可见单元格的背景色（性能优化）
+   *
+   * 将背景色绘制从 renderCells 主循环中分离，按颜色分组批量绘制，
+   * 减少 ctx.fillStyle 切换次数。相同颜色的背景只设置一次 fillStyle。
+   */
+  private renderCellBackgrounds(
+    cfEngine: ConditionalFormatEngine,
+    sfActive: boolean | null
+  ): void {
+    const { headerWidth, headerHeight } = this.config;
+    const { offsetX, offsetY } = this.viewport;
+
+    // 收集所有需要绘制背景的单元格，按颜色分组
+    const bgGroups: Map<string, Array<{ x: number; y: number; w: number; h: number }>> = new Map();
+
+    let currentY = headerHeight + offsetY;
+
+    for (let row = this.viewport.startRow; row <= this.viewport.endRow; row++) {
+      if (this.model.isRowHidden(row)) continue;
+
+      const dataRow = sfActive ? this.sortFilterModel!.getDataRowIndex(row) : row;
+      if (dataRow === -1) {
+        currentY += this.model.getRowHeight(row);
+        continue;
+      }
+
+      const rowHeight = this.model.getRowHeight(dataRow);
+      let currentX = headerWidth + offsetX;
+
+      for (let col = this.viewport.startCol; col <= this.viewport.endCol; col++) {
+        if (this.model.isColHidden(col)) continue;
+
+        const colWidth = this.model.getColWidth(col);
+        const cellInfo = this.model.getMergedCellInfo(dataRow, col);
+
+        if (cellInfo && cellInfo.row === dataRow && cellInfo.col === col) {
+          let totalWidth = 0;
+          for (let c = 0; c < cellInfo.colSpan; c++) {
+            totalWidth += this.model.getColWidth(col + c);
+          }
+          let totalHeight = 0;
+          for (let r = 0; r < cellInfo.rowSpan; r++) {
+            totalHeight += this.model.getRowHeight(row + r);
+          }
+
+          // 条件格式背景色优先
+          const rawCell = this.model.getCell(cellInfo.row, cellInfo.col);
+          const cfResult = rawCell ? cfEngine.evaluate(cellInfo.row, cellInfo.col, rawCell) : null;
+          const bgColor = cfResult?.bgColor || cellInfo.bgColor;
+
+          if (bgColor) {
+            let group = bgGroups.get(bgColor);
+            if (!group) {
+              group = [];
+              bgGroups.set(bgColor, group);
+            }
+            group.push({ x: currentX, y: currentY, w: totalWidth, h: totalHeight });
+          }
+        }
+
+        currentX += colWidth;
+      }
+
+      currentY += rowHeight;
+    }
+
+    // 按颜色分组批量绘制，每种颜色只设置一次 fillStyle
+    for (const [color, rects] of bgGroups) {
+      this.ctx.fillStyle = color;
+      for (const rect of rects) {
+        this.ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+      }
+    }
   }
 
   /**

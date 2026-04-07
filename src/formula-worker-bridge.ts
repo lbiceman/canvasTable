@@ -58,6 +58,9 @@ interface BatchEntry {
 /** Worker 计算超时时间（毫秒） */
 const WORKER_TIMEOUT_MS = 5000;
 
+/** 批量分片大小：每个分片最多包含的公式数量 */
+const BATCH_CHUNK_SIZE = 20;
+
 // ============================================================
 // FormulaWorkerBridge 类
 // ============================================================
@@ -344,7 +347,11 @@ export class FormulaWorkerBridge {
   // ============================================================
 
   /**
-   * 刷新批量队列：将队列中的所有公式合并为一次批量请求发送到 Worker
+   * 刷新批量队列：将队列按固定大小分片发送到 Worker
+   *
+   * 性能优化：将大批量请求拆分为多个小分片，减少单次 postMessage 的序列化开销。
+   * 每个分片独立发送和超时控制，Worker 端逐个处理。
+   * 同时对分片内的依赖数据去重，减少传输数据量。
    */
   private flushBatchQueue(): void {
     this.batchScheduled = false;
@@ -362,18 +369,38 @@ export class FormulaWorkerBridge {
     }
 
     // 取出当前队列中的所有条目
-    const entries = this.batchQueue;
+    const allEntries = this.batchQueue;
     this.batchQueue = [];
 
+    // 按 BATCH_CHUNK_SIZE 分片发送
+    for (let i = 0; i < allEntries.length; i += BATCH_CHUNK_SIZE) {
+      const chunkEntries = allEntries.slice(i, i + BATCH_CHUNK_SIZE);
+      this.sendBatchChunk(chunkEntries);
+    }
+  }
+
+  /**
+   * 发送单个批量分片到 Worker
+   * 对分片内的依赖数据去重，减少 postMessage 序列化开销
+   */
+  private sendBatchChunk(entries: BatchEntry[]): void {
+    if (!this.worker) return;
+
     const id = this.generateTaskId();
+
+    // 去重依赖数据：多个公式可能引用相同的单元格
+    const deduplicatedEntries = entries.map(({ formula, row, col, dependencies }) => ({
+      formula,
+      row,
+      col,
+      dependencies: this.deduplicateDependencies(dependencies),
+    }));
 
     // 构建批量请求
     const request: WorkerRequest = {
       id,
       type: 'batch',
-      formulas: entries.map(({ formula, row, col, dependencies }) => ({
-        formula, row, col, dependencies,
-      })),
+      formulas: deduplicatedEntries,
     };
 
     // 设置超时控制
@@ -420,6 +447,23 @@ export class FormulaWorkerBridge {
 
     // 发送请求到 Worker
     this.worker.postMessage(request);
+  }
+
+  /**
+   * 去重依赖数据：移除值为空字符串的依赖项
+   * 空字符串是默认值，Worker 端对缺失的 key 也返回空字符串，
+   * 因此可以安全移除以减少序列化数据量
+   */
+  private deduplicateDependencies(
+    dependencies: Record<string, string>
+  ): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const key in dependencies) {
+      if (dependencies[key] !== '') {
+        result[key] = dependencies[key];
+      }
+    }
+    return result;
   }
 
   /**

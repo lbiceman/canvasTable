@@ -14,6 +14,7 @@ import { FillSeriesEngine } from './fill-series';
 import { NamedRangeManager } from './formula/named-range';
 import { PrefixSumIndex } from './prefix-sum-index';
 import { FormulaWorkerBridge } from './formula-worker-bridge';
+import { SparseGrid } from './sparse-grid';
 
 // 默认行列数 - 支持无限滚动
 const DEFAULT_ROWS = 1000; // 初始行数
@@ -87,26 +88,17 @@ export class SpreadsheetModel {
       return this.getCell(row, col);
     });
 
-    // 初始化表格数据
+    // 初始化表格数据（使用稀疏存储，空单元格不分配内存）
+    const sparseGrid = new SparseGrid(rows, cols);
     this.data = {
-      cells: [],
+      cells: sparseGrid.createProxy(),
       rowHeights: [],
       colWidths: []
     };
 
-    // 初始化单元格
+    // 初始化行高（稀疏存储不需要预创建 Cell 对象）
     for (let i = 0; i < rows; i++) {
-      this.data.cells[i] = [];
       this.data.rowHeights[i] = DEFAULT_ROW_HEIGHT;
-
-      for (let j = 0; j < cols; j++) {
-        this.data.cells[i][j] = {
-          content: '',
-          rowSpan: 1,
-          colSpan: 1,
-          isMerged: false
-        };
-      }
     }
 
     // 初始化列宽
@@ -316,8 +308,8 @@ export class SpreadsheetModel {
 
   // 重新计算所有公式单元格（使用 Worker 批量重算，需求 2.5）
   public recalculateFormulas(): void {
-    const rows = this.data.cells.length;
-    const cols = this.data.cells[0]?.length ?? 0;
+    const rows = this.getRowCount();
+    const cols = this.getColCount();
 
     // 收集所有公式单元格
     const formulaCells: Array<{ row: number; col: number; formula: string }> = [];
@@ -2369,14 +2361,14 @@ export class SpreadsheetModel {
     }
   }
 
-  // 获取行数
+  // 获取行数（基于行高数组长度，稀疏存储兼容）
   public getRowCount(): number {
-    return this.data.cells.length;
+    return this.data.rowHeights.length;
   }
 
-  // 获取列数
+  // 获取列数（基于列宽数组长度，稀疏存储兼容）
   public getColCount(): number {
-    return this.data.cells[0].length;
+    return this.data.colWidths.length;
   }
 
   // 获取全局字体大小
@@ -2909,7 +2901,6 @@ export class SpreadsheetModel {
   // 动态扩展行数
   public expandRows(newRowCount: number): void {
     const currentRowCount = this.getRowCount();
-    const colCount = this.getColCount();
 
     // 限制最大行数
     newRowCount = Math.min(newRowCount, MAX_ROWS);
@@ -2918,19 +2909,9 @@ export class SpreadsheetModel {
       return; // 无需扩展
     }
 
-    // 添加新行
+    // 只扩展行高数组（稀疏存储不需要预创建 Cell 对象）
     for (let i = currentRowCount; i < newRowCount; i++) {
-      this.data.cells[i] = [];
       this.data.rowHeights[i] = DEFAULT_ROW_HEIGHT;
-
-      for (let j = 0; j < colCount; j++) {
-        this.data.cells[i][j] = {
-          content: '',
-          rowSpan: 1,
-          colSpan: 1,
-          isMerged: false
-        };
-      }
     }
 
     // 同步更新前缀和索引：在末尾插入新行
@@ -2940,7 +2921,6 @@ export class SpreadsheetModel {
 
   // 动态扩展列数
   public expandCols(newColCount: number): void {
-    const rowCount = this.getRowCount();
     const currentColCount = this.getColCount();
 
     // 限制最大列数
@@ -2950,21 +2930,9 @@ export class SpreadsheetModel {
       return; // 无需扩展
     }
 
-    // 添加新列
+    // 只扩展列宽数组（稀疏存储不需要预创建 Cell 对象）
     for (let j = currentColCount; j < newColCount; j++) {
       this.data.colWidths[j] = DEFAULT_COL_WIDTH;
-    }
-
-    // 为每行添加新单元格
-    for (let i = 0; i < rowCount; i++) {
-      for (let j = currentColCount; j < newColCount; j++) {
-        this.data.cells[i][j] = {
-          content: '',
-          rowSpan: 1,
-          colSpan: 1,
-          isMerged: false
-        };
-      }
     }
 
     // 同步更新前缀和索引：在末尾插入新列
