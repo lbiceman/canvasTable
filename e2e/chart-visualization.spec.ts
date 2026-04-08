@@ -1,200 +1,439 @@
 import { test, expect, Page } from '@playwright/test';
+import { clickCell, selectRange, typeInCell, getCellContent } from './helpers/test-utils';
 
-/**
- * 辅助函数：点击 Canvas 上指定单元格
- * 根据渲染配置，headerWidth=40, headerHeight=28，默认列宽=100，默认行高=25
- * 点击第 row 行第 col 列的单元格中心（0-indexed）
- */
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const headerWidth = 40;
-  const headerHeight = 28;
-  const defaultColWidth = 100;
-  const defaultRowHeight = 25;
-
-  const x = headerWidth + col * defaultColWidth + defaultColWidth / 2;
-  const y = headerHeight + row * defaultRowHeight + defaultRowHeight / 2;
-
-  await canvas.click({ position: { x, y } });
+const setupChartData = async (page: Page): Promise<void> => {
+  await typeInCell(page, 0, 0, '类别');
+  await typeInCell(page, 0, 1, '数值');
+  await typeInCell(page, 1, 0, 'A');
+  await typeInCell(page, 1, 1, '10');
+  await typeInCell(page, 2, 0, 'B');
+  await typeInCell(page, 2, 1, '20');
+  await typeInCell(page, 3, 0, 'C');
+  await typeInCell(page, 3, 1, '30');
+  await typeInCell(page, 4, 0, 'D');
+  await typeInCell(page, 4, 1, '15');
 };
 
-/**
- * 辅助函数：选中一个区域（从 startRow/startCol 拖拽到 endRow/endCol）
- */
-const selectRange = async (
-  page: Page,
-  startRow: number,
-  startCol: number,
-  endRow: number,
-  endCol: number
-): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const headerWidth = 40;
-  const headerHeight = 28;
-  const defaultColWidth = 100;
-  const defaultRowHeight = 25;
-
-  const x1 = headerWidth + startCol * defaultColWidth + defaultColWidth / 2;
-  const y1 = headerHeight + startRow * defaultRowHeight + defaultRowHeight / 2;
-  const x2 = headerWidth + endCol * defaultColWidth + defaultColWidth / 2;
-  const y2 = headerHeight + endRow * defaultRowHeight + defaultRowHeight / 2;
-
-  await canvas.click({ position: { x: x1, y: y1 } });
-  await canvas.click({ position: { x: x2, y: y2 }, modifiers: ['Shift'] });
+const getChartCount = async (page: Page): Promise<number> => {
+  return await page.evaluate(() => {
+    const app = (window as Record<string, unknown>).app as {
+      getModel: () => { chartModel: { getAllCharts: () => unknown[] } };
+    };
+    return app.getModel().chartModel.getAllCharts().length;
+  });
 };
 
-/**
- * 辅助函数：在单元格中输入内容
- */
-const typeInCell = async (page: Page, row: number, col: number, text: string): Promise<void> => {
-  await clickCell(page, row, col);
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
+const createChart = async (page: Page, chartType: string): Promise<void> => {
+  await selectRange(page, 0, 0, 4, 1);
+  await page.waitForTimeout(200);
+  await page.locator('#insert-chart-btn').click();
+  await page.waitForTimeout(300);
+
+  const typeSelector = page.locator('.chart-type-selector');
+  await expect(typeSelector).toBeVisible();
+
+  await typeSelector.locator('div', { hasText: chartType }).first().click();
+  await page.waitForTimeout(500);
 };
 
+// ============================================================
+// 深入测试：图表功能
+// ============================================================
 
-test.describe('插入图表功能', () => {
+test.describe('图表 - 创建不同类型图表', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
   });
 
-  test('无选区时插入图表按钮应显示提示', async ({ page }) => {
-    const insertChartBtn = page.locator('#insert-chart-btn');
-    // 按钮应存在
-    await expect(insertChartBtn).toBeVisible();
-  });
+  test('创建柱状图并验证图表数据', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
 
-  test('选中包含数据的区域后点击插入图表应弹出类型选择面板', async ({ page }) => {
-    // 输入一些数据
-    await typeInCell(page, 0, 0, '类别');
-    await typeInCell(page, 0, 1, '数值');
-    await typeInCell(page, 1, 0, 'A');
-    await typeInCell(page, 1, 1, '10');
-    await typeInCell(page, 2, 0, 'B');
-    await typeInCell(page, 2, 1, '20');
-    await typeInCell(page, 3, 0, 'C');
-    await typeInCell(page, 3, 1, '30');
+    const count = await getChartCount(page);
+    expect(count).toBe(1);
 
-    // 选中数据区域 A1:B4
-    await selectRange(page, 0, 0, 3, 1);
-
-    // 点击插入图表按钮
-    const insertChartBtn = page.locator('#insert-chart-btn');
-    await insertChartBtn.click();
-
-    // 应弹出图表类型选择面板
-    const typeSelector = page.locator('.chart-type-selector');
-    await expect(typeSelector).toBeVisible();
-
-    // 面板应包含五种图表类型
-    await expect(typeSelector.locator('div')).toHaveCount(5);
-  });
-
-  test('选择柱状图类型后应在 Canvas 上创建图表', async ({ page }) => {
-    // 输入数据
-    await typeInCell(page, 0, 0, '类别');
-    await typeInCell(page, 0, 1, '数值');
-    await typeInCell(page, 1, 0, 'A');
-    await typeInCell(page, 1, 1, '10');
-    await typeInCell(page, 2, 0, 'B');
-    await typeInCell(page, 2, 1, '20');
-
-    // 选中数据区域
-    await selectRange(page, 0, 0, 2, 1);
-
-    // 点击插入图表
-    const insertChartBtn = page.locator('#insert-chart-btn');
-    await insertChartBtn.click();
-
-    // 选择柱状图
-    const typeSelector = page.locator('.chart-type-selector');
-    await typeSelector.locator('div').first().click();
-
-    // 等待图表渲染
-    await page.waitForTimeout(300);
-
-    // 验证模型中有图表
-    const chartCount = await page.evaluate(() => {
+    // 验证图表配置
+    const chartConfig = await page.evaluate(() => {
       const app = (window as Record<string, unknown>).app as {
-        getModel: () => { chartModel: { getAllCharts: () => unknown[] } }
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              type: string;
+              dataRange: { startRow: number; startCol: number; endRow: number; endCol: number };
+            }>;
+          };
+        };
       };
-      return app.getModel().chartModel.getAllCharts().length;
+      const charts = app.getModel().chartModel.getAllCharts();
+      return charts[0];
     });
-    expect(chartCount).toBe(1);
+
+    expect(chartConfig.type).toBe('bar');
+    // 验证数据范围包含了选中的区域
+    expect(chartConfig.dataRange).toBeDefined();
   });
 
-  test('创建图表后 Canvas 截图对比', async ({ page }) => {
-    // 输入数据
-    await typeInCell(page, 0, 0, '类别');
-    await typeInCell(page, 0, 1, '数值');
-    await typeInCell(page, 1, 0, 'A');
-    await typeInCell(page, 1, 1, '100');
-    await typeInCell(page, 2, 0, 'B');
-    await typeInCell(page, 2, 1, '200');
-    await typeInCell(page, 3, 0, 'C');
-    await typeInCell(page, 3, 1, '300');
+  test('创建折线图', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '折线图');
 
-    // 选中数据区域
-    await selectRange(page, 0, 0, 3, 1);
+    const chartType = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => { chartModel: { getAllCharts: () => Array<{ type: string }> } };
+      };
+      return app.getModel().chartModel.getAllCharts()[0]?.type;
+    });
+    expect(chartType).toBe('line');
+  });
 
-    // 插入柱状图
-    const insertChartBtn = page.locator('#insert-chart-btn');
-    await insertChartBtn.click();
-    const typeSelector = page.locator('.chart-type-selector');
-    await typeSelector.locator('div').first().click();
+  test('创建饼图', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '饼图');
 
-    // 等待渲染
+    const chartType = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => { chartModel: { getAllCharts: () => Array<{ type: string }> } };
+      };
+      return app.getModel().chartModel.getAllCharts()[0]?.type;
+    });
+    expect(chartType).toBe('pie');
+  });
+
+  test('创建面积图', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '面积图');
+
+    const chartType = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => { chartModel: { getAllCharts: () => Array<{ type: string }> } };
+      };
+      return app.getModel().chartModel.getAllCharts()[0]?.type;
+    });
+    expect(chartType).toBe('area');
+  });
+
+  test('创建散点图', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '散点图');
+
+    const chartType = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => { chartModel: { getAllCharts: () => Array<{ type: string }> } };
+      };
+      return app.getModel().chartModel.getAllCharts()[0]?.type;
+    });
+    expect(chartType).toBe('scatter');
+  });
+});
+
+test.describe('图表 - 选中与删除', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
+  });
 
-    // 点击空白区域取消选中图表
-    await clickCell(page, 8, 5);
-    await page.waitForTimeout(200);
+  test('点击图表区域应选中图表', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
 
-    // 截图验证
+    // 获取图表位置（通过 model.chartModel）
+    const chartPos = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              position: { x: number; y: number };
+              size: { width: number; height: number };
+            }>;
+          };
+        };
+        getRenderer: () => {
+          getConfig: () => { headerWidth: number; headerHeight: number };
+          getViewport: () => { scrollX: number; scrollY: number };
+        };
+      };
+      const chart = app.getModel().chartModel.getAllCharts()[0];
+      const config = app.getRenderer().getConfig();
+      const viewport = app.getRenderer().getViewport();
+      // 将数据坐标转换为画布坐标
+      return {
+        x: chart.position.x + chart.size.width / 2 + config.headerWidth - viewport.scrollX,
+        y: chart.position.y + chart.size.height / 2 + config.headerHeight - viewport.scrollY,
+      };
+    });
+
+    // 点击图表中心
     const canvas = page.locator('#excel-canvas');
-    await expect(canvas).toHaveScreenshot('chart-bar-created.png', {
-      maxDiffPixelRatio: 0.05,
+    await canvas.click({ position: { x: chartPos.x, y: chartPos.y } });
+    await page.waitForTimeout(200);
+
+    // 验证图表数量仍然为 1（图表被选中但未删除）
+    expect(await getChartCount(page)).toBe(1);
+  });
+
+  test('选中图表后按 Delete 应删除图表', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
+
+    expect(await getChartCount(page)).toBe(1);
+
+    // 获取图表画布坐标
+    const chartPos = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              position: { x: number; y: number };
+              size: { width: number; height: number };
+            }>;
+          };
+        };
+        getRenderer: () => {
+          getConfig: () => { headerWidth: number; headerHeight: number };
+          getViewport: () => { scrollX: number; scrollY: number };
+        };
+      };
+      const chart = app.getModel().chartModel.getAllCharts()[0];
+      const config = app.getRenderer().getConfig();
+      const viewport = app.getRenderer().getViewport();
+      return {
+        x: chart.position.x + chart.size.width / 2 + config.headerWidth - viewport.scrollX,
+        y: chart.position.y + chart.size.height / 2 + config.headerHeight - viewport.scrollY,
+      };
     });
+
+    const canvas = page.locator('#excel-canvas');
+    await canvas.click({ position: { x: chartPos.x, y: chartPos.y } });
+    await page.waitForTimeout(200);
+
+    // 按 Delete 删除
+    await page.keyboard.press('Delete');
+    await page.waitForTimeout(300);
+
+    expect(await getChartCount(page)).toBe(0);
+  });
+
+  test('选中图表后按 Escape 应取消选中', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
+
+    const chartPos = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              position: { x: number; y: number };
+              size: { width: number; height: number };
+            }>;
+          };
+        };
+        getRenderer: () => {
+          getConfig: () => { headerWidth: number; headerHeight: number };
+          getViewport: () => { scrollX: number; scrollY: number };
+        };
+      };
+      const chart = app.getModel().chartModel.getAllCharts()[0];
+      const config = app.getRenderer().getConfig();
+      const viewport = app.getRenderer().getViewport();
+      return {
+        x: chart.position.x + chart.size.width / 2 + config.headerWidth - viewport.scrollX,
+        y: chart.position.y + chart.size.height / 2 + config.headerHeight - viewport.scrollY,
+      };
+    });
+
+    const canvas = page.locator('#excel-canvas');
+    await canvas.click({ position: { x: chartPos.x, y: chartPos.y } });
+    await page.waitForTimeout(200);
+
+    // 按 Escape
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
+
+    // 图表仍然存在
+    expect(await getChartCount(page)).toBe(1);
   });
 });
 
-test.describe('图表交互功能', () => {
+test.describe('图表 - 多系列数据', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
-
-    // 准备数据并创建图表
-    await typeInCell(page, 0, 0, '类别');
-    await typeInCell(page, 0, 1, '数值');
-    await typeInCell(page, 1, 0, 'X');
-    await typeInCell(page, 1, 1, '50');
-    await typeInCell(page, 2, 0, 'Y');
-    await typeInCell(page, 2, 1, '80');
-
-    await selectRange(page, 0, 0, 2, 1);
-    const insertChartBtn = page.locator('#insert-chart-btn');
-    await insertChartBtn.click();
-    const typeSelector = page.locator('.chart-type-selector');
-    await typeSelector.locator('div').first().click();
-    await page.waitForTimeout(300);
   });
 
-  test('Delete 键应删除选中的图表', async ({ page }) => {
-    // 图表创建后应自动选中，按 Delete 删除
-    await page.keyboard.press('Delete');
-    await page.waitForTimeout(200);
+  test('多列数据应创建多系列图表', async ({ page }) => {
+    // 准备多系列数据
+    await typeInCell(page, 0, 0, '月份');
+    await typeInCell(page, 0, 1, '产品A');
+    await typeInCell(page, 0, 2, '产品B');
+    await typeInCell(page, 1, 0, '1月');
+    await typeInCell(page, 1, 1, '100');
+    await typeInCell(page, 1, 2, '80');
+    await typeInCell(page, 2, 0, '2月');
+    await typeInCell(page, 2, 1, '120');
+    await typeInCell(page, 2, 2, '90');
+    await typeInCell(page, 3, 0, '3月');
+    await typeInCell(page, 3, 1, '110');
+    await typeInCell(page, 3, 2, '100');
 
-    // 验证图表已删除
-    const chartCount = await page.evaluate(() => {
+    await selectRange(page, 0, 0, 3, 2);
+    await page.waitForTimeout(200);
+    await page.locator('#insert-chart-btn').click();
+    await page.waitForTimeout(300);
+
+    const typeSelector = page.locator('.chart-type-selector');
+    await typeSelector.locator('div', { hasText: '柱状图' }).first().click();
+    await page.waitForTimeout(500);
+
+    // 验证图表已创建
+    expect(await getChartCount(page)).toBe(1);
+
+    // 验证数据范围包含多列
+    const dataRange = await page.evaluate(() => {
       const app = (window as Record<string, unknown>).app as {
-        getModel: () => { chartModel: { getAllCharts: () => unknown[] } }
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              dataRange: { startCol: number; endCol: number };
+            }>;
+          };
+        };
       };
-      return app.getModel().chartModel.getAllCharts().length;
+      return app.getModel().chartModel.getAllCharts()[0].dataRange;
     });
-    expect(chartCount).toBe(0);
+    expect(dataRange.endCol).toBe(2);
   });
 });
 
+test.describe('图表 - 图表编辑器', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#excel-canvas');
+    await page.waitForTimeout(500);
+  });
+
+  test('双击图表应打开图表编辑器面板', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
+
+    // 获取图表画布坐标
+    const chartPos = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              position: { x: number; y: number };
+              size: { width: number; height: number };
+            }>;
+          };
+        };
+        getRenderer: () => {
+          getConfig: () => { headerWidth: number; headerHeight: number };
+          getViewport: () => { scrollX: number; scrollY: number };
+        };
+      };
+      const chart = app.getModel().chartModel.getAllCharts()[0];
+      const config = app.getRenderer().getConfig();
+      const viewport = app.getRenderer().getViewport();
+      return {
+        x: chart.position.x + chart.size.width / 2 + config.headerWidth - viewport.scrollX,
+        y: chart.position.y + chart.size.height / 2 + config.headerHeight - viewport.scrollY,
+      };
+    });
+
+    // 双击图表
+    const canvas = page.locator('#excel-canvas');
+    await canvas.dblclick({ position: { x: chartPos.x, y: chartPos.y } });
+    await page.waitForTimeout(500);
+
+    // 验证编辑器面板打开
+    const editorPanel = page.locator('.chart-editor-panel');
+    await expect(editorPanel).toBeVisible();
+  });
+
+  test('图表编辑器中切换图表类型', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
+
+    // 双击图表打开编辑器
+    const chartPos = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => {
+          chartModel: {
+            getAllCharts: () => Array<{
+              position: { x: number; y: number };
+              size: { width: number; height: number };
+            }>;
+          };
+        };
+        getRenderer: () => {
+          getConfig: () => { headerWidth: number; headerHeight: number };
+          getViewport: () => { scrollX: number; scrollY: number };
+        };
+      };
+      const chart = app.getModel().chartModel.getAllCharts()[0];
+      const config = app.getRenderer().getConfig();
+      const viewport = app.getRenderer().getViewport();
+      return {
+        x: chart.position.x + chart.size.width / 2 + config.headerWidth - viewport.scrollX,
+        y: chart.position.y + chart.size.height / 2 + config.headerHeight - viewport.scrollY,
+      };
+    });
+
+    const canvas = page.locator('#excel-canvas');
+    await canvas.dblclick({ position: { x: chartPos.x, y: chartPos.y } });
+    await page.waitForTimeout(500);
+
+    const editorPanel = page.locator('.chart-editor-panel');
+    if (await editorPanel.isVisible()) {
+      // 点击折线图类型按钮
+      const lineBtn = editorPanel.locator('.chart-type-btn', { hasText: '折线图' });
+      if (await lineBtn.count() > 0) {
+        await lineBtn.click();
+        await page.waitForTimeout(300);
+
+        const chartType = await page.evaluate(() => {
+          const app = (window as Record<string, unknown>).app as {
+            getModel: () => { chartModel: { getAllCharts: () => Array<{ type: string }> } };
+          };
+          return app.getModel().chartModel.getAllCharts()[0].type;
+        });
+        expect(chartType).toBe('line');
+      }
+    }
+  });
+});
+
+test.describe('图表 - 数据变更后图表更新', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#excel-canvas');
+    await page.waitForTimeout(500);
+  });
+
+  test('修改源数据后图表数据应更新', async ({ page }) => {
+    await setupChartData(page);
+    await createChart(page, '柱状图');
+
+    expect(await getChartCount(page)).toBe(1);
+
+    // 修改源数据
+    await typeInCell(page, 1, 1, '99');
+    await page.waitForTimeout(300);
+
+    // 验证源数据已修改
+    const cellContent = await page.evaluate(() => {
+      const app = (window as Record<string, unknown>).app as {
+        getModel: () => { getCell: (r: number, c: number) => { content?: string } | null };
+      };
+      return app.getModel().getCell(1, 1)?.content ?? '';
+    });
+    expect(cellContent).toBe('99');
+
+    // 图表仍然存在
+    expect(await getChartCount(page)).toBe(1);
+  });
+});

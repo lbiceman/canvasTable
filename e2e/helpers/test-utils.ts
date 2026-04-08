@@ -179,3 +179,81 @@ export const getColCount = async (page: Page): Promise<number> => {
     return app.getModel().getColCount();
   });
 };
+
+
+/** 获取单元格内容（简化版 getCellData） */
+export const getCellContent = async (page: Page, row: number, col: number): Promise<string> => {
+  return await page.evaluate(([r, c]) => {
+    const app = (window as unknown as Record<string, unknown>).app as {
+      getModel: () => { getCell: (r: number, c: number) => { content?: string } | null };
+    };
+    return app.getModel().getCell(r, c)?.content ?? '';
+  }, [row, col] as [number, number]);
+};
+
+/** 通过 API 设置单元格内容（比 typeInCell 更可靠） */
+export const setCellContent = async (page: Page, row: number, col: number, value: string): Promise<void> => {
+  await page.evaluate(([r, c, v]) => {
+    const app = (window as unknown as Record<string, unknown>).app as {
+      getModel: () => { setCellContent: (r: number, c: number, v: string) => void };
+      getRenderer: () => { render: () => void };
+    };
+    app.getModel().setCellContent(r, c, v);
+    app.getRenderer().render();
+  }, [row, col, value] as [number, number, string]);
+};
+
+/** 通过 API 设置单元格格式 */
+export const setCellFormat = async (
+  page: Page, row: number, col: number,
+  format: Record<string, unknown>
+): Promise<void> => {
+  await page.evaluate(([r, c, fmt]) => {
+    const app = (window as unknown as Record<string, unknown>).app as {
+      getModel: () => { getCell: (r: number, c: number) => Record<string, unknown> | null };
+    };
+    const cell = app.getModel().getCell(r, c);
+    if (cell) Object.assign(cell, fmt);
+  }, [row, col, format] as [number, number, Record<string, unknown>]);
+};
+
+/** 关闭可能存在的模态框 */
+export const dismissModal = async (page: Page): Promise<void> => {
+  const modal = page.locator('.modal-overlay');
+  if (await modal.isVisible({ timeout: 500 }).catch(() => false)) {
+    const btn = page.locator('.modal-confirm-btn');
+    if (await btn.isVisible({ timeout: 300 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(300);
+    }
+  }
+};
+
+/** 用鼠标拖拽选中 Canvas 区域（适用于不支持 Shift+click 的 Canvas 应用） */
+export const dragSelectRange = async (
+  page: Page,
+  startRow: number, startCol: number,
+  endRow: number, endCol: number,
+): Promise<void> => {
+  const canvas = page.locator('#excel-canvas');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Canvas not found');
+
+  const startX = box.x + HEADER_WIDTH + startCol * DEFAULT_COL_WIDTH + DEFAULT_COL_WIDTH / 2;
+  const startY = box.y + HEADER_HEIGHT + startRow * DEFAULT_ROW_HEIGHT + DEFAULT_ROW_HEIGHT / 2;
+  const endX = box.x + HEADER_WIDTH + endCol * DEFAULT_COL_WIDTH + DEFAULT_COL_WIDTH / 2;
+  const endY = box.y + HEADER_HEIGHT + endRow * DEFAULT_ROW_HEIGHT + DEFAULT_ROW_HEIGHT / 2;
+
+  await page.mouse.move(startX, startY);
+  await page.waitForTimeout(100);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) {
+    await page.mouse.move(
+      startX + (endX - startX) * i / 5,
+      startY + (endY - startY) * i / 5,
+    );
+    await page.waitForTimeout(50);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+};

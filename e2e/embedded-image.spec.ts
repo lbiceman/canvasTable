@@ -1,16 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
+import { clickCell } from './helpers/test-utils';
 
-// ============================================================
-// 辅助函数
-// ============================================================
-
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const x = 40 + col * 100 + 50;
-  const y = 28 + row * 25 + 12;
-  await canvas.click({ position: { x, y } });
-};
-
+/** 获取内嵌图片数据（本文件特有，返回结构与共享 getCellData 不同） */
 const getCellData = async (page: Page, row: number, col: number): Promise<Record<string, unknown>> => {
   return await page.evaluate(([r, c]) => {
     const app = (window as Record<string, unknown>).app as {

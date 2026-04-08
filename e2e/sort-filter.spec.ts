@@ -1,30 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-
-// ============================================================
-// 辅助函数
-// ============================================================
-
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const x = 40 + col * 100 + 50;
-  const y = 28 + row * 25 + 12;
-  await canvas.click({ position: { x, y } });
-};
-
-const typeInCell = async (page: Page, row: number, col: number, text: string): Promise<void> => {
-  await clickCell(page, row, col);
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-};
-
-const getCellContent = async (page: Page, row: number, col: number): Promise<string> => {
-  return await page.evaluate(([r, c]) => {
-    const app = (window as Record<string, unknown>).app as {
-      getModel: () => { getCell: (r: number, c: number) => { content?: string } | null };
-    };
-    return app.getModel().getCell(r, c)?.content ?? '';
-  }, [row, col] as [number, number]);
-};
+import { clickCell, typeInCell, getCellContent } from './helpers/test-utils';
 
 /**
  * 通过 API 设置排序

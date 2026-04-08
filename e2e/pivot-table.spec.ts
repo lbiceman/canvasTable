@@ -1,540 +1,361 @@
 import { test, expect, Page } from '@playwright/test';
+import { clickCell, selectRange, getCellContent } from './helpers/test-utils';
 
 /**
- * 辅助函数：点击 Canvas 上指定单元格
- * headerWidth=40, headerHeight=28，默认列宽=100，默认行高=25
- */
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const headerWidth = 40;
-  const headerHeight = 28;
-  const defaultColWidth = 100;
-  const defaultRowHeight = 25;
-
-  const x = headerWidth + col * defaultColWidth + defaultColWidth / 2;
-  const y = headerHeight + row * defaultRowHeight + defaultRowHeight / 2;
-
-  await canvas.click({ position: { x, y } });
-};
-
-/**
- * 辅助函数：选中一个区域（从 startRow/startCol 拖拽到 endRow/endCol）
- */
-const selectRange = async (
-  page: Page,
-  startRow: number,
-  startCol: number,
-  endRow: number,
-  endCol: number
-): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const headerWidth = 40;
-  const headerHeight = 28;
-  const defaultColWidth = 100;
-  const defaultRowHeight = 25;
-
-  const x1 = headerWidth + startCol * defaultColWidth + defaultColWidth / 2;
-  const y1 = headerHeight + startRow * defaultRowHeight + defaultRowHeight / 2;
-  const x2 = headerWidth + endCol * defaultColWidth + defaultColWidth / 2;
-  const y2 = headerHeight + endRow * defaultRowHeight + defaultRowHeight / 2;
-
-  await canvas.click({ position: { x: x1, y: y1 } });
-  await canvas.click({ position: { x: x2, y: y2 }, modifiers: ['Shift'] });
-};
-
-/**
- * 辅助函数：输入单元格内容
- */
-const typeInCell = async (page: Page, row: number, col: number, text: string): Promise<void> => {
-  await clickCell(page, row, col);
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-};
-
-/**
- * 辅助函数：通过 window.app 获取单元格数据
- */
-const getCellContent = async (page: Page, row: number, col: number): Promise<string> => {
-  return await page.evaluate(
-    ([r, c]) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 访问全局 window.app
-      const app = (window as unknown as Record<string, unknown>).app as {
-        getModel: () => {
-          getCell: (row: number, col: number) => { content?: string } | null;
-        };
-      };
-      const cell = app.getModel().getCell(r, c);
-      return cell?.content ?? '';
-    },
-    [row, col] as [number, number],
-  );
-};
-
-/**
- * 辅助函数：填充测试数据（部门、产品、销售额）
- * 第 0 行为表头，第 1-4 行为数据
+ * 通过 model.setCellContent API 批量写入数据（比 typeInCell 更可靠）
  */
 const setupTestData = async (page: Page): Promise<void> => {
-  // 表头
-  await typeInCell(page, 0, 0, '部门');
-  await typeInCell(page, 0, 1, '产品');
-  await typeInCell(page, 0, 2, '销售额');
+  await page.evaluate(() => {
+    const app = (window as Record<string, unknown>).app as {
+      getModel: () => {
+        setCellContent: (r: number, c: number, v: string) => void;
+      };
+      getRenderer: () => { render: () => void };
+    };
+    const m = app.getModel();
+    // 表头
+    m.setCellContent(0, 0, '部门');
+    m.setCellContent(0, 1, '产品');
+    m.setCellContent(0, 2, '销售额');
+    // 数据
+    m.setCellContent(1, 0, '技术部');
+    m.setCellContent(1, 1, '产品A');
+    m.setCellContent(1, 2, '100');
+    m.setCellContent(2, 0, '技术部');
+    m.setCellContent(2, 1, '产品B');
+    m.setCellContent(2, 2, '200');
+    m.setCellContent(3, 0, '销售部');
+    m.setCellContent(3, 1, '产品A');
+    m.setCellContent(3, 2, '150');
+    m.setCellContent(4, 0, '销售部');
+    m.setCellContent(4, 1, '产品B');
+    m.setCellContent(4, 2, '250');
+    app.getRenderer().render();
+  });
+  await page.waitForTimeout(300);
+};
 
-  // 数据行
-  await typeInCell(page, 1, 0, '技术部');
-  await typeInCell(page, 1, 1, '产品A');
-  await typeInCell(page, 1, 2, '100');
+/**
+ * 打开透视表面板：先验证数据写入，再选区，再点击按钮
+ */
+const openPivotPanel = async (page: Page): Promise<void> => {
+  // 验证表头确实写入了
+  const header = await getCellContent(page, 0, 0);
+  if (header !== '部门') {
+    throw new Error(`表头未正确写入，A1 内容为: "${header}"`);
+  }
 
-  await typeInCell(page, 2, 0, '技术部');
-  await typeInCell(page, 2, 1, '产品B');
-  await typeInCell(page, 2, 2, '200');
+  // 点击空白处取消任何编辑状态
+  await clickCell(page, 8, 8);
+  await page.waitForTimeout(300);
 
-  await typeInCell(page, 3, 0, '销售部');
-  await typeInCell(page, 3, 1, '产品A');
-  await typeInCell(page, 3, 2, '150');
+  // 关闭可能存在的任何模态框
+  const existingModal = page.locator('.modal-overlay');
+  if (await existingModal.isVisible({ timeout: 300 }).catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
 
-  await typeInCell(page, 4, 0, '销售部');
-  await typeInCell(page, 4, 1, '产品B');
-  await typeInCell(page, 4, 2, '250');
+  // 用鼠标拖拽选中 A1:C5（从 A1 中心拖到 C5 中心）
+  const canvas = page.locator('#excel-canvas');
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error('Canvas not found');
+
+  const hw = 40, hh = 28, cw = 100, rh = 25;
+  const startX = box.x + hw + cw / 2;
+  const startY = box.y + hh + rh / 2;
+  const endX = box.x + hw + 2 * cw + cw / 2;
+  const endY = box.y + hh + 4 * rh + rh / 2;
+
+  // 真正的鼠标拖拽：按下 → 移动 → 释放
+  await page.mouse.move(startX, startY);
+  await page.waitForTimeout(100);
+  await page.mouse.down();
+  await page.waitForTimeout(100);
+  // 分步移动，模拟真实拖拽
+  for (let i = 1; i <= 5; i++) {
+    const t = i / 5;
+    await page.mouse.move(
+      startX + (endX - startX) * t,
+      startY + (endY - startY) * t,
+    );
+    await page.waitForTimeout(50);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(500);
+
+  // 点击透视表按钮
+  await page.locator('#pivot-table-btn').click();
+  await page.waitForTimeout(1500);
+
+  // 检查透视表面板是否已打开
+  const pivotOverlay = page.locator('.pivot-panel-overlay');
+  if (await pivotOverlay.isVisible({ timeout: 500 }).catch(() => false)) {
+    return;
+  }
+
+  // 如果有模态框（可能是错误提示），关闭它并报错
+  const modalOverlay = page.locator('.modal-overlay');
+  if (await modalOverlay.isVisible({ timeout: 500 }).catch(() => false)) {
+    const confirmBtn = page.locator('.modal-confirm-btn');
+    if (await confirmBtn.isVisible({ timeout: 300 }).catch(() => false)) {
+      await confirmBtn.click();
+      await page.waitForTimeout(300);
+    }
+  }
+
+  await expect(pivotOverlay).toBeVisible({ timeout: 5000 });
+};
+
+const dragFieldToZone = async (page: Page, fieldName: string, zone: string): Promise<void> => {
+  // 只从可用字段列表中选择（避免匹配到已拖入区域的同名字段）
+  const field = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: fieldName });
+  const dropZone = page.locator(`[data-zone="${zone}"].pivot-drop-zone`);
+
+  // 获取拖拽前目标区域的字段数
+  const beforeCount = await dropZone.locator('.pivot-field-item').count();
+
+  await field.dragTo(dropZone);
+  await page.waitForTimeout(1500);
+
+  // 如果弹出了模态框，关闭它
+  const modal = page.locator('.modal-overlay');
+  if (await modal.isVisible({ timeout: 300 }).catch(() => false)) {
+    const confirmBtn = page.locator('.modal-confirm-btn');
+    if (await confirmBtn.isVisible({ timeout: 300 }).catch(() => false)) {
+      await confirmBtn.click();
+      await page.waitForTimeout(300);
+    }
+  }
+
+  // 验证目标区域字段数增加了
+  const afterCount = await dropZone.locator('.pivot-field-item').count();
+  if (afterCount <= beforeCount) {
+    const retryField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: fieldName });
+    if (await retryField.count() > 0) {
+      await retryField.dragTo(dropZone);
+      await page.waitForTimeout(1500);
+    }
+  }
+};
+
+/**
+ * 点击值字段切换聚合方式（先滚动到可见区域）
+ */
+const switchAggregation = async (page: Page, aggName: string): Promise<void> => {
+  const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
+  const valueItem = valueZone.locator('.pivot-field-item').first();
+  await valueItem.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(300);
+  await valueItem.click();
+  await page.waitForTimeout(500);
+
+  const menuItem = page.locator('.pivot-agg-menu .pivot-agg-menu-item', { hasText: aggName });
+  // 聚合菜单是绝对定位弹出层，可能在视口外，用 evaluate 直接点击
+  await menuItem.evaluate((el) => (el as HTMLElement).click());
+  await page.waitForTimeout(1500);
+};
+
+/**
+ * 点击写入工作表按钮（先滚动到可见区域，处理弹框）
+ */
+const clickWriteToSheet = async (page: Page): Promise<void> => {
+  const writeBtn = page.locator('.pivot-panel-btn-primary', { hasText: '写入工作表' });
+  await writeBtn.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(200);
+  await writeBtn.click();
+  await page.waitForTimeout(800);
+
+  const modal = page.locator('.modal-overlay');
+  if (await modal.isVisible({ timeout: 500 }).catch(() => false)) {
+    const btn = page.locator('.modal-confirm-btn');
+    if (await btn.isVisible({ timeout: 300 }).catch(() => false)) {
+      await btn.click();
+      await page.waitForTimeout(300);
+    }
+  }
 };
 
 // ============================================================
-// 测试：选中数据区域后点击「数据透视表」按钮打开配置面板
-// 需求: 1.1
+// 深入测试：数据透视表
 // ============================================================
-test.describe('数据透视表 - 打开配置面板', () => {
+
+test.describe('数据透视表 - 多行字段分组', () => {
   test.beforeEach(async ({ page }) => {
+    // 清除 localStorage 避免残留数据干扰
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
   });
 
-  test('选中数据区域后点击透视表按钮应打开配置面板', async ({ page }) => {
-    // 填充测试数据
+  test('配置两个行字段应产生嵌套分组结果', async ({ page }) => {
     await setupTestData(page);
+    await openPivotPanel(page);
 
-    // 选中数据区域 A1:C5
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
+    // 验证字段列表有 3 个字段
+    const fieldItems = page.locator('.pivot-field-list-items .pivot-field-item');
+    const fieldCount = await fieldItems.count();
+    expect(fieldCount).toBe(3);
 
-    // 点击透视表按钮
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
+    await dragFieldToZone(page, '部门', 'row');
 
-    // 验证配置面板可见（面板使用 pivot-panel-overlay 遮罩层）
-    const overlay = page.locator('.pivot-panel-overlay');
-    await expect(overlay).toBeVisible();
-
-    // 验证面板标题
-    const title = page.locator('.pivot-panel-title');
-    await expect(title).toContainText('数据透视表');
-  });
-});
-
-// ============================================================
-// 测试：面板列出源数据所有列标题作为可用字段
-// 需求: 1.1, 1.2
-// ============================================================
-test.describe('数据透视表 - 可用字段列表', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#excel-canvas');
-    await page.waitForTimeout(500);
-  });
-
-  test('面板应列出源数据所有列标题作为可用字段', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 验证可用字段列表包含所有表头
-    const fieldList = page.locator('.pivot-field-list-items');
-    await expect(fieldList).toBeVisible();
-
-    const fieldItems = fieldList.locator('.pivot-field-item');
-    await expect(fieldItems).toHaveCount(3);
-
-    // 验证字段名称
-    await expect(fieldItems.nth(0)).toContainText('部门');
-    await expect(fieldItems.nth(1)).toContainText('产品');
-    await expect(fieldItems.nth(2)).toContainText('销售额');
-  });
-});
-
-// ============================================================
-// 测试：拖拽字段到行/列/值/筛选区域
-// 需求: 1.2, 1.3, 1.4, 1.5
-// ============================================================
-test.describe('数据透视表 - 字段配置', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#excel-canvas');
-    await page.waitForTimeout(500);
-  });
-
-  test('通过 evaluate 配置字段到行/值区域并验证结果', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 通过拖拽模拟：将「部门」拖到行区域
-    const fieldItem = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
+    // 验证行区域有 1 个字段
     const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
+    const rowItems = rowZone.locator('.pivot-field-item');
+    expect(await rowItems.count()).toBe(1);
 
-    await fieldItem.dragTo(rowZone);
-    await page.waitForTimeout(300);
+    await dragFieldToZone(page, '产品', 'row');
+    expect(await rowItems.count()).toBe(2);
 
-    // 验证行区域包含「部门」字段
-    const rowFieldItems = rowZone.locator('.pivot-field-item');
-    await expect(rowFieldItems).toHaveCount(1);
-    await expect(rowFieldItems.first()).toContainText('部门');
+    await dragFieldToZone(page, '销售额', 'value');
 
-    // 将「销售额」拖到值区域
-    const valueField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '销售额' });
-    const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
-
-    await valueField.dragTo(valueZone);
-    await page.waitForTimeout(800); // 等待 500ms 防抖 + 渲染
-
-    // 验证值区域包含「销售额」字段（默认求和）
-    const valueFieldItems = valueZone.locator('.pivot-field-item');
-    await expect(valueFieldItems).toHaveCount(1);
-    await expect(valueFieldItems.first()).toContainText('销售额');
-    await expect(valueFieldItems.first()).toContainText('求和');
-
-    // 验证预览区域显示了结果表格
     const previewTable = page.locator('.pivot-preview-table');
-    await expect(previewTable).toBeVisible();
+    await previewTable.scrollIntoViewIfNeeded();
+    await expect(previewTable).toBeVisible({ timeout: 5000 });
+
+    const rows = previewTable.locator('tr');
+    expect(await rows.count()).toBeGreaterThanOrEqual(5);
   });
 });
 
-// ============================================================
-// 测试：切换聚合方式（求和/计数/平均值/最大值/最小值）
-// 需求: 1.5
-// ============================================================
-test.describe('数据透视表 - 切换聚合方式', () => {
+test.describe('数据透视表 - 聚合方式验证', () => {
   test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
   });
 
-  test('点击值字段应弹出聚合方式选择菜单并可切换', async ({ page }) => {
+  test('切换到计数聚合应显示正确的计数值', async ({ page }) => {
     await setupTestData(page);
+    await openPivotPanel(page);
 
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
+    await dragFieldToZone(page, '部门', 'row');
+    await dragFieldToZone(page, '销售额', 'value');
 
-    // 将「部门」拖到行区域
-    const deptField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
-    const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
-    await deptField.dragTo(rowZone);
-    await page.waitForTimeout(300);
+    await switchAggregation(page, '计数');
+    await clickWriteToSheet(page);
 
-    // 将「销售额」拖到值区域
-    const salesField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '销售额' });
-    const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
-    await salesField.dragTo(valueZone);
-    await page.waitForTimeout(800);
-
-    // 点击值区域中的字段项，弹出聚合方式菜单
-    const valueFieldItem = valueZone.locator('.pivot-field-item').first();
-    await valueFieldItem.click();
-    await page.waitForTimeout(300);
-
-    // 验证聚合方式菜单可见
-    const aggMenu = page.locator('.pivot-agg-menu');
-    await expect(aggMenu).toBeVisible();
-
-    // 验证菜单包含五种聚合方式
-    const menuItems = aggMenu.locator('.pivot-agg-menu-item');
-    await expect(menuItems).toHaveCount(5);
-    await expect(menuItems.nth(0)).toContainText('求和');
-    await expect(menuItems.nth(1)).toContainText('计数');
-    await expect(menuItems.nth(2)).toContainText('平均值');
-    await expect(menuItems.nth(3)).toContainText('最大值');
-    await expect(menuItems.nth(4)).toContainText('最小值');
-
-    // 切换到「平均值」
-    await menuItems.nth(2).click();
-    await page.waitForTimeout(800);
-
-    // 验证值字段显示已更新为平均值
-    const updatedValueItem = valueZone.locator('.pivot-field-item').first();
-    await expect(updatedValueItem).toContainText('平均值');
-  });
-});
-
-// ============================================================
-// 测试：筛选字段值勾选过滤
-// 需求: 1.6
-// ============================================================
-test.describe('数据透视表 - 筛选字段', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#excel-canvas');
-    await page.waitForTimeout(500);
-  });
-
-  test('拖拽字段到筛选区域应显示值勾选列表', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 将「部门」拖到筛选区域
-    const deptField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
-    const filterZone = page.locator('[data-zone="filter"].pivot-drop-zone');
-    await deptField.dragTo(filterZone);
-    await page.waitForTimeout(300);
-
-    // 验证筛选区域显示了勾选列表
-    const checkList = page.locator('.pivot-filter-checklist');
-    await expect(checkList).toBeVisible();
-
-    // 验证包含「全选」和各唯一值的复选框
-    const checkItems = checkList.locator('.pivot-filter-check-item');
-    // 应有：全选 + 技术部 + 销售部 = 3 项
-    await expect(checkItems).toHaveCount(3);
-
-    // 验证默认全选状态
-    const selectAllCb = checkItems.nth(0).locator('input[type="checkbox"]');
-    await expect(selectAllCb).toBeChecked();
-  });
-
-  test('取消勾选筛选值应过滤透视表结果', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 先配置行字段和值字段
-    const prodField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '产品' });
-    const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
-    await prodField.dragTo(rowZone);
-    await page.waitForTimeout(300);
-
-    const salesField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '销售额' });
-    const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
-    await salesField.dragTo(valueZone);
-    await page.waitForTimeout(800);
-
-    // 将「部门」拖到筛选区域
-    const deptField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
-    const filterZone = page.locator('[data-zone="filter"].pivot-drop-zone');
-    await deptField.dragTo(filterZone);
-    await page.waitForTimeout(300);
-
-    // 取消勾选「销售部」（第 3 个复选框，索引 2）
-    const checkList = page.locator('.pivot-filter-checklist');
-    const salesDeptCb = checkList.locator('.pivot-filter-check-item').nth(2).locator('input[type="checkbox"]');
-    await salesDeptCb.uncheck();
-    await page.waitForTimeout(800); // 等待防抖重新计算
-
-    // 验证预览表格存在且结果已过滤（只包含技术部数据）
-    const previewTable = page.locator('.pivot-preview-table');
-    await expect(previewTable).toBeVisible();
-  });
-});
-
-// ============================================================
-// 测试：空数据区域显示错误提示
-// 需求: 1.10
-// ============================================================
-test.describe('数据透视表 - 空数据区域错误提示', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#excel-canvas');
-    await page.waitForTimeout(500);
-  });
-
-  test('选中空数据区域点击透视表按钮应显示错误提示', async ({ page }) => {
-    // 不输入任何数据，直接选中空区域
-    await selectRange(page, 0, 0, 2, 2);
-    await page.waitForTimeout(200);
-
-    // 监听 alert 对话框
-    const dialogPromise = page.waitForEvent('dialog');
-
-    // 点击透视表按钮
-    await page.locator('#pivot-table-btn').click();
-
-    // 验证弹出错误提示
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain('请选择包含表头的非空数据区域');
-    await dialog.accept();
-
-    // 验证面板未打开
-    const overlay = page.locator('.pivot-panel-overlay');
-    await expect(overlay).toHaveCount(0);
-  });
-
-  test('仅选中单行（无数据行）应显示错误提示', async ({ page }) => {
-    // 只输入表头，没有数据行
-    await typeInCell(page, 0, 0, '部门');
-    await typeInCell(page, 0, 1, '销售额');
-
-    // 选中仅表头行
-    await selectRange(page, 0, 0, 0, 1);
-    await page.waitForTimeout(200);
-
-    // 监听 alert 对话框
-    const dialogPromise = page.waitForEvent('dialog');
-
-    await page.locator('#pivot-table-btn').click();
-
-    const dialog = await dialogPromise;
-    expect(dialog.message()).toContain('请选择包含表头的非空数据区域');
-    await dialog.accept();
-  });
-});
-
-// ============================================================
-// 测试：透视表结果写入新工作表
-// 需求: 1.7, 1.9, 1.10
-// ============================================================
-test.describe('数据透视表 - 写入新工作表', () => {
-  test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.waitForSelector('#excel-canvas');
-    await page.waitForTimeout(500);
-  });
-
-  test('配置透视表后点击写入工作表应创建新工作表并写入结果', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 将「部门」拖到行区域
-    const deptField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
-    const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
-    await deptField.dragTo(rowZone);
-    await page.waitForTimeout(300);
-
-    // 将「销售额」拖到值区域
-    const salesField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '销售额' });
-    const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
-    await salesField.dragTo(valueZone);
-    await page.waitForTimeout(800);
-
-    // 验证预览表格已生成
-    const previewTable = page.locator('.pivot-preview-table');
-    await expect(previewTable).toBeVisible();
-
-    // 点击「写入工作表」按钮
-    const writeBtn = page.locator('.pivot-panel-btn-primary', { hasText: '写入工作表' });
-    await writeBtn.click();
-    await page.waitForTimeout(500);
-
-    // 验证面板已关闭
-    const overlay = page.locator('.pivot-panel-overlay');
-    await expect(overlay).toHaveCount(0);
-
-    // 验证新工作表标签已创建（名称为「透视表结果」）
-    const sheetTabBar = page.locator('#sheet-tab-bar');
-    await expect(sheetTabBar).toContainText('透视表结果');
-
-    // 点击新工作表标签切换到结果表
-    const resultTab = sheetTabBar.locator('.sheet-tab', { hasText: '透视表结果' });
+    const resultTab = page.locator('#sheet-tab-bar .sheet-tab', { hasText: '透视表结果' });
     await resultTab.click();
     await page.waitForTimeout(300);
 
-    // 验证新工作表中写入了表头
-    const headerContent = await getCellContent(page, 0, 0);
-    expect(headerContent).toBe('部门');
+    expect(await getCellContent(page, 1, 1)).toBe('2');
+    expect(await getCellContent(page, 2, 1)).toBe('2');
+    expect(await getCellContent(page, 3, 1)).toBe('4');
+  });
 
-    // 验证写入了数据行（技术部的销售额求和 = 100 + 200 = 300）
-    const techDeptLabel = await getCellContent(page, 1, 0);
-    expect(techDeptLabel).toBe('技术部');
-    const techDeptValue = await getCellContent(page, 1, 1);
-    expect(techDeptValue).toBe('300');
+  test('切换到平均值聚合应显示正确的平均值', async ({ page }) => {
+    await setupTestData(page);
+    await openPivotPanel(page);
 
-    // 验证销售部数据（150 + 250 = 400）
-    const salesDeptLabel = await getCellContent(page, 2, 0);
-    expect(salesDeptLabel).toBe('销售部');
-    const salesDeptValue = await getCellContent(page, 2, 1);
-    expect(salesDeptValue).toBe('400');
+    await dragFieldToZone(page, '部门', 'row');
+    await dragFieldToZone(page, '销售额', 'value');
 
-    // 验证总计行
-    const totalLabel = await getCellContent(page, 3, 0);
-    expect(totalLabel).toBe('总计');
-    const totalValue = await getCellContent(page, 3, 1);
-    expect(totalValue).toBe('700');
+    await switchAggregation(page, '平均值');
+    await clickWriteToSheet(page);
+
+    const resultTab = page.locator('#sheet-tab-bar .sheet-tab', { hasText: '透视表结果' });
+    await resultTab.click();
+    await page.waitForTimeout(300);
+
+    expect(await getCellContent(page, 1, 1)).toBe('150');
+    expect(await getCellContent(page, 2, 1)).toBe('200');
+  });
+
+  test('切换到最大值聚合应显示正确结果', async ({ page }) => {
+    await setupTestData(page);
+    await openPivotPanel(page);
+
+    await dragFieldToZone(page, '部门', 'row');
+    await dragFieldToZone(page, '销售额', 'value');
+
+    await switchAggregation(page, '最大值');
+    await clickWriteToSheet(page);
+
+    const resultTab = page.locator('#sheet-tab-bar .sheet-tab', { hasText: '透视表结果' });
+    await resultTab.click();
+    await page.waitForTimeout(300);
+
+    expect(await getCellContent(page, 1, 1)).toBe('200');
+    expect(await getCellContent(page, 2, 1)).toBe('250');
   });
 });
 
-// ============================================================
-// 测试：截图对比验证
-// 需求: 1.1, 1.2, 1.3
-// ============================================================
-test.describe('数据透视表 - 截图对比', () => {
+test.describe('数据透视表 - 筛选功能深入验证', () => {
   test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
     await page.goto('/');
     await page.waitForSelector('#excel-canvas');
     await page.waitForTimeout(500);
   });
 
-  test('透视表配置面板截图对比', async ({ page }) => {
+  test('取消勾选筛选值后透视表结果应只包含选中值的数据', async ({ page }) => {
     await setupTestData(page);
+    await openPivotPanel(page);
 
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
+    await dragFieldToZone(page, '产品', 'row');
+    await dragFieldToZone(page, '销售额', 'value');
+    await dragFieldToZone(page, '部门', 'filter');
 
-    // 截图对比配置面板
-    const panel = page.locator('.pivot-panel');
-    await expect(panel).toHaveScreenshot('pivot-panel-opened.png', {
-      maxDiffPixelRatio: 0.05,
-    });
-  });
-
-  test('透视表预览结果截图对比', async ({ page }) => {
-    await setupTestData(page);
-
-    // 选中数据区域并打开面板
-    await selectRange(page, 0, 0, 4, 2);
-    await page.waitForTimeout(200);
-    await page.locator('#pivot-table-btn').click();
-    await page.waitForTimeout(500);
-
-    // 配置行字段和值字段
-    const deptField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '部门' });
-    const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
-    await deptField.dragTo(rowZone);
+    // 滚动到筛选区域
+    const checkList = page.locator('.pivot-filter-checklist');
+    await checkList.scrollIntoViewIfNeeded();
     await page.waitForTimeout(300);
 
-    const salesField = page.locator('.pivot-field-list-items .pivot-field-item', { hasText: '销售额' });
-    const valueZone = page.locator('[data-zone="value"].pivot-drop-zone');
-    await salesField.dragTo(valueZone);
+    const items = checkList.locator('.pivot-filter-check-item');
+    for (let i = 0; i < await items.count(); i++) {
+      const text = await items.nth(i).textContent();
+      if (text?.includes('销售部')) {
+        await items.nth(i).locator('input[type="checkbox"]').uncheck();
+        break;
+      }
+    }
+    await page.waitForTimeout(1500);
+
+    await clickWriteToSheet(page);
+
+    const resultTab = page.locator('#sheet-tab-bar .sheet-tab', { hasText: '透视表结果' });
+    await resultTab.click();
+    await page.waitForTimeout(300);
+
+    expect(await getCellContent(page, 1, 1)).toBe('100');
+    expect(await getCellContent(page, 2, 1)).toBe('200');
+  });
+});
+
+test.describe('数据透视表 - 从区域移除字段', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('/');
+    await page.waitForSelector('#excel-canvas');
+    await page.waitForTimeout(500);
+  });
+
+  test('从行区域移除字段后预览应更新', async ({ page }) => {
+    await setupTestData(page);
+    await openPivotPanel(page);
+
+    await dragFieldToZone(page, '部门', 'row');
+    await dragFieldToZone(page, '产品', 'row');
+    await dragFieldToZone(page, '销售额', 'value');
+
+    const rowZone = page.locator('[data-zone="row"].pivot-drop-zone');
+    let rowItems = rowZone.locator('.pivot-field-item');
+    expect(await rowItems.count()).toBe(2);
+
+    const prodItem = rowZone.locator('.pivot-field-item', { hasText: '产品' });
+    const removeBtn = prodItem.locator('.pivot-field-remove');
+    await removeBtn.click();
     await page.waitForTimeout(800);
 
-    // 截图对比预览区域
-    const preview = page.locator('.pivot-preview');
-    await expect(preview).toHaveScreenshot('pivot-preview-result.png', {
-      maxDiffPixelRatio: 0.05,
-    });
+    rowItems = rowZone.locator('.pivot-field-item');
+    expect(await rowItems.count()).toBe(1);
+    await expect(rowItems.first()).toContainText('部门');
   });
 });

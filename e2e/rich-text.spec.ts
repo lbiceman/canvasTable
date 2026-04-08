@@ -1,21 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-
-// ============================================================
-// 辅助函数
-// ============================================================
-
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const x = 40 + col * 100 + 50;
-  const y = 28 + row * 25 + 12;
-  await canvas.click({ position: { x, y } });
-};
-
-const typeInCell = async (page: Page, row: number, col: number, text: string): Promise<void> => {
-  await clickCell(page, row, col);
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-};
+import { clickCell, typeInCell } from './helpers/test-utils';
 
 const getCellRichText = async (page: Page, row: number, col: number): Promise<Array<{
   text: string;

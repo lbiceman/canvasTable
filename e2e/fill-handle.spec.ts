@@ -1,25 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
+import { clickCell, getCellContent } from './helpers/test-utils';
 
-// ============================================================
-// 辅助函数
-// ============================================================
-
-const clickCell = async (page: Page, row: number, col: number): Promise<void> => {
-  const canvas = page.locator('#excel-canvas');
-  const x = 40 + col * 100 + 50;
-  const y = 28 + row * 25 + 12;
-  await canvas.click({ position: { x, y } });
-};
-
-const getCellContent = async (page: Page, row: number, col: number): Promise<string> => {
-  return await page.evaluate(([r, c]) => {
-    const app = (window as Record<string, unknown>).app as {
-      getModel: () => { getCell: (r: number, c: number) => { content?: string } | null };
-    };
-    return app.getModel().getCell(r, c)?.content ?? '';
-  }, [row, col] as [number, number]);
-};
-
+// setCell 是本文件特有的辅助函数（直接修改 cell.content 而非调用 setCellContent API）
 const setCell = async (page: Page, row: number, col: number, value: string): Promise<void> => {
   await page.evaluate(([r, c, v]) => {
     const app = (window as Record<string, unknown>).app as {
