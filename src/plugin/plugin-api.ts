@@ -5,6 +5,8 @@
 // ============================================================
 
 import type { SpreadsheetModel } from '../model';
+import { FormulaEngine } from '../formula-engine';
+import type { FormulaValue } from '../formula/types';
 // 插件 API 回调接口 - 避免循环依赖
 export interface PluginAPICallbacks {
   getModel(): SpreadsheetModel;
@@ -97,12 +99,42 @@ export class PluginAPI {
 
   /**
    * 注册自定义公式函数
+   * 同时注册到内部 Map 和公式引擎的 FunctionRegistry
    * @param name 函数名称
    * @param fn 函数实现
    */
   registerFunction(name: string, fn: (...args: unknown[]) => unknown): void {
     const upperName = name.toUpperCase();
     this.customFunctions.set(upperName, fn);
+
+    // 同步注册到公式引擎的 FunctionRegistry
+    try {
+      const engine = FormulaEngine.getInstance();
+      const registry = engine.getRegistry();
+      registry.register({
+        name: upperName,
+        category: 'math',
+        description: `插件 ${this.pluginName} 注册的自定义函数`,
+        minArgs: 0,
+        maxArgs: -1,
+        params: [],
+        handler: (args: FormulaValue[]): FormulaValue => {
+          try {
+            const result = fn(...args);
+            // 将插件函数返回值转为 FormulaValue
+            if (typeof result === 'number' || typeof result === 'string' || typeof result === 'boolean') {
+              return result;
+            }
+            return String(result);
+          } catch (e: unknown) {
+            const msg = e instanceof Error ? e.message : String(e);
+            return { type: '#VALUE!' as const, message: `插件函数 ${upperName} 执行错误: ${msg}` };
+          }
+        },
+      });
+    } catch (e) {
+      console.error(`[插件 ${this.pluginName}] 注册公式函数 ${upperName} 到引擎失败:`, e);
+    }
   }
 
   /**
@@ -186,7 +218,16 @@ export class PluginAPI {
     }
     this.contextMenuItemIds = [];
 
-    // 清除自定义函数
+    // 清除自定义函数（同时从公式引擎反注册）
+    try {
+      const engine = FormulaEngine.getInstance();
+      const registry = engine.getRegistry();
+      for (const funcName of this.customFunctions.keys()) {
+        registry.unregister(funcName);
+      }
+    } catch (e) {
+      console.error(`[插件 ${this.pluginName}] 反注册公式函数失败:`, e);
+    }
     this.customFunctions.clear();
 
     // 清除单元格变更回调

@@ -1,5 +1,5 @@
 import { Cell, SpreadsheetData, CellPosition, CellFormat, RichTextSegment, ValidationRule, ValidationResult, SetCellContentResult, ConditionalFormatRule, SparklineConfig } from './types';
-import type { RowColumnGroup, FillDirection, BorderPosition, BorderSide, CellBorder } from './types';
+import type { RowColumnGroup, FillDirection, BorderPosition, BorderSide, CellBorder, PivotTableSerializedConfig } from './types';
 import type { ArrayFormulaInfo } from './formula/types';
 import { HistoryManager } from './history-manager';
 import { FormulaEngine } from './formula-engine';
@@ -41,6 +41,7 @@ export class SpreadsheetModel {
   private formulaChangeCallbacks: Array<(row: number, col: number, newValue: string) => void> = [];
   private conditionalFormats: ConditionalFormatRule[] = []; // 条件格式规则列表
   private conditionalFormatEngine: ConditionalFormatEngine; // 条件格式引擎
+  private pivotTableConfigs: PivotTableSerializedConfig[] = []; // 透视表配置列表
 
   // 图表数据模型
   public readonly chartModel: ChartModel;
@@ -3260,6 +3261,8 @@ export class SpreadsheetModel {
         colWidths: customColWidths,
         // 序列化条件格式规则（仅在有规则时包含）
         ...(this.conditionalFormats.length > 0 ? { conditionalFormats: this.conditionalFormats } : {}),
+        // 序列化透视表配置（仅在有配置时包含）
+        ...(this.pivotTableConfigs.length > 0 ? { pivotTableConfigs: this.pivotTableConfigs } : {}),
         // 序列化图表配置（仅在有图表时包含）
         ...(this.chartModel.getAllCharts().length > 0 ? { charts: this.chartModel.serialize() } : {})
       }
@@ -3657,6 +3660,9 @@ export class SpreadsheetModel {
       for (const rule of this.conditionalFormats) {
         this.conditionalFormatEngine.addRule(rule);
       }
+
+      // 反序列化透视表配置（旧格式文件无此字段，默认空数组）
+      this.pivotTableConfigs = (data.pivotTableConfigs as PivotTableSerializedConfig[] | undefined) || [];
 
       // 反序列化图表配置（旧格式文件无此字段，跳过）
       if (Array.isArray(data.charts)) {
@@ -5426,6 +5432,30 @@ export class SpreadsheetModel {
    */
   public getConditionalFormatEngine(): ConditionalFormatEngine {
     return this.conditionalFormatEngine;
+  }
+
+  // ============================================================
+  // 透视表配置持久化方法
+  // ============================================================
+
+  /** 获取所有透视表配置 */
+  public getPivotTableConfigs(): PivotTableSerializedConfig[] {
+    return [...this.pivotTableConfigs];
+  }
+
+  /** 设置透视表配置（用于导入恢复） */
+  public setPivotTableConfigs(configs: PivotTableSerializedConfig[]): void {
+    this.pivotTableConfigs = configs;
+  }
+
+  /** 添加透视表配置 */
+  public addPivotTableConfig(config: PivotTableSerializedConfig): void {
+    this.pivotTableConfigs.push(config);
+  }
+
+  /** 清空透视表配置 */
+  public clearPivotTableConfigs(): void {
+    this.pivotTableConfigs = [];
   }
 
   // ============================================================

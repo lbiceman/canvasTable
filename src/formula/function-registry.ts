@@ -18,6 +18,11 @@ export class FunctionRegistry {
     this.functions.set(definition.name.toUpperCase(), definition);
   }
 
+  /** 注销一个函数 */
+  unregister(name: string): void {
+    this.functions.delete(name.toUpperCase());
+  }
+
   /** 获取函数定义（不区分大小写） */
   get(name: string): FunctionDefinition | undefined {
     return this.functions.get(name.toUpperCase());

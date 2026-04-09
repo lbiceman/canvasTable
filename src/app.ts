@@ -5969,6 +5969,15 @@ export class SpreadsheetApp {
       preview.style.fontSize = '10px';
     }
 
+    // 编辑按钮
+    const editBtn = document.createElement('button');
+    editBtn.className = 'cf-rule-edit-btn';
+    editBtn.textContent = '编辑';
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.editConditionalFormatRule(rule);
+    });
+
     // 删除按钮
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'cf-rule-delete-btn';
@@ -5982,8 +5991,75 @@ export class SpreadsheetApp {
 
     item.appendChild(desc);
     item.appendChild(preview);
+    item.appendChild(editBtn);
     item.appendChild(deleteBtn);
     return item;
+  }
+
+  /**
+   * 编辑条件格式规则
+   * 删除旧规则后重新渲染面板，并将旧规则的值回填到表单中
+   */
+  private editConditionalFormatRule(rule: ConditionalFormatRule): void {
+    // 先删除旧规则
+    this.model.removeConditionalFormat(rule.id);
+    this.renderer.render();
+
+    // 重新渲染面板
+    this.renderConditionalFormatPanel();
+
+    if (!this.conditionalFormatPanel) return;
+
+    // 回填条件类型
+    const typeSelect = this.conditionalFormatPanel.querySelector('.cf-select') as HTMLSelectElement | null;
+    if (typeSelect) {
+      typeSelect.value = rule.condition.type;
+      // 触发 change 事件以更新值输入区域
+      typeSelect.dispatchEvent(new Event('change'));
+    }
+
+    // 延迟回填值（等待 change 事件处理完毕）
+    requestAnimationFrame(() => {
+      if (!this.conditionalFormatPanel) return;
+      const valueContainer = this.conditionalFormatPanel.querySelector('.cf-value-container') as HTMLDivElement | null;
+      const styleContainer = this.conditionalFormatPanel.querySelector('.cf-style-container') as HTMLDivElement | null;
+
+      if (valueContainer) {
+        const setField = (field: string, value: string): void => {
+          const input = valueContainer.querySelector(`[data-field="${field}"]`) as HTMLInputElement | HTMLSelectElement | null;
+          if (input) input.value = value;
+        };
+
+        const { condition } = rule;
+        if (condition.type === 'greaterThan' || condition.type === 'lessThan') {
+          setField('value', String(condition.value));
+        } else if (condition.type === 'equals') {
+          setField('value', String(condition.value));
+        } else if (condition.type === 'between') {
+          setField('min', String(condition.min));
+          setField('max', String(condition.max));
+        } else if (condition.type === 'textContains' || condition.type === 'textStartsWith' || condition.type === 'textEndsWith') {
+          setField('text', condition.text);
+        } else if (condition.type === 'dataBar') {
+          setField('barColor', condition.color);
+        } else if (condition.type === 'colorScale') {
+          setField('minColor', condition.minColor);
+          setField('maxColor', condition.maxColor);
+        } else if (condition.type === 'iconSet') {
+          setField('iconType', condition.iconType);
+        }
+      }
+
+      // 回填样式
+      if (styleContainer) {
+        const setStyleField = (field: string, value: string): void => {
+          const input = styleContainer.querySelector(`[data-field="${field}"]`) as HTMLInputElement | null;
+          if (input) input.value = value;
+        };
+        if (rule.style.fontColor) setStyleField('fontColor', rule.style.fontColor);
+        if (rule.style.bgColor) setStyleField('bgColor', rule.style.bgColor);
+      }
+    });
   }
 
   // 垂直对齐显示文本映射

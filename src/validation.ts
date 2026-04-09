@@ -1,4 +1,5 @@
 import type { ValidationRule, ValidationResult } from './types';
+import { FormulaEngine } from './formula-engine';
 
 // 默认错误提示信息
 const DEFAULT_ERROR_TITLE = '输入无效';
@@ -88,11 +89,45 @@ export class ValidationEngine {
   }
 
   /**
-   * 自定义验证：当前返回有效（后续可扩展表达式求值）
+   * 自定义验证：通过公式引擎求值表达式，结果为 true 则验证通过
+   * 支持如 =AND(A1>0, A1<100) 的公式表达式
    */
-  private static validateCustom(_value: string, _rule: ValidationRule): ValidationResult {
-    // 自定义验证暂时返回有效，后续可实现表达式求值逻辑
-    return { valid: true };
+  private static validateCustom(_value: string, rule: ValidationRule): ValidationResult {
+    const expression = rule.customExpression;
+    if (!expression) {
+      // 无表达式时默认通过
+      return { valid: true };
+    }
+
+    try {
+      const engine = FormulaEngine.getInstance();
+      // 确保表达式以 = 开头
+      const formula = expression.startsWith('=') ? expression : `=${expression}`;
+      // 使用公式引擎求值，默认在 (0,0) 位置求值
+      const result = engine.evaluate(formula, 0, 0);
+
+      // 公式求值出错时视为验证失败
+      if (result.isError) {
+        return ValidationEngine.buildErrorResult(rule);
+      }
+
+      // 将结果转为布尔值：数字非零为 true，字符串 "TRUE" 为 true
+      const { value } = result;
+      let isValid = false;
+      if (typeof value === 'number') {
+        isValid = value !== 0;
+      } else if (typeof value === 'string') {
+        isValid = value.toUpperCase() === 'TRUE' || (value !== '' && !value.startsWith('#'));
+      }
+
+      if (isValid) {
+        return { valid: true };
+      }
+      return ValidationEngine.buildErrorResult(rule);
+    } catch {
+      // 公式求值异常时视为验证失败
+      return ValidationEngine.buildErrorResult(rule);
+    }
   }
 
   /**

@@ -62,11 +62,19 @@ export type ActionType =
   | 'setEmbeddedImage';  // 设置单元格内嵌图片
 
 
+/**
+ * 历史操作数据类型
+ * 使用 unknown 替代 any，保持灵活性同时消除 any 类型
+ * 不同 ActionType 的数据结构各异，调用方需自行进行类型断言
+ */
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 显式列出支持的类型以提高可读性
+export type HistoryActionData = unknown;
+
 // 历史记录项
 export interface HistoryAction {
   type: ActionType;
-  data: any;
-  undoData: any;
+  data: HistoryActionData;
+  undoData: HistoryActionData;
 }
 
 // 历史记录管理器

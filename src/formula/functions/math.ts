@@ -1,6 +1,7 @@
 // ============================================================
 // 数学函数：ABS, ROUND, ROUNDUP, ROUNDDOWN, CEILING, FLOOR,
-//           MOD, POWER, SQRT, MAX, MIN, AVERAGE, INT, TRUNC
+//           MOD, POWER, SQRT, MAX, MIN, AVERAGE, INT, TRUNC,
+//           RAND, RANDBETWEEN, LOG, LN, EXP, PI, SIGN
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -342,6 +343,135 @@ export function registerMathFunctions(registry: FunctionRegistry): void {
       if (num === 0) return 0;
       const factor = Math.pow(10, digits);
       return Math.sign(num) * Math.floor(Math.abs(num) * factor) / factor;
+    },
+  });
+
+  // RAND - 返回 0 到 1 之间的随机数
+  registry.register({
+    name: 'RAND',
+    category: 'math',
+    description: '返回 0 到 1 之间的随机数',
+    minArgs: 0,
+    maxArgs: 0,
+    params: [],
+    handler: (): FormulaValue => {
+      return Math.random();
+    },
+  });
+
+  // RANDBETWEEN - 返回指定范围内的随机整数
+  registry.register({
+    name: 'RANDBETWEEN',
+    category: 'math',
+    description: '返回指定范围内的随机整数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'bottom', description: '最小整数', type: 'number' },
+      { name: 'top', description: '最大整数', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const bottom = toNumber(args[0]);
+      if (isError(bottom)) return bottom;
+      const top = toNumber(args[1]);
+      if (isError(top)) return top;
+      if (bottom > top) {
+        return makeError('#NUM!', 'RANDBETWEEN 的最小值不能大于最大值');
+      }
+      const min = Math.ceil(bottom);
+      const max = Math.floor(top);
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    },
+  });
+
+  // LOG - 返回以指定底数的对数（默认底数 10）
+  registry.register({
+    name: 'LOG',
+    category: 'math',
+    description: '返回以指定底数的对数（默认底数 10）',
+    minArgs: 1,
+    maxArgs: 2,
+    params: [
+      { name: 'number', description: '正数', type: 'number' },
+      { name: 'base', description: '底数（默认 10）', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      if (num <= 0) {
+        return makeError('#NUM!', 'LOG 函数的参数必须为正数');
+      }
+      const base = args.length >= 2 ? toNumber(args[1]) : 10;
+      if (isError(base)) return base;
+      if (base <= 0 || base === 1) {
+        return makeError('#NUM!', 'LOG 函数的底数必须为正数且不等于 1');
+      }
+      return Math.log(num) / Math.log(base);
+    },
+  });
+
+  // LN - 返回自然对数
+  registry.register({
+    name: 'LN',
+    category: 'math',
+    description: '返回自然对数',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'number', description: '正数', type: 'number' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      if (num <= 0) {
+        return makeError('#NUM!', 'LN 函数的参数必须为正数');
+      }
+      return Math.log(num);
+    },
+  });
+
+  // EXP - 返回 e 的指定次幂
+  registry.register({
+    name: 'EXP',
+    category: 'math',
+    description: '返回 e 的指定次幂',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'number', description: '指数', type: 'number' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      const result = Math.exp(num);
+      if (!isFinite(result)) {
+        return makeError('#NUM!', 'EXP 函数结果超出范围');
+      }
+      return result;
+    },
+  });
+
+  // PI - 返回圆周率
+  registry.register({
+    name: 'PI',
+    category: 'math',
+    description: '返回圆周率 π',
+    minArgs: 0,
+    maxArgs: 0,
+    params: [],
+    handler: (): FormulaValue => {
+      return Math.PI;
+    },
+  });
+
+  // SIGN - 返回数值的符号（-1、0、1）
+  registry.register({
+    name: 'SIGN',
+    category: 'math',
+    description: '返回数值的符号（-1、0 或 1）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'number', description: '数值', type: 'number' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      return Math.sign(num);
     },
   });
 }

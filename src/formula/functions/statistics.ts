@@ -1,6 +1,7 @@
 // ============================================================
 // 统计函数：COUNT, COUNTA, COUNTIF, COUNTIFS, SUMIF, SUMIFS,
-//           AVERAGEIF
+//           AVERAGEIF, MEDIAN, STDEV, VAR, LARGE, SMALL,
+//           RANK, PERCENTILE
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -23,6 +24,36 @@ function flattenRange(value: FormulaValue): FormulaValue[] {
     return result;
   }
   return [value];
+}
+
+/**
+ * 从参数列表中收集所有数值（用于 MEDIAN、STDEV 等聚合统计函数）
+ * 区域引用中的非数值被忽略，直接传入的字符串尝试转数字
+ */
+function collectNumbers(args: FormulaValue[]): number[] {
+  const result: number[] = [];
+  for (const arg of args) {
+    if (isError(arg)) continue;
+    if (typeof arg === 'number') {
+      result.push(arg);
+    } else if (typeof arg === 'boolean') {
+      result.push(arg ? 1 : 0);
+    } else if (typeof arg === 'string') {
+      const num = Number(arg);
+      if (arg.trim() !== '' && !isNaN(num)) {
+        result.push(num);
+      }
+    } else if (Array.isArray(arg)) {
+      for (const row of arg as FormulaValue[][]) {
+        for (const cell of row) {
+          if (typeof cell === 'number') {
+            result.push(cell);
+          }
+        }
+      }
+    }
+  }
+  return result;
 }
 
 /**
@@ -420,6 +451,193 @@ export function registerStatisticsFunctions(registry: FunctionRegistry): void {
         return makeError('#DIV/0!', 'AVERAGEIF 没有满足条件的单元格');
       }
       return sum / count;
+    },
+  });
+
+  // MEDIAN - 返回中位数
+  registry.register({
+    name: 'MEDIAN',
+    category: 'statistics',
+    description: '返回一组数值的中位数',
+    minArgs: 1,
+    maxArgs: -1,
+    params: [{ name: 'value1', description: '数值或区域', type: 'any' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers(args);
+      if (numbers.length === 0) {
+        return makeError('#NUM!', 'MEDIAN 没有可用的数值');
+      }
+      numbers.sort((a, b) => a - b);
+      const mid = Math.floor(numbers.length / 2);
+      if (numbers.length % 2 === 0) {
+        return (numbers[mid - 1] + numbers[mid]) / 2;
+      }
+      return numbers[mid];
+    },
+  });
+
+  // STDEV - 返回样本标准差
+  registry.register({
+    name: 'STDEV',
+    category: 'statistics',
+    description: '返回样本标准差',
+    minArgs: 1,
+    maxArgs: -1,
+    params: [{ name: 'value1', description: '数值或区域', type: 'any' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers(args);
+      if (numbers.length < 2) {
+        return makeError('#DIV/0!', 'STDEV 至少需要 2 个数值');
+      }
+      const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+      const sumSqDiff = numbers.reduce((acc, n) => acc + (n - mean) ** 2, 0);
+      return Math.sqrt(sumSqDiff / (numbers.length - 1));
+    },
+  });
+
+  // VAR - 返回样本方差
+  registry.register({
+    name: 'VAR',
+    category: 'statistics',
+    description: '返回样本方差',
+    minArgs: 1,
+    maxArgs: -1,
+    params: [{ name: 'value1', description: '数值或区域', type: 'any' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers(args);
+      if (numbers.length < 2) {
+        return makeError('#DIV/0!', 'VAR 至少需要 2 个数值');
+      }
+      const mean = numbers.reduce((a, b) => a + b, 0) / numbers.length;
+      const sumSqDiff = numbers.reduce((acc, n) => acc + (n - mean) ** 2, 0);
+      return sumSqDiff / (numbers.length - 1);
+    },
+  });
+
+  // LARGE - 返回第 k 个最大值
+  registry.register({
+    name: 'LARGE',
+    category: 'statistics',
+    description: '返回数据集中第 k 个最大值',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'array', description: '数据区域', type: 'range' },
+      { name: 'k', description: '排名位置', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers([args[0]]);
+      const kRaw = args[1];
+      if (isError(kRaw)) return kRaw;
+      const k = typeof kRaw === 'number' ? kRaw : Number(kRaw);
+      if (isNaN(k) || k < 1 || k > numbers.length) {
+        return makeError('#NUM!', `LARGE 的 k 值 ${k} 超出范围`);
+      }
+      numbers.sort((a, b) => b - a);
+      return numbers[Math.floor(k) - 1];
+    },
+  });
+
+  // SMALL - 返回第 k 个最小值
+  registry.register({
+    name: 'SMALL',
+    category: 'statistics',
+    description: '返回数据集中第 k 个最小值',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'array', description: '数据区域', type: 'range' },
+      { name: 'k', description: '排名位置', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers([args[0]]);
+      const kRaw = args[1];
+      if (isError(kRaw)) return kRaw;
+      const k = typeof kRaw === 'number' ? kRaw : Number(kRaw);
+      if (isNaN(k) || k < 1 || k > numbers.length) {
+        return makeError('#NUM!', `SMALL 的 k 值 ${k} 超出范围`);
+      }
+      numbers.sort((a, b) => a - b);
+      return numbers[Math.floor(k) - 1];
+    },
+  });
+
+  // RANK - 返回数值在列表中的排名
+  registry.register({
+    name: 'RANK',
+    category: 'statistics',
+    description: '返回数值在列表中的排名',
+    minArgs: 2,
+    maxArgs: 3,
+    params: [
+      { name: 'number', description: '要排名的数值', type: 'number' },
+      { name: 'ref', description: '数据区域', type: 'range' },
+      { name: 'order', description: '0=降序排名（默认），1=升序排名', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numRaw = args[0];
+      if (isError(numRaw)) return numRaw;
+      const num = typeof numRaw === 'number' ? numRaw : Number(numRaw);
+      if (isNaN(num)) return makeError('#VALUE!', 'RANK 的第一个参数必须是数值');
+
+      const numbers = collectNumbers([args[1]]);
+      if (numbers.length === 0) {
+        return makeError('#N/A', 'RANK 数据区域为空');
+      }
+
+      const orderRaw = args.length >= 3 ? args[2] : 0;
+      const order = typeof orderRaw === 'number' ? orderRaw : Number(orderRaw);
+      const ascending = order !== 0;
+
+      // 计算排名：比当前值大（降序）或小（升序）的数量 + 1
+      let rank = 1;
+      for (const n of numbers) {
+        if (ascending ? n < num : n > num) {
+          rank++;
+        }
+      }
+
+      // 检查数值是否在列表中
+      if (!numbers.includes(num)) {
+        return makeError('#N/A', 'RANK 的数值不在数据区域中');
+      }
+
+      return rank;
+    },
+  });
+
+  // PERCENTILE - 返回第 k 百分位数
+  registry.register({
+    name: 'PERCENTILE',
+    category: 'statistics',
+    description: '返回数据集中第 k 百分位数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'array', description: '数据区域', type: 'range' },
+      { name: 'k', description: '百分位值（0 到 1 之间）', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const numbers = collectNumbers([args[0]]);
+      if (numbers.length === 0) {
+        return makeError('#NUM!', 'PERCENTILE 数据区域为空');
+      }
+      const kRaw = args[1];
+      if (isError(kRaw)) return kRaw;
+      const k = typeof kRaw === 'number' ? kRaw : Number(kRaw);
+      if (isNaN(k) || k < 0 || k > 1) {
+        return makeError('#NUM!', 'PERCENTILE 的 k 值必须在 0 到 1 之间');
+      }
+      numbers.sort((a, b) => a - b);
+      const n = numbers.length;
+      if (k === 0) return numbers[0];
+      if (k === 1) return numbers[n - 1];
+      // 线性插值
+      const index = k * (n - 1);
+      const lower = Math.floor(index);
+      const upper = Math.ceil(index);
+      const fraction = index - lower;
+      return numbers[lower] + fraction * (numbers[upper] - numbers[lower]);
     },
   });
 }

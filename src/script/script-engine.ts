@@ -248,6 +248,31 @@ export class ScriptEngine {
 
   // 创建沙箱代理 - 拦截全局变量访问
   private createSandbox(api: ScriptAPI, outputMessages: string[]): Record<string, unknown> {
+    // 危险属性黑名单 - 阻断原型链逃逸攻击路径
+    const DANGEROUS_PROPS: ReadonlySet<string> = new Set([
+      'constructor', '__proto__', 'prototype',
+      '__defineGetter__', '__defineSetter__',
+      '__lookupGetter__', '__lookupSetter__',
+    ]);
+
+    /**
+     * 包装白名单对象，拦截原型链访问
+     * 对函数和对象类型的值进行 Proxy 包装，阻止通过 .constructor 等属性逃逸
+     */
+    const wrapSafe = (value: unknown): unknown => {
+      if (value === null || value === undefined) return value;
+      if (typeof value !== 'object' && typeof value !== 'function') return value;
+
+      return new Proxy(value as object, {
+        get(target: object, prop: string | symbol): unknown {
+          if (typeof prop === 'string' && DANGEROUS_PROPS.has(prop)) {
+            return undefined;
+          }
+          return Reflect.get(target, prop);
+        },
+      });
+    };
+
     // 安全的全局对象白名单
     const allowedGlobals: Record<string, unknown> = {
       // ScriptAPI 方法
@@ -257,15 +282,15 @@ export class ScriptEngine {
       setSelection: api.setSelection,
       getRowCount: api.getRowCount,
       getColCount: api.getColCount,
-      // 安全的内置对象
-      Math,
-      Date,
-      String,
-      Number,
-      Boolean,
-      Array,
-      Object,
-      JSON,
+      // 安全的内置对象（通过 wrapSafe 包装阻断原型链）
+      Math: wrapSafe(Math),
+      Date: wrapSafe(Date),
+      String: wrapSafe(String),
+      Number: wrapSafe(Number),
+      Boolean: wrapSafe(Boolean),
+      Array: wrapSafe(Array),
+      Object: wrapSafe(Object),
+      JSON: wrapSafe(JSON),
       parseInt,
       parseFloat,
       isNaN,
@@ -290,6 +315,10 @@ export class ScriptEngine {
       },
       get: (_target: Record<string, unknown>, prop: string | symbol): unknown => {
         if (typeof prop === 'symbol') return undefined;
+        // 阻止访问危险的原型链属性
+        if (DANGEROUS_PROPS.has(prop)) {
+          return undefined;
+        }
         // 允许访问白名单中的全局对象
         if (prop in allowedGlobals) {
           return allowedGlobals[prop];
@@ -299,6 +328,8 @@ export class ScriptEngine {
       },
       set: (_target: Record<string, unknown>, prop: string | symbol, value: unknown): boolean => {
         if (typeof prop === 'symbol') return false;
+        // 阻止覆盖危险属性
+        if (DANGEROUS_PROPS.has(prop)) return false;
         // 允许脚本内部定义变量
         allowedGlobals[prop] = value;
         return true;

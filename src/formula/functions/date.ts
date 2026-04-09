@@ -1,6 +1,7 @@
 // ============================================================
 // 日期函数：TODAY, NOW, DATE, YEAR, MONTH, DAY, DATEDIF,
-//           EDATE, EOMONTH
+//           EDATE, EOMONTH, HOUR, MINUTE, SECOND, TIME,
+//           WEEKDAY, WEEKNUM, NETWORKDAYS, WORKDAY
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -331,6 +332,210 @@ export function registerDateFunctions(registry: FunctionRegistry): void {
       // 目标月份的最后一天
       const targetDate = new Date(year, month + 1, 0);
       return formatDate(targetDate);
+    },
+  });
+
+  // HOUR - 提取小时
+  registry.register({
+    name: 'HOUR',
+    category: 'date',
+    description: '返回时间值的小时部分（0-23）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'serial_number', description: '时间值或日期时间字符串', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const date = parseDateOrError(args[0]);
+      if (isDateError(date)) return date;
+      return date.getHours();
+    },
+  });
+
+  // MINUTE - 提取分钟
+  registry.register({
+    name: 'MINUTE',
+    category: 'date',
+    description: '返回时间值的分钟部分（0-59）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'serial_number', description: '时间值或日期时间字符串', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const date = parseDateOrError(args[0]);
+      if (isDateError(date)) return date;
+      return date.getMinutes();
+    },
+  });
+
+  // SECOND - 提取秒
+  registry.register({
+    name: 'SECOND',
+    category: 'date',
+    description: '返回时间值的秒部分（0-59）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'serial_number', description: '时间值或日期时间字符串', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const date = parseDateOrError(args[0]);
+      if (isDateError(date)) return date;
+      return date.getSeconds();
+    },
+  });
+
+  // TIME - 根据时分秒构造时间值
+  registry.register({
+    name: 'TIME',
+    category: 'date',
+    description: '根据时、分、秒构造时间字符串',
+    minArgs: 3,
+    maxArgs: 3,
+    params: [
+      { name: 'hour', description: '小时（0-23）', type: 'number' },
+      { name: 'minute', description: '分钟（0-59）', type: 'number' },
+      { name: 'second', description: '秒（0-59）', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const hour = toNumber(args[0]);
+      if (isError(hour)) return hour;
+      const minute = toNumber(args[1]);
+      if (isError(minute)) return minute;
+      const second = toNumber(args[2]);
+      if (isError(second)) return second;
+      // 允许溢出自动进位（与 Excel 行为一致）
+      const totalSeconds = Math.floor(hour) * 3600 + Math.floor(minute) * 60 + Math.floor(second);
+      const h = Math.floor((totalSeconds % 86400) / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      return `${pad(h)}:${pad(m)}:${pad(s)}`;
+    },
+  });
+
+  // WEEKDAY - 返回星期几（1-7）
+  registry.register({
+    name: 'WEEKDAY',
+    category: 'date',
+    description: '返回日期对应的星期几（默认 1=周日, 7=周六）',
+    minArgs: 1,
+    maxArgs: 2,
+    params: [
+      { name: 'serial_number', description: '日期值', type: 'string' },
+      { name: 'return_type', description: '返回类型（1=周日起始，2=周一起始，3=从0开始周一起始）', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const date = parseDateOrError(args[0]);
+      if (isDateError(date)) return date;
+      const returnType = args.length >= 2 ? toNumber(args[1]) : 1;
+      if (isError(returnType)) return returnType;
+      const day = date.getDay(); // 0=周日, 6=周六
+      switch (Math.floor(returnType)) {
+        case 1: return day + 1;           // 1=周日, 7=周六
+        case 2: return day === 0 ? 7 : day; // 1=周一, 7=周日
+        case 3: return day === 0 ? 6 : day - 1; // 0=周一, 6=周日
+        default: return makeError('#NUM!', `WEEKDAY 无效的 return_type: ${returnType}`);
+      }
+    },
+  });
+
+  // WEEKNUM - 返回一年中的第几周
+  registry.register({
+    name: 'WEEKNUM',
+    category: 'date',
+    description: '返回日期在一年中的第几周',
+    minArgs: 1,
+    maxArgs: 2,
+    params: [
+      { name: 'serial_number', description: '日期值', type: 'string' },
+      { name: 'return_type', description: '1=周日起始（默认），2=周一起始', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const date = parseDateOrError(args[0]);
+      if (isDateError(date)) return date;
+      const returnType = args.length >= 2 ? toNumber(args[1]) : 1;
+      if (isError(returnType)) return returnType;
+
+      // 计算该年第一天
+      const yearStart = new Date(date.getFullYear(), 0, 1);
+      const weekStart = Math.floor(returnType) === 2 ? 1 : 0; // 0=周日, 1=周一
+
+      // 计算从年初到当前日期的天数
+      const diffMs = date.getTime() - yearStart.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      // 调整年初第一天的星期偏移
+      const yearStartDay = yearStart.getDay();
+      const offset = (yearStartDay - weekStart + 7) % 7;
+
+      return Math.floor((diffDays + offset) / 7) + 1;
+    },
+  });
+
+  // NETWORKDAYS - 计算两个日期之间的工作日数
+  registry.register({
+    name: 'NETWORKDAYS',
+    category: 'date',
+    description: '计算两个日期之间的工作日数（排除周末）',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'start_date', description: '开始日期', type: 'string' },
+      { name: 'end_date', description: '结束日期', type: 'string' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const startDate = parseDateOrError(args[0]);
+      if (isDateError(startDate)) return startDate;
+      const endDate = parseDateOrError(args[1]);
+      if (isDateError(endDate)) return endDate;
+
+      // 确定方向
+      const forward = startDate.getTime() <= endDate.getTime();
+      const from = forward ? new Date(startDate) : new Date(endDate);
+      const to = forward ? new Date(endDate) : new Date(startDate);
+
+      let count = 0;
+      const current = new Date(from);
+      while (current.getTime() <= to.getTime()) {
+        const day = current.getDay();
+        if (day !== 0 && day !== 6) {
+          count++;
+        }
+        current.setDate(current.getDate() + 1);
+      }
+
+      return forward ? count : -count;
+    },
+  });
+
+  // WORKDAY - 返回指定工作日数后的日期
+  registry.register({
+    name: 'WORKDAY',
+    category: 'date',
+    description: '返回从开始日期起经过指定工作日数后的日期',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'start_date', description: '开始日期', type: 'string' },
+      { name: 'days', description: '工作日数（正数向后，负数向前）', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const startDate = parseDateOrError(args[0]);
+      if (isDateError(startDate)) return startDate;
+      const days = toNumber(args[1]);
+      if (isError(days)) return days;
+
+      const daysInt = Math.floor(days);
+      if (daysInt === 0) return formatDate(startDate);
+
+      const direction = daysInt > 0 ? 1 : -1;
+      let remaining = Math.abs(daysInt);
+      const current = new Date(startDate);
+
+      while (remaining > 0) {
+        current.setDate(current.getDate() + direction);
+        const day = current.getDay();
+        if (day !== 0 && day !== 6) {
+          remaining--;
+        }
+      }
+
+      return formatDate(current);
     },
   });
 }

@@ -1,6 +1,8 @@
 // ============================================================
 // 文本函数：LEFT, RIGHT, MID, LEN, TRIM, UPPER, LOWER,
-//           CONCATENATE, SUBSTITUTE, FIND, SEARCH, TEXT
+//           CONCATENATE, SUBSTITUTE, FIND, SEARCH, TEXT,
+//           TEXTJOIN, REPLACE, REPT, EXACT, CHAR, CODE,
+//           CLEAN, VALUE
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -459,6 +461,157 @@ export function registerTextFunctions(registry: FunctionRegistry): void {
       if (isError(formatText)) return formatText;
 
       return formatNumber(value, formatText);
+    },
+  });
+
+  // REPLACE - 替换指定位置的字符
+  registry.register({
+    name: 'REPLACE',
+    category: 'text',
+    description: '替换文本中从指定位置开始的指定数量字符',
+    minArgs: 4,
+    maxArgs: 4,
+    params: [
+      { name: 'old_text', description: '源文本', type: 'string' },
+      { name: 'start_num', description: '起始位置（从 1 开始）', type: 'number' },
+      { name: 'num_chars', description: '要替换的字符数', type: 'number' },
+      { name: 'new_text', description: '替换后的新文本', type: 'string' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const oldText = toText(args[0]);
+      if (isError(oldText)) return oldText;
+      const startNum = toNumber(args[1]);
+      if (isError(startNum)) return startNum;
+      const numChars = toNumber(args[2]);
+      if (isError(numChars)) return numChars;
+      const newText = toText(args[3]);
+      if (isError(newText)) return newText;
+
+      if (startNum < 1) return makeError('#VALUE!', 'REPLACE 的 start_num 必须大于 0');
+      if (numChars < 0) return makeError('#VALUE!', 'REPLACE 的 num_chars 不能为负数');
+
+      const startIndex = Math.floor(startNum) - 1;
+      return oldText.substring(0, startIndex) + newText + oldText.substring(startIndex + Math.floor(numChars));
+    },
+  });
+
+  // REPT - 重复文本指定次数
+  registry.register({
+    name: 'REPT',
+    category: 'text',
+    description: '将文本重复指定次数',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'text', description: '要重复的文本', type: 'string' },
+      { name: 'number_times', description: '重复次数', type: 'number' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const text = toText(args[0]);
+      if (isError(text)) return text;
+      const times = toNumber(args[1]);
+      if (isError(times)) return times;
+      if (times < 0) return makeError('#VALUE!', 'REPT 的重复次数不能为负数');
+      return text.repeat(Math.floor(times));
+    },
+  });
+
+  // EXACT - 比较两个字符串是否完全相同（区分大小写）
+  registry.register({
+    name: 'EXACT',
+    category: 'text',
+    description: '比较两个字符串是否完全相同（区分大小写）',
+    minArgs: 2,
+    maxArgs: 2,
+    params: [
+      { name: 'text1', description: '第一个字符串', type: 'string' },
+      { name: 'text2', description: '第二个字符串', type: 'string' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const text1 = toText(args[0]);
+      if (isError(text1)) return text1;
+      const text2 = toText(args[1]);
+      if (isError(text2)) return text2;
+      return text1 === text2;
+    },
+  });
+
+  // CHAR - 返回指定 ASCII 码对应的字符
+  registry.register({
+    name: 'CHAR',
+    category: 'text',
+    description: '返回指定 ASCII 码对应的字符',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'number', description: 'ASCII 码值（1-255）', type: 'number' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const num = toNumber(args[0]);
+      if (isError(num)) return num;
+      const code = Math.floor(num);
+      if (code < 1 || code > 255) {
+        return makeError('#VALUE!', 'CHAR 的参数必须在 1 到 255 之间');
+      }
+      return String.fromCharCode(code);
+    },
+  });
+
+  // CODE - 返回字符的 ASCII 码
+  registry.register({
+    name: 'CODE',
+    category: 'text',
+    description: '返回文本中第一个字符的 ASCII 码',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'text', description: '文本', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const text = toText(args[0]);
+      if (isError(text)) return text;
+      if (text.length === 0) {
+        return makeError('#VALUE!', 'CODE 的参数不能为空字符串');
+      }
+      return text.charCodeAt(0);
+    },
+  });
+
+  // CLEAN - 删除文本中的不可打印字符（ASCII 0-31）
+  registry.register({
+    name: 'CLEAN',
+    category: 'text',
+    description: '删除文本中的不可打印字符',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'text', description: '要清理的文本', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const text = toText(args[0]);
+      if (isError(text)) return text;
+      // 移除 ASCII 0-31 的控制字符
+      return text.replace(/[\x00-\x1F]/g, '');
+    },
+  });
+
+  // VALUE - 将文本转换为数值
+  registry.register({
+    name: 'VALUE',
+    category: 'text',
+    description: '将文本字符串转换为数值',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'text', description: '要转换的文本', type: 'string' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const text = toText(args[0]);
+      if (isError(text)) return text;
+      // 去除前后空格和百分号
+      let cleaned = text.trim();
+      let isPercent = false;
+      if (cleaned.endsWith('%')) {
+        cleaned = cleaned.slice(0, -1);
+        isPercent = true;
+      }
+      const num = Number(cleaned);
+      if (isNaN(num) || cleaned === '') {
+        return makeError('#VALUE!', `VALUE 无法将 "${text}" 转换为数值`);
+      }
+      return isPercent ? num / 100 : num;
     },
   });
 }

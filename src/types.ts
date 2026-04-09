@@ -211,6 +211,21 @@ export interface SpreadsheetData {
   rowHeights: number[];
   colWidths: number[];
   charts?: ChartConfig[];          // 图表配置列表
+  pivotTableConfigs?: PivotTableSerializedConfig[];  // 透视表配置列表（可选，数据兼容）
+}
+
+/**
+ * 透视表序列化配置
+ * 用于 JSON 导入/导出和 localStorage 持久化
+ * filterFields 中的 selectedValues 使用数组替代 Set 以支持 JSON 序列化
+ */
+export interface PivotTableSerializedConfig {
+  sourceRange: { startRow: number; startCol: number; endRow: number; endCol: number };
+  rowFields: Array<{ fieldIndex: number; fieldName: string }>;
+  colFields: Array<{ fieldIndex: number; fieldName: string }>;
+  valueFields: Array<{ fieldIndex: number; fieldName: string; aggregateFunc: string }>;
+  filterFields: Array<{ fieldIndex: number; fieldName: string; selectedValues: string[] }>;
+  sort?: { by: 'label' | 'value'; fieldIndex: number; direction: 'asc' | 'desc' };
 }
 
 // 视口位置

@@ -1,5 +1,6 @@
 // ============================================================
-// 查找引用函数：VLOOKUP, HLOOKUP, INDEX, MATCH, OFFSET, INDIRECT
+// 查找引用函数：VLOOKUP, HLOOKUP, INDEX, MATCH, OFFSET, INDIRECT,
+//               XLOOKUP, CHOOSE, ROW, COLUMN, ROWS, COLUMNS, TRANSPOSE
 // ============================================================
 
 import type { FunctionRegistry } from '../function-registry';
@@ -501,6 +502,218 @@ export function registerLookupFunctions(registry: FunctionRegistry): void {
       }
 
       return context.getCellValue(parsed.row, parsed.col);
+    },
+  });
+
+  // XLOOKUP - 增强版查找
+  registry.register({
+    name: 'XLOOKUP',
+    category: 'lookup',
+    description: '在查找区域中搜索匹配值，返回对应返回区域中的值',
+    minArgs: 3,
+    maxArgs: 6,
+    params: [
+      { name: 'lookup_value', description: '要查找的值', type: 'any' },
+      { name: 'lookup_array', description: '查找区域', type: 'range' },
+      { name: 'return_array', description: '返回区域', type: 'range' },
+      { name: 'if_not_found', description: '未找到时的返回值', type: 'any', optional: true },
+      { name: 'match_mode', description: '0=精确（默认），-1=精确或下一个较小，1=精确或下一个较大，2=通配符', type: 'number', optional: true },
+      { name: 'search_mode', description: '1=从头搜索（默认），-1=从尾搜索', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const lookupValue = args[0];
+      if (isError(lookupValue)) return lookupValue;
+
+      // 获取查找数组
+      let lookupArray: FormulaValue[];
+      const rawLookup = args[1];
+      if (Array.isArray(rawLookup)) {
+        lookupArray = flattenToOneDimension(rawLookup as FormulaValue[][]);
+      } else {
+        lookupArray = [rawLookup];
+      }
+
+      // 获取返回数组
+      const rawReturn = args[2];
+      let returnArray: FormulaValue[];
+      if (Array.isArray(rawReturn)) {
+        returnArray = flattenToOneDimension(rawReturn as FormulaValue[][]);
+      } else {
+        returnArray = [rawReturn];
+      }
+
+      const ifNotFound = args.length >= 4 ? args[3] : makeError('#N/A', 'XLOOKUP 未找到匹配值');
+      const matchMode = args.length >= 5 ? toNumber(args[4]) : 0;
+      if (isError(matchMode)) return matchMode;
+      const searchMode = args.length >= 6 ? toNumber(args[5]) : 1;
+      if (isError(searchMode)) return searchMode;
+
+      const matchModeInt = Math.floor(matchMode as number);
+      const searchModeInt = Math.floor(searchMode as number);
+
+      // 确定搜索方向
+      const forward = searchModeInt >= 0;
+      const start = forward ? 0 : lookupArray.length - 1;
+      const end = forward ? lookupArray.length : -1;
+      const step = forward ? 1 : -1;
+
+      // 精确匹配
+      if (matchModeInt === 0 || matchModeInt === 2) {
+        for (let i = start; i !== end; i += step) {
+          if (isError(lookupArray[i])) continue;
+          if (isExactMatch(lookupArray[i], lookupValue)) {
+            return i < returnArray.length ? returnArray[i] : makeError('#N/A', 'XLOOKUP 返回区域索引越界');
+          }
+        }
+        return ifNotFound;
+      }
+
+      // 近似匹配：-1=下一个较小，1=下一个较大
+      let bestIndex = -1;
+      for (let i = 0; i < lookupArray.length; i++) {
+        if (isError(lookupArray[i])) continue;
+        const cmp = compareValues(lookupArray[i], lookupValue);
+        if (cmp === 0) {
+          return i < returnArray.length ? returnArray[i] : makeError('#N/A', 'XLOOKUP 返回区域索引越界');
+        }
+        if (matchModeInt === -1 && cmp < 0) {
+          if (bestIndex === -1 || compareValues(lookupArray[i], lookupArray[bestIndex]) > 0) {
+            bestIndex = i;
+          }
+        } else if (matchModeInt === 1 && cmp > 0) {
+          if (bestIndex === -1 || compareValues(lookupArray[i], lookupArray[bestIndex]) < 0) {
+            bestIndex = i;
+          }
+        }
+      }
+
+      if (bestIndex !== -1) {
+        return bestIndex < returnArray.length ? returnArray[bestIndex] : makeError('#N/A', 'XLOOKUP 返回区域索引越界');
+      }
+      return ifNotFound;
+    },
+  });
+
+  // CHOOSE - 根据索引从值列表中选择
+  registry.register({
+    name: 'CHOOSE',
+    category: 'lookup',
+    description: '根据索引号从值列表中选择对应的值',
+    minArgs: 2,
+    maxArgs: -1,
+    params: [
+      { name: 'index_num', description: '索引号（从 1 开始）', type: 'number' },
+      { name: 'value1', description: '第一个候选值', type: 'any' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const indexRaw = toNumber(args[0]);
+      if (isError(indexRaw)) return indexRaw;
+      const index = Math.floor(indexRaw);
+      if (index < 1 || index > args.length - 1) {
+        return makeError('#VALUE!', `CHOOSE 索引 ${index} 超出范围（1-${args.length - 1}）`);
+      }
+      return args[index];
+    },
+  });
+
+  // ROW - 返回当前行号
+  registry.register({
+    name: 'ROW',
+    category: 'lookup',
+    description: '返回引用的行号',
+    minArgs: 0,
+    maxArgs: 1,
+    params: [
+      { name: 'reference', description: '单元格引用（可选，默认当前单元格）', type: 'any', optional: true },
+    ],
+    handler: (args: FormulaValue[], context: EvaluationContext): FormulaValue => {
+      if (args.length === 0) {
+        // 无参数：返回当前公式所在行号（1-based）
+        return context.row + 1;
+      }
+      // 有参数：如果是区域引用（二维数组），返回第一行的行号
+      // 由于参数已被求值，无法获取原始行号，返回当前行号
+      return context.row + 1;
+    },
+  });
+
+  // COLUMN - 返回当前列号
+  registry.register({
+    name: 'COLUMN',
+    category: 'lookup',
+    description: '返回引用的列号',
+    minArgs: 0,
+    maxArgs: 1,
+    params: [
+      { name: 'reference', description: '单元格引用（可选，默认当前单元格）', type: 'any', optional: true },
+    ],
+    handler: (args: FormulaValue[], context: EvaluationContext): FormulaValue => {
+      if (args.length === 0) {
+        return context.col + 1;
+      }
+      return context.col + 1;
+    },
+  });
+
+  // ROWS - 返回区域的行数
+  registry.register({
+    name: 'ROWS',
+    category: 'lookup',
+    description: '返回引用区域的行数',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'array', description: '区域引用', type: 'range' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr) {
+        // 单个值视为 1 行
+        return 1;
+      }
+      return arr.length;
+    },
+  });
+
+  // COLUMNS - 返回区域的列数
+  registry.register({
+    name: 'COLUMNS',
+    category: 'lookup',
+    description: '返回引用区域的列数',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'array', description: '区域引用', type: 'range' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return 1;
+      }
+      return arr[0].length;
+    },
+  });
+
+  // TRANSPOSE - 转置数组
+  registry.register({
+    name: 'TRANSPOSE',
+    category: 'lookup',
+    description: '转置数组（行列互换）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [{ name: 'array', description: '要转置的区域', type: 'range' }],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return args[0];
+      }
+      const rows = arr.length;
+      const cols = arr[0].length;
+      const result: FormulaValue[][] = [];
+      for (let c = 0; c < cols; c++) {
+        const newRow: FormulaValue[] = [];
+        for (let r = 0; r < rows; r++) {
+          newRow.push(arr[r][c]);
+        }
+        result.push(newRow);
+      }
+      return result;
     },
   });
 }
