@@ -40,6 +40,13 @@ public class Cell {
     // === 迷你图配置字段 ===
     private SparklineConfigData sparkline;
 
+    // === 新增：公式、超链接、内嵌图片、批注、自动格式字段 ===
+    private String formulaContent;
+    private HyperlinkData hyperlink;
+    private EmbeddedImageData embeddedImage;
+    private String comment;
+    private Boolean isAutoFormat;
+
     public Cell() {
         this.content = "";
         this.rowSpan = 1;
@@ -241,6 +248,49 @@ public class Cell {
         this.sparkline = sparkline;
     }
 
+    public String getFormulaContent() {
+        return formulaContent;
+    }
+
+    public void setFormulaContent(String formulaContent) {
+        this.formulaContent = formulaContent;
+    }
+
+    public HyperlinkData getHyperlink() {
+        return hyperlink;
+    }
+
+    public void setHyperlink(HyperlinkData hyperlink) {
+        this.hyperlink = hyperlink;
+    }
+
+    public EmbeddedImageData getEmbeddedImage() {
+        return embeddedImage;
+    }
+
+    public void setEmbeddedImage(EmbeddedImageData embeddedImage) {
+        this.embeddedImage = embeddedImage;
+    }
+
+    public String getComment() {
+        return comment;
+    }
+
+    public void setComment(String comment) {
+        this.comment = comment;
+    }
+
+    // 使用 @JsonProperty 确保 JSON 字段名为 "isAutoFormat"，与 TypeScript 一致
+    @JsonProperty("isAutoFormat")
+    public Boolean getIsAutoFormat() {
+        return isAutoFormat;
+    }
+
+    @JsonProperty("isAutoFormat")
+    public void setIsAutoFormat(Boolean isAutoFormat) {
+        this.isAutoFormat = isAutoFormat;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -268,7 +318,12 @@ public class Cell {
                 && java.util.Objects.equals(sparkline, cell.sparkline)
                 && java.util.Objects.equals(border, cell.border)
                 && java.util.Objects.equals(fontFamily, cell.fontFamily)
-                && java.util.Objects.equals(fontStrikethrough, cell.fontStrikethrough);
+                && java.util.Objects.equals(fontStrikethrough, cell.fontStrikethrough)
+                && java.util.Objects.equals(formulaContent, cell.formulaContent)
+                && java.util.Objects.equals(hyperlink, cell.hyperlink)
+                && java.util.Objects.equals(embeddedImage, cell.embeddedImage)
+                && java.util.Objects.equals(comment, cell.comment)
+                && java.util.Objects.equals(isAutoFormat, cell.isAutoFormat);
     }
 
     @Override
@@ -276,6 +331,7 @@ public class Cell {
         return java.util.Objects.hash(content, rowSpan, colSpan, isMerged, mergeParent,
                 fontColor, bgColor, fontSize, fontBold, fontItalic, fontUnderline, fontAlign, verticalAlign,
                 dataType, rawValue, wrapText, format, richText, validation, sparkline,
-                border, fontFamily, fontStrikethrough);
+                border, fontFamily, fontStrikethrough,
+                formulaContent, hyperlink, embeddedImage, comment, isAutoFormat);
     }
 }

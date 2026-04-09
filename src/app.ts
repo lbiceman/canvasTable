@@ -1,7 +1,7 @@
 import { SpreadsheetModel } from './model';
 import { SpreadsheetRenderer } from './renderer';
 import { RenderConfig, CellPosition, Selection, CellFormat, ConditionalFormatRule, ConditionalFormatCondition, ConditionalFormatStyle } from './types';
-import type { Cell, FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder, EmbeddedImage } from './types';
+import type { Cell, FillDirection, InternalClipboard, ClipboardCellData, PasteSpecialMode, RowColumnGroup, BorderStyle, BorderPosition, BorderSide, CellBorder, EmbeddedImage, ValidationRule } from './types';
 import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
@@ -5058,6 +5058,25 @@ export class SpreadsheetApp {
     for (const sel of selections) {
       const { startRow, startCol, endRow, endCol } = sel;
       this.model.setRangeWrapText(startRow, startCol, endRow, endCol, isWrap);
+
+      // 协同模式下为每个单元格提交 setWrapText 操作
+      if (this.isCollaborationMode()) {
+        const minRow = Math.min(startRow, endRow);
+        const maxRow = Math.max(startRow, endRow);
+        const minCol = Math.min(startCol, endCol);
+        const maxCol = Math.max(startCol, endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.submitCollabOperation({
+              ...this.createBaseOp(),
+              type: 'setWrapText',
+              row: r,
+              col: c,
+              wrapText: isWrap,
+            });
+          }
+        }
+      }
     }
 
     // 重新渲染
@@ -5291,6 +5310,21 @@ export class SpreadsheetApp {
             this.model.setCellValidation(r, c, rule);
           }
         }
+
+        // 协同模式下为每个单元格提交 setValidation 操作
+        if (this.isCollaborationMode()) {
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              this.submitCollabOperation({
+                ...this.createBaseOp(),
+                type: 'setValidation',
+                row: r,
+                col: c,
+                validation: rule as ValidationRule,
+              });
+            }
+          }
+        }
       }
       this.renderer.render();
       this.updateUndoRedoButtons();
@@ -5313,13 +5347,28 @@ export class SpreadsheetApp {
         const maxRow = Math.max(startRow, endRow);
         const minCol = Math.min(startCol, endCol);
         const maxCol = Math.max(startCol, endCol);
+        const format: CellFormat = {
+          category: values.formatCategory,
+          pattern: values.formatPattern || '',
+          currencySymbol: values.currencySymbol,
+        };
         for (let r = minRow; r <= maxRow; r++) {
           for (let c = minCol; c <= maxCol; c++) {
-            this.model.setCellFormat(r, c, {
-              category: values.formatCategory,
-              pattern: values.formatPattern || '',
-              currencySymbol: values.currencySymbol,
-            });
+            this.model.setCellFormat(r, c, format);
+          }
+        }
+        // 协同模式下为每个单元格提交 setFormat 操作
+        if (this.isCollaborationMode()) {
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              this.submitCollabOperation({
+                ...this.createBaseOp(),
+                type: 'setFormat',
+                row: r,
+                col: c,
+                format,
+              });
+            }
           }
         }
       }
@@ -5333,6 +5382,24 @@ export class SpreadsheetApp {
       }
       if (values.wrapText !== undefined) {
         this.model.setRangeWrapText(startRow, startCol, endRow, endCol, values.wrapText);
+        // 协同模式下为每个单元格提交 setWrapText 操作
+        if (this.isCollaborationMode()) {
+          const minRow = Math.min(startRow, endRow);
+          const maxRow = Math.max(startRow, endRow);
+          const minCol = Math.min(startCol, endCol);
+          const maxCol = Math.max(startCol, endCol);
+          for (let r = minRow; r <= maxRow; r++) {
+            for (let c = minCol; c <= maxCol; c++) {
+              this.submitCollabOperation({
+                ...this.createBaseOp(),
+                type: 'setWrapText',
+                row: r,
+                col: c,
+                wrapText: values.wrapText,
+              });
+            }
+          }
+        }
       }
 
       // 字体

@@ -16,6 +16,7 @@ public class SpreadsheetData {
     private List<Integer> colWidths;
     private List<ConditionalFormatRule> conditionalFormats;
     private List<ChartConfigData> charts;
+    private List<PivotTableSerializedConfig> pivotTableConfigs;
 
     public SpreadsheetData() {
         this.cells = new ArrayList<>();
@@ -71,6 +72,14 @@ public class SpreadsheetData {
         this.charts = charts;
     }
 
+    public List<PivotTableSerializedConfig> getPivotTableConfigs() {
+        return pivotTableConfigs;
+    }
+
+    public void setPivotTableConfigs(List<PivotTableSerializedConfig> pivotTableConfigs) {
+        this.pivotTableConfigs = pivotTableConfigs;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -80,11 +89,12 @@ public class SpreadsheetData {
                 && java.util.Objects.equals(rowHeights, that.rowHeights)
                 && java.util.Objects.equals(colWidths, that.colWidths)
                 && java.util.Objects.equals(conditionalFormats, that.conditionalFormats)
-                && java.util.Objects.equals(charts, that.charts);
+                && java.util.Objects.equals(charts, that.charts)
+                && java.util.Objects.equals(pivotTableConfigs, that.pivotTableConfigs);
     }
 
     @Override
     public int hashCode() {
-        return java.util.Objects.hash(cells, rowHeights, colWidths, conditionalFormats, charts);
+        return java.util.Objects.hash(cells, rowHeights, colWidths, conditionalFormats, charts, pivotTableConfigs);
     }
 }

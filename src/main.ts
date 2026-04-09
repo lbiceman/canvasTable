@@ -192,6 +192,24 @@ const applyOperationToModel = (op: CollabOperation, model: SpreadsheetModel): vo
     case 'setStrikethrough':
       targetModel.setCellFontStrikethrough(op.row, op.col, op.strikethrough);
       break;
+    case 'colInsert':
+      targetModel.insertColumns(op.colIndex, op.count);
+      break;
+    case 'colDelete':
+      targetModel.deleteColumns(op.colIndex, op.count);
+      break;
+    case 'setFormat':
+      targetModel.setCellFormat(op.row, op.col, op.format);
+      break;
+    case 'setWrapText':
+      targetModel.setCellWrapText(op.row, op.col, op.wrapText);
+      break;
+    case 'setRichText':
+      targetModel.setCellRichText(op.row, op.col, op.richText);
+      break;
+    case 'setValidation':
+      targetModel.setCellValidation(op.row, op.col, op.validation);
+      break;
   }
 };
 
