@@ -19,6 +19,7 @@ import { registerTextFunctions } from './formula/functions/text';
 import { registerLogicFunctions } from './formula/functions/logic';
 import { registerLookupFunctions } from './formula/functions/lookup';
 import { registerDateFunctions } from './formula/functions/date';
+import { registerFinancialFunctions } from './formula/functions/financial';
 import type {
   ASTNode,
   FormulaValue,
@@ -440,6 +441,7 @@ export class FormulaEngine {
     registerLogicFunctions(this.functionRegistry);
     registerLookupFunctions(this.functionRegistry);
     registerDateFunctions(this.functionRegistry);
+    registerFinancialFunctions(this.functionRegistry);
 
     // 注册 SUM（新管线原生支持）
     this.registerSumFunction();

@@ -159,7 +159,7 @@ export interface FormulaError {
 // ============================================================
 
 /** 函数类别 */
-export type FunctionCategory = 'math' | 'statistics' | 'text' | 'logic' | 'lookup' | 'date';
+export type FunctionCategory = 'math' | 'statistics' | 'text' | 'logic' | 'lookup' | 'date' | 'financial';
 
 /** 函数参数定义 */
 export interface FunctionParam {

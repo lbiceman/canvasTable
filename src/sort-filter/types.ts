@@ -16,7 +16,7 @@ export interface SortRule {
 }
 
 // 文本筛选操作符
-export type TextFilterOperator = 'contains' | 'notContains' | 'equals' | 'startsWith' | 'endsWith';
+export type TextFilterOperator = 'contains' | 'notContains' | 'equals' | 'startsWith' | 'endsWith' | 'regex';
 
 // 数字筛选操作符
 export type NumberFilterOperator = 'equals' | 'notEquals' | 'greaterThan' | 'greaterOrEqual' | 'lessThan' | 'lessOrEqual' | 'between';

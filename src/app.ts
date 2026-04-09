@@ -165,9 +165,12 @@ export class SpreadsheetApp {
   private printArea: PrintArea = new PrintArea();
   private headerFooter: HeaderFooter = new HeaderFooter();
 
-  // 边框选择器当前状态
+  // 边框選択器当前状態
   private currentBorderStyle: BorderStyle = 'solid';
   private currentBorderColor: string = '#000000';
+
+  // 列宽/行高拖拽提示 tooltip
+  private resizeTooltip: HTMLDivElement | null = null;
 
   constructor(_containerId: string) {
     // 初始化多工作表管理器（默认创建 Sheet1）
@@ -3930,6 +3933,7 @@ export class SpreadsheetApp {
       const deltaY = event.clientY - this.resizeStartY;
       const newHeight = Math.max(20, this.resizeStartHeight + deltaY);
       this.model.setRowHeight(this.resizeRowIndex, newHeight, false);
+      this.showResizeTooltip(event.clientX, event.clientY, `高度: ${Math.round(newHeight)}px`);
       this.renderer.render();
       this.updateScrollbars();
       return;
@@ -3940,6 +3944,7 @@ export class SpreadsheetApp {
       const deltaX = event.clientX - this.resizeStartX;
       const newWidth = Math.max(30, this.resizeStartWidth + deltaX);
       this.model.setColWidth(this.resizeColIndex, newWidth, false);
+      this.showResizeTooltip(event.clientX, event.clientY, `宽度: ${Math.round(newWidth)}px`);
       this.renderer.render();
       this.updateScrollbars();
       return;
@@ -4222,6 +4227,7 @@ export class SpreadsheetApp {
       this.isResizingRow = false;
       this.resizeRowIndex = -1;
       this.canvas.style.cursor = 'default';
+      this.hideResizeTooltip();
     }
 
     if (this.isResizingCol) {
@@ -4245,6 +4251,31 @@ export class SpreadsheetApp {
       this.isResizingCol = false;
       this.resizeColIndex = -1;
       this.canvas.style.cursor = 'default';
+      this.hideResizeTooltip();
+    }
+  }
+
+  /**
+   * 显示列宽/行高拖拽提示 tooltip
+   */
+  private showResizeTooltip(x: number, y: number, text: string): void {
+    if (!this.resizeTooltip) {
+      this.resizeTooltip = document.createElement('div');
+      this.resizeTooltip.className = 'resize-tooltip';
+      document.body.appendChild(this.resizeTooltip);
+    }
+    this.resizeTooltip.textContent = text;
+    this.resizeTooltip.style.left = `${x + 12}px`;
+    this.resizeTooltip.style.top = `${y - 28}px`;
+    this.resizeTooltip.style.display = 'block';
+  }
+
+  /**
+   * 隐藏列宽/行高拖拽提示 tooltip
+   */
+  private hideResizeTooltip(): void {
+    if (this.resizeTooltip) {
+      this.resizeTooltip.style.display = 'none';
     }
   }
 

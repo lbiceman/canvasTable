@@ -4426,3 +4426,295 @@ h1 {
   z-index: 5000;
   pointer-events: none;
 }
+
+/* ============================================================
+ * 多级排序对话框样式
+ * ============================================================ */
+.sort-dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-dialog {
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 400px;
+  max-width: 600px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.sort-dialog-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+.sort-dialog-rules {
+  margin-bottom: 12px;
+}
+
+.sort-dialog-rule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.sort-dialog-rule-label {
+  font-size: 13px;
+  color: var(--theme-foreground);
+  min-width: 60px;
+}
+
+.sort-dialog-select {
+  padding: 4px 8px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 4px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  font-size: 13px;
+  flex: 1;
+}
+
+.sort-dialog-del-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: #e53e3e;
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sort-dialog-del-btn:hover {
+  background: rgba(229, 62, 62, 0.1);
+}
+
+.sort-dialog-add-btn {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed var(--theme-grid-line);
+  border-radius: 4px;
+  background: none;
+  color: var(--theme-status-text);
+  font-size: 13px;
+  cursor: pointer;
+  margin-bottom: 16px;
+}
+
+.sort-dialog-add-btn:hover {
+  border-color: var(--theme-foreground);
+  color: var(--theme-foreground);
+}
+
+.sort-dialog-btn-bar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sort-dialog-cancel-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 4px;
+  background: var(--theme-button-bg);
+  color: var(--theme-foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sort-dialog-apply-btn {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #007bff;
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sort-dialog-apply-btn:hover {
+  background: #0056b3;
+}
+
+/* ============================================================
+ * 列宽/行高拖拽提示 tooltip
+ * ============================================================ */
+.resize-tooltip {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--theme-foreground);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 3000;
+  pointer-events: none;
+  white-space: nowrap;
+  display: none;
+}
+
+/* ============================================================
+ * 增强型颜色选择器样式
+ * ============================================================ */
+.color-picker-panel {
+  position: fixed;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 3000;
+  min-width: 220px;
+}
+
+.color-picker-section {
+  margin-bottom: 8px;
+}
+
+.color-picker-section-title {
+  font-size: 11px;
+  color: var(--theme-status-text);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.color-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 2px;
+}
+
+.color-picker-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.color-picker-swatch:hover {
+  transform: scale(1.3);
+  z-index: 1;
+}
+
+.color-picker-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px solid var(--theme-grid-line);
+}
+
+.color-picker-hex-input {
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+}
+
+.color-picker-apply-btn {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: #007bff;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.color-picker-native {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.color-picker-native-input {
+  width: 24px;
+  height: 24px;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* ============================================================
+ * 协同冲突通知样式
+ * ============================================================ */
+.conflict-notification-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 4000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conflict-notification {
+  background: var(--theme-background);
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 280px;
+  animation: slideIn 0.3s ease;
+}
+
+.conflict-message {
+  font-size: 13px;
+  color: var(--theme-foreground);
+  margin-bottom: 8px;
+}
+
+.conflict-btn-group {
+  display: flex;
+  gap: 8px;
+}
+
+.conflict-accept-btn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 4px;
+  background: #007bff;
+  color: white;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.conflict-reject-btn {
+  padding: 4px 12px;
+  border: 1px solid var(--theme-input-border);
+  border-radius: 4px;
+  background: var(--theme-button-bg);
+  color: var(--theme-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

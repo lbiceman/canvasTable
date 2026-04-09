@@ -178,6 +178,13 @@ export class FilterEngine {
         return lower.startsWith(filterLower);
       case 'endsWith':
         return lower.endsWith(filterLower);
+      case 'regex':
+        try {
+          const regex = new RegExp(filterValue, 'i');
+          return regex.test(cellValue);
+        } catch {
+          return false;
+        }
       default:
         return true;
     }

@@ -48,13 +48,20 @@ export class EncodingDetector {
     // 4. GBK 检测
     const gbkScore = this.scoreGBK(sample);
 
+    // 5. 频率分析增强：检测常见中文/日文字符特征
+    const gbkFreqBonus = this.detectChineseFrequency(sample);
+    const sjisFreqBonus = this.detectJapaneseFrequency(sample);
+
+    const adjustedGbkScore = gbkScore + gbkFreqBonus;
+    const adjustedSjisScore = sjisScore + sjisFreqBonus;
+
     // 选择得分最高的编码
-    if (sjisScore > gbkScore && sjisScore > 0.5) {
-      return { encoding: 'shift-jis', confidence: sjisScore };
+    if (adjustedSjisScore > adjustedGbkScore && adjustedSjisScore > 0.5) {
+      return { encoding: 'shift-jis', confidence: Math.min(adjustedSjisScore, 1.0) };
     }
 
-    if (gbkScore > 0.5) {
-      return { encoding: 'gbk', confidence: gbkScore };
+    if (adjustedGbkScore > 0.5) {
+      return { encoding: 'gbk', confidence: Math.min(adjustedGbkScore, 1.0) };
     }
 
     // 如果 UTF-8 得分尚可，使用 UTF-8
@@ -176,7 +183,7 @@ export class EncodingDetector {
       }
 
       // 无效的起始字节
-      invalidMultiByte++;
+      invalidPairs++;
       i++;
     }
 
@@ -282,5 +289,79 @@ export class EncodingDetector {
     const validCount = validPairs + halfWidthKana;
     if (invalidPairs === 0 && validCount > 0) return 0.85;
     return validCount / (validCount + invalidPairs) * 0.85;
+  }
+
+  /**
+   * 检测 GBK 编码中常见中文字符频率
+   * 常用汉字在 GBK 中的首字节集中在 0xB0-0xD7 范围
+   * 返回 0-0.15 的加分
+   */
+  private detectChineseFrequency(data: Uint8Array): number {
+    let commonChineseCount = 0;
+    let totalPairs = 0;
+    let i = 0;
+
+    while (i < data.length) {
+      const byte = data[i];
+      if (byte <= 0x7F) { i++; continue; }
+
+      if (byte >= 0x81 && byte <= 0xFE && i + 1 < data.length) {
+        const nextByte = data[i + 1];
+        if (nextByte >= 0x40 && nextByte <= 0xFE && nextByte !== 0x7F) {
+          totalPairs++;
+          // GB2312 一级汉字区：首字节 0xB0-0xD7
+          if (byte >= 0xB0 && byte <= 0xD7) {
+            commonChineseCount++;
+          }
+          i += 2;
+          continue;
+        }
+      }
+      i++;
+    }
+
+    if (totalPairs === 0) return 0;
+    return (commonChineseCount / totalPairs) * 0.15;
+  }
+
+  /**
+   * 检测 Shift-JIS 编码中常见日文字符频率
+   * 平假名/片假名在 Shift-JIS 中首字节为 0x82-0x83
+   * 返回 0-0.15 的加分
+   */
+  private detectJapaneseFrequency(data: Uint8Array): number {
+    let kanaCount = 0;
+    let halfKanaCount = 0;
+    let totalNonAscii = 0;
+    let i = 0;
+
+    while (i < data.length) {
+      const byte = data[i];
+      if (byte <= 0x7F) { i++; continue; }
+
+      totalNonAscii++;
+
+      // 半角片假名
+      if (byte >= 0xA1 && byte <= 0xDF) {
+        halfKanaCount++;
+        i++;
+        continue;
+      }
+
+      // 全角假名区：首字节 0x82（平假名）或 0x83（片假名）
+      if ((byte === 0x82 || byte === 0x83) && i + 1 < data.length) {
+        const nextByte = data[i + 1];
+        if ((nextByte >= 0x40 && nextByte <= 0x7E) || (nextByte >= 0x80 && nextByte <= 0xFC)) {
+          kanaCount++;
+          i += 2;
+          continue;
+        }
+      }
+
+      i++;
+    }
+
+    if (totalNonAscii === 0) return 0;
+    return ((kanaCount + halfKanaCount) / totalNonAscii) * 0.15;
   }
 }
