@@ -4377,3 +4377,52 @@ h1 {
   color: #007bff;
   font-weight: 600;
 }
+
+/* ============================================================
+   保存成功 Toast 提示
+   ============================================================ */
+.save-toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  background-color: var(--theme-foreground);
+  color: var(--theme-background);
+  padding: 8px 24px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.save-toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.save-toast.hide {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-20px);
+}
+
+/* ============================================================
+   批注悬浮预览 Tooltip
+   ============================================================ */
+.comment-tooltip {
+  position: fixed;
+  background-color: #fffde7;
+  border: 1px solid #e0d8a8;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #333333;
+  max-width: 250px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 5000;
+  pointer-events: none;
+}

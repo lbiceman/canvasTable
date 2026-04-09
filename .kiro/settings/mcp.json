@@ -25,7 +25,7 @@
         "search_nodes",
         "read_graph",
         "delete_entities",
-        "delte_relations",
+        "delete_relations",
         "delete_observations"
       ]
     }

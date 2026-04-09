@@ -1,19 +1,139 @@
-// 操作类型
-export type ActionType =
-  | 'setCellContent'
-  | 'mergeCells'
-  | 'splitCell'
-  | 'setFontColor'
-  | 'setBgColor'
+// ============================================================
+// 历史记录管理器
+// 使用 discriminated union 为常用 ActionType 定义类型安全的数据接口
+// ============================================================
+
+import type { Cell, CellBorder, EmbeddedImage } from './types';
+
+// ============================================================
+// 常用操作的数据接口定义
+// ============================================================
+
+/** 单元格位置与内容（setCellContent） */
+export interface SetCellContentData {
+  row: number;
+  col: number;
+  content?: string;
+  comment?: string;
+  formulaContent?: string;
+}
+
+/** 合并单元格数据（mergeCells） */
+export interface MergeCellsData {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+  content?: string;
+}
+
+/** 合并/拆分操作的撤销数据 */
+export interface CellsSnapshotData {
+  cells: Partial<Cell>[][];
+}
+
+/** 拆分单元格数据（splitCell） */
+export interface SplitCellData {
+  row: number;
+  col: number;
+  rowSpan: number;
+  colSpan: number;
+  content?: string;
+}
+
+/** 范围样式操作数据（setFontColor / setBgColor 等） */
+export interface RangeStyleData {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+  color?: string;
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  align?: string;
+  verticalAlign?: string;
+  fontFamily?: string;
+  strikethrough?: boolean;
+}
+
+/** 范围样式撤销数据（保存每个单元格的旧值） */
+export interface RangeStyleUndoData {
+  cells: Array<{
+    row: number;
+    col: number;
+    color?: string;
+    size?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    align?: string;
+    verticalAlign?: string;
+    fontFamily?: string;
+    strikethrough?: boolean;
+  }>;
+}
+
+/** 清除内容数据（clearContent） */
+export interface ClearContentData {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}
+
+/** 行操作数据（insertRows / deleteRows） */
+export interface RowOperationData {
+  rowIndex: number;
+  count?: number;
+  rows?: Partial<Cell>[][];
+  rowHeights?: number[];
+}
+
+/** 边框操作数据（setBorder） */
+export interface SetBorderData {
+  cells: Array<{
+    row: number;
+    col: number;
+    border: CellBorder | undefined;
+  }>;
+}
+
+/** 内嵌图片操作数据（setEmbeddedImage） */
+export interface SetEmbeddedImageData {
+  row: number;
+  col: number;
+  image: EmbeddedImage | undefined;
+}
+
+// ============================================================
+// Discriminated Union 定义
+// ============================================================
+
+/** 常用操作类型的 discriminated union */
+export type HistoryAction =
+  | { type: 'setCellContent'; data: SetCellContentData; undoData: SetCellContentData }
+  | { type: 'mergeCells'; data: MergeCellsData; undoData: CellsSnapshotData }
+  | { type: 'splitCell'; data: SplitCellData; undoData: CellsSnapshotData }
+  | { type: 'setFontColor'; data: RangeStyleData; undoData: RangeStyleUndoData }
+  | { type: 'setBgColor'; data: RangeStyleData; undoData: RangeStyleUndoData }
+  | { type: 'clearContent'; data: ClearContentData; undoData: CellsSnapshotData }
+  | { type: 'insertRows'; data: RowOperationData; undoData: RowOperationData }
+  | { type: 'deleteRows'; data: RowOperationData; undoData: RowOperationData }
+  | { type: 'setBorder'; data: SetBorderData; undoData: SetBorderData }
+  | { type: 'setEmbeddedImage'; data: SetEmbeddedImageData; undoData: SetEmbeddedImageData }
+  // 通用 fallback：不常用的操作类型使用 unknown 数据
+  | { type: FallbackActionType; data: unknown; undoData: unknown };
+
+/** 不常用的操作类型（使用通用 fallback 接口） */
+export type FallbackActionType =
   | 'setFontSize'
   | 'setFontBold'
   | 'setFontItalic'
   | 'setFontUnderline'
   | 'setFontAlign'
   | 'setVerticalAlign'
-  | 'insertRows'
-  | 'deleteRows'
-  | 'clearContent'
   | 'resizeRow'
   | 'resizeCol'
   | 'setFormat'
@@ -23,59 +143,40 @@ export type ActionType =
   | 'setConditionalFormat'
   | 'setSort'
   | 'setFilter'
-  // 批量删除行/列
   | 'batchDeleteRows'
   | 'batchDeleteCols'
-  // 隐藏/取消隐藏行/列
   | 'hideRows'
   | 'hideCols'
   | 'unhideRows'
   | 'unhideCols'
-  // 分组操作
   | 'createGroup'
   | 'removeGroup'
   | 'collapseGroup'
   | 'expandGroup'
-  // 冻结窗格
   | 'freeze'
-  // 填充
   | 'fill'
-  // 拖拽移动
   | 'dragMove'
-  // 选择性粘贴
   | 'pasteSpecial'
-  // 查找替换
   | 'replace'
   | 'replaceAll'
-  // 扩展功能操作类型
-  | 'setHyperlink'       // 设置/编辑超链接
-  | 'removeHyperlink'    // 移除超链接
-  | 'formatPainter'      // 格式刷应用
-  | 'reorderRows'        // 行重排序
-  | 'reorderCols'        // 列重排序
-  | 'clearFormat'        // 清除格式
-  | 'scriptExecution'   // 脚本执行（批量修改）
-  // 边框与样式操作
-  | 'setBorder'          // 设置单元格边框
-  | 'setFontFamily'      // 设置字体族
-  | 'setStrikethrough'   // 设置删除线
-  | 'setEmbeddedImage';  // 设置单元格内嵌图片
+  | 'setHyperlink'
+  | 'removeHyperlink'
+  | 'formatPainter'
+  | 'reorderRows'
+  | 'reorderCols'
+  | 'clearFormat'
+  | 'scriptExecution'
+  | 'setFontFamily'
+  | 'setStrikethrough';
 
+/** 所有操作类型的联合（保持向后兼容） */
+export type ActionType = HistoryAction['type'];
 
 /**
- * 历史操作数据类型
- * 使用 unknown 替代 any，保持灵活性同时消除 any 类型
- * 不同 ActionType 的数据结构各异，调用方需自行进行类型断言
+ * 历史操作数据类型（向后兼容别名）
+ * @deprecated 使用 HistoryAction 的 discriminated union 替代
  */
-// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents -- 显式列出支持的类型以提高可读性
 export type HistoryActionData = unknown;
-
-// 历史记录项
-export interface HistoryAction {
-  type: ActionType;
-  data: HistoryActionData;
-  undoData: HistoryActionData;
-}
 
 // 历史记录管理器
 export class HistoryManager {

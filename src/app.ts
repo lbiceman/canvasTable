@@ -43,6 +43,7 @@ import type { SheetPrintMetadata } from './print-export/print-metadata';
 import { PrintPreviewDialog } from './print-export/print-preview-dialog';
 import { FormatDialog } from './format-dialog';
 import type { FormatDialogValues } from './format-dialog';
+import { ValidationDialog } from './validation-dialog';
 
 export class SpreadsheetApp {
   private model: SpreadsheetModel;
@@ -121,6 +122,9 @@ export class SpreadsheetApp {
   // 验证提示 tooltip
   private validationTooltip: HTMLDivElement | null = null;
   private validationTooltipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // 批注悬浮预览 tooltip
+  private commentTooltip: HTMLDivElement | null = null;
 
   // 条件格式设置面板
   private conditionalFormatPanel: HTMLDivElement | null = null;
@@ -281,6 +285,9 @@ export class SpreadsheetApp {
 
     // 创建验证提示 tooltip
     this.createValidationTooltip();
+
+    // 创建批注悬浮预览 tooltip
+    this.createCommentTooltip();
 
     // 创建条件格式设置面板
     this.createConditionalFormatPanel();
@@ -971,6 +978,35 @@ export class SpreadsheetApp {
     this.validationTooltip.className = 'validation-tooltip';
     this.validationTooltip.style.display = 'none';
     document.body.appendChild(this.validationTooltip);
+  }
+
+  /**
+   * 创建批注悬浮预览 tooltip DOM 元素
+   */
+  private createCommentTooltip(): void {
+    this.commentTooltip = document.createElement('div');
+    this.commentTooltip.className = 'comment-tooltip';
+    this.commentTooltip.style.display = 'none';
+    document.body.appendChild(this.commentTooltip);
+  }
+
+  /**
+   * 显示批注悬浮预览 tooltip
+   */
+  private showCommentTooltip(clientX: number, clientY: number, comment: string): void {
+    if (!this.commentTooltip) return;
+    this.commentTooltip.textContent = comment;
+    this.commentTooltip.style.left = `${clientX + 10}px`;
+    this.commentTooltip.style.top = `${clientY + 10}px`;
+    this.commentTooltip.style.display = 'block';
+  }
+
+  /**
+   * 隐藏批注悬浮预览 tooltip
+   */
+  private hideCommentTooltip(): void {
+    if (!this.commentTooltip) return;
+    this.commentTooltip.style.display = 'none';
   }
 
   // 显示验证提示 tooltip
@@ -1916,6 +1952,19 @@ export class SpreadsheetApp {
         this.searchDialog.show('findReplace');
         return;
       }
+      // 允许 Ctrl+S 保存
+      if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+        event.preventDefault();
+        this.saveToLocalStorage();
+        this.showSaveToast();
+        return;
+      }
+      // 允许 Ctrl+P 打印
+      if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
+        event.preventDefault();
+        this.openPrintPreview();
+        return;
+      }
       return;
     }
 
@@ -2028,6 +2077,21 @@ export class SpreadsheetApp {
     if ((event.ctrlKey || event.metaKey) && event.key === ';') {
       event.preventDefault();
       this.insertCurrentDate();
+      return;
+    }
+
+    // Ctrl+S / Cmd+S：保存到 localStorage
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      event.preventDefault();
+      this.saveToLocalStorage();
+      this.showSaveToast();
+      return;
+    }
+
+    // Ctrl+P / Cmd+P：打开打印预览
+    if ((event.ctrlKey || event.metaKey) && event.key === 'p') {
+      event.preventDefault();
+      this.openPrintPreview();
       return;
     }
 
@@ -2486,6 +2550,8 @@ export class SpreadsheetApp {
   private pasteSpecialDialog: PasteSpecialDialog;
   // 格式对话框
   private formatDialog: FormatDialog = new FormatDialog();
+  // 数据验证对话框
+  private validationDialog: ValidationDialog = new ValidationDialog();
 
   // 处理复制
   private handleCopy(): void {
@@ -4013,6 +4079,21 @@ export class SpreadsheetApp {
         }
       }
     }
+
+    // 【批注悬浮预览】检测鼠标所在单元格是否有批注
+    if (!this.selectionStart) {
+      const cellPosition = this.renderer.getCellAtPosition(x, y);
+      if (cellPosition) {
+        const comment = this.model.getCellComment(cellPosition.row, cellPosition.col);
+        if (comment) {
+          this.showCommentTooltip(event.clientX, event.clientY, comment);
+        } else {
+          this.hideCommentTooltip();
+        }
+      } else {
+        this.hideCommentTooltip();
+      }
+    }
   }
 
   // 处理鼠标松开事件
@@ -5186,6 +5267,37 @@ export class SpreadsheetApp {
   }
 
   /**
+   * 打开数据验证设置对话框
+   * 回填当前选中单元格的已有验证规则
+   */
+  private openValidationDialog(): void {
+    const activeSelection = this.multiSelection.getActiveSelection();
+    if (!activeSelection) return;
+
+    const { startRow, startCol } = activeSelection;
+    const cell = this.model.getCell(startRow, startCol);
+    const existingRule = cell?.validation;
+
+    this.validationDialog.open(existingRule, (rule) => {
+      // 对选区内所有单元格设置验证规则
+      const selections = this.multiSelection.getSelections();
+      for (const sel of selections) {
+        const minRow = Math.min(sel.startRow, sel.endRow);
+        const maxRow = Math.max(sel.startRow, sel.endRow);
+        const minCol = Math.min(sel.startCol, sel.endCol);
+        const maxCol = Math.max(sel.startCol, sel.endCol);
+        for (let r = minRow; r <= maxRow; r++) {
+          for (let c = minCol; c <= maxCol; c++) {
+            this.model.setCellValidation(r, c, rule);
+          }
+        }
+      }
+      this.renderer.render();
+      this.updateUndoRedoButtons();
+    });
+  }
+
+  /**
    * 将格式对话框的设置应用到选中单元格
    */
   private applyFormatDialogValues(values: FormatDialogValues): void {
@@ -5284,6 +5396,27 @@ export class SpreadsheetApp {
       this.model.setCellComment(row, col, comment);
       this.renderer.render();
     }
+  }
+
+  /**
+   * 显示保存成功的 toast 提示，2 秒后自动消失
+   */
+  private showSaveToast(): void {
+    const toast = document.createElement('div');
+    toast.className = 'save-toast';
+    toast.textContent = '已保存';
+    document.body.appendChild(toast);
+    // 触发动画
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
+    setTimeout(() => {
+      toast.classList.remove('show');
+      toast.classList.add('hide');
+      setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 300);
+    }, 2000);
   }
 
   /**
@@ -7748,6 +7881,14 @@ export class SpreadsheetApp {
         // 同步当前选区到脚本引擎
         this.scriptEngine.setSelection(this.multiSelection.getActiveSelection());
         this.scriptEditor.show();
+      });
+    }
+
+    // 数据验证按钮
+    const validationBtn = document.getElementById('validation-btn');
+    if (validationBtn) {
+      validationBtn.addEventListener('click', () => {
+        this.openValidationDialog();
       });
     }
   }
