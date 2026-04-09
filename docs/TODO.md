@@ -1,60 +1,98 @@
-# ice-excel 待办事项
+## 新增待办
 
-## 已完成 ✅
+### P0 - 核心电子表格功能
 
-- [x] 脚本引擎沙箱逃逸修复（constructor/__proto__/prototype 拦截）
-- [x] 数据验证 - 自定义验证接入公式引擎
-- [x] HistoryAction data/undoData 从 any 改为 unknown
-- [x] 插件自定义公式接入 FunctionRegistry（含 cleanup 反注册）
-- [x] 条件格式 UI 管理面板（创建/编辑/删除/预览）
-- [x] 透视表配置持久化（JSON 导入导出 + localStorage）
-- [x] 数学函数补全：RAND, RANDBETWEEN, LOG, LN, EXP, PI, SIGN
-- [x] 统计函数补全：MEDIAN, STDEV, VAR, LARGE, SMALL, RANK, PERCENTILE
-- [x] 文本函数补全：REPLACE, REPT, EXACT, CHAR, CODE, CLEAN, VALUE
-- [x] 日期函数补全：HOUR, MINUTE, SECOND, TIME, WEEKDAY, WEEKNUM, NETWORKDAYS, WORKDAY
-- [x] 查找函数补全：XLOOKUP, CHOOSE, ROW, COLUMN, ROWS, COLUMNS, TRANSPOSE
+- [x] **拖拽移动单元格/选区**
+  - 选中单元格后拖拽边框可移动内容到目标位置
+  - 支持 Ctrl+拖拽 复制模式
 
----
+- [x] **单元格内换行（Alt+Enter）**
+  - 编辑模式下按 Alt+Enter 插入换行符
+  - 配合 wrapText 自动换行渲染
 
-## P0 - 核心交互缺失
+- [x] **行/列隐藏与取消隐藏**
+  - 右键菜单支持隐藏选中行/列
+  - 隐藏行/列的视觉指示（双线标记）
+  - 右键菜单支持取消隐藏
 
-- [x] **Ctrl+S 保存快捷键**
-  - `handleKeyDown` 中无 `key === 's'` 处理
-  - 用户无法通过键盘保存到 localStorage
-  - 文件：`src/app.ts` → `handleKeyDown()`
+- [x] **右键菜单列操作**
+  - 当前右键菜单仅支持行操作
+  - 补充：插入列、删除列、列宽调整、隐藏列等
 
-- [x] **数据验证缺少 UI 设置入口**
-  - 验证引擎和模型层已实现，渲染层能画下拉箭头
-  - 但工具栏和右键菜单均无"数据验证"入口
-  - 用户无法通过界面设置验证规则
-  - 需要：工具栏按钮 + 设置对话框（支持下拉列表/数值范围/文本长度/自定义表达式）
-  - 文件：`src/ui-controls.ts`、新建 `src/validation-dialog.ts`、`src/app.ts`
+### P1 - 公式与计算
 
-- [x] **批注悬浮预览**
-  - 批注设置/获取/红色三角标记/右键菜单入口均已实现
-  - 但鼠标悬停有批注单元格时无 tooltip 显示内容
-  - 需要：canvas mousemove 事件中检测批注单元格，显示浮动提示
-  - 文件：`src/app.ts`（mousemove 处理）、`src/renderer.ts`
+- [x] **公式输入自动补全/提示**
+  - 输入 `=` 后弹出函数建议列表
+  - 支持模糊搜索、参数提示
 
-## P1 - 快捷键与状态栏
+- [x] **公式错误用户友好提示**
+  - 循环引用、语法错误等给出明确中文提示
+  - 错误单元格高亮标记
 
-- [x] **Ctrl+P 打印快捷键**
-  - PrintPreviewDialog 已完整实现，但无快捷键入口
-  - 文件：`src/app.ts` → `handleKeyDown()`
+- [x] **跨工作表引用公式**
+  - 支持 `Sheet2!A1` 语法引用其他工作表数据
+  - 公式栏中点击其他工作表单元格自动插入引用
 
-- [x] **状态栏选区统计信息**
-  - 底部状态栏只显示单元格位置
-  - 缺少选区的求和/平均值/计数统计（Excel 标配功能）
-  - 文件：`src/app.ts`、`src/style.css`
+- [x] **财务函数补全**
+  - PMT, FV, PV, NPV, IRR, NPER, RATE 等常用财务函数
 
-- [x] **公式栏名称框**
-  - Excel 左上角名称框：显示当前单元格地址（如 A1），支持输入地址跳转
-  - 当前公式栏组件无此功能
-  - 文件：`src/formula-bar/formula-bar.ts`
+### P2 - 数据处理
 
-## P2 - 类型安全
+- [x] **多级排序 UI**
+  - 排序对话框支持添加多个排序条件
+  - 支持按值、按颜色排序
 
-- [x] **HistoryAction discriminated union 改造**
-  - 当前 data/undoData 为 unknown，调用方需大量类型断言
-  - 建议为每种 ActionType 定义对应的数据接口，用 discriminated union 替代
-  - 文件：`src/history-manager.ts`
+- [x] **高级筛选**
+  - 自定义条件组合筛选（AND/OR）
+  - 支持正则表达式匹配
+
+- [x] **数据分列**
+  - 按分隔符（逗号、制表符、自定义）拆分单元格内容到多列
+
+- [x] **去重功能**
+  - 选区内去除重复行
+  - 支持选择比较列
+
+### P3 - 导入导出
+
+- [x] **XLSX 导出样式保真度提升**
+  - 边框、合并单元格、条件格式等样式完整导出
+  - 图表导出支持
+
+- [x] **PDF 导出分页优化**
+  - 智能分页避免截断合并单元格
+  - 页眉页脚中的页码/总页数
+
+- [x] **CSV 导入编码自动检测优化**
+  - 提升 GBK/UTF-8/Shift-JIS 等编码的识别准确率
+
+### P4 - 协同编辑
+
+- [x] **协同冲突解决提示**
+  - 操作冲突时给用户可视化提示
+  - 支持接受/拒绝远程修改
+
+- [x] **编辑历史/版本回溯**
+  - 保存历史版本快照
+  - 支持查看和恢复到指定版本
+
+- [x] **操作权限控制**
+  - 支持只读/可编辑权限区分
+  - 锁定特定单元格区域
+
+### P5 - 用户体验
+
+- [x] **工具栏字体选择器**
+  - 下拉选择字体族（宋体、微软雅黑、Arial 等）
+  - 字体预览效果
+
+- [x] **颜色选择器增强**
+  - 自定义颜色输入（HEX/RGB）
+  - 最近使用颜色记录
+
+- [x] **单元格快速样式预设**
+  - 预定义样式（标题、强调、数据等）
+  - 一键应用样式组合
+
+- [x] **列宽拖拽提示**
+  - 拖拽调整列宽时显示当前宽度数值
