@@ -5,7 +5,7 @@ import type { Cell, FillDirection, InternalClipboard, ClipboardCellData, PasteSp
 import { PasteSpecialDialog } from './paste-special-dialog';
 import { InlineEditor } from './inline-editor';
 import { DataManager } from './data-manager';
-import { SearchDialog, SearchResult } from './search-dialog';
+import { SearchDialog, SearchResult, SearchOptions } from './search-dialog';
 import { CollaborationEngine } from './collaboration/collaboration-engine';
 import { CollabOperation } from './collaboration/types';
 import { ValidationEngine } from './validation';
@@ -28,6 +28,7 @@ import { DropdownSelector } from './dropdown-selector';
 import { RowColReorder } from './row-col-reorder';
 import { CellContextMenu } from './cell-context-menu';
 import { Modal } from './modal';
+import { NameManagerDialog } from './name-manager-dialog';
 import type { CellContextMenuCallbacks } from './cell-context-menu';
 import { PivotTable } from './pivot-table/pivot-table';
 import { PivotTablePanel } from './pivot-table/pivot-table-panel';
@@ -156,6 +157,7 @@ export class SpreadsheetApp {
   private cellContextMenu!: CellContextMenu;
   private pivotTable!: PivotTable;
   private pivotTablePanel!: PivotTablePanel;
+  private nameManagerDialog!: NameManagerDialog;
   private scriptEngine!: ScriptEngine;
   private scriptEditor!: ScriptEditor;
   private pluginManager!: PluginManager;
@@ -3055,28 +3057,97 @@ export class SpreadsheetApp {
   }
 
   // 处理搜索
-  private handleSearch(keyword: string): SearchResult[] {
+  private handleSearch(keyword: string, options: SearchOptions): SearchResult[] {
     const results: SearchResult[] = [];
-    const lowerKeyword = keyword.toLowerCase();
 
-    for (let row = 0; row < this.model.getRowCount(); row++) {
-      for (let col = 0; col < this.model.getColCount(); col++) {
-        const cell = this.model.getCell(row, col);
-        if (cell && cell.content && cell.content.toLowerCase().includes(lowerKeyword)) {
-          results.push({
-            row,
-            col,
-            content: cell.content
-          });
+    // 构建匹配函数
+    const matchFn = this.buildMatchFunction(keyword, options);
+    if (!matchFn) return results;
+
+    if (options.scope === 'allSheets' && this.sheetManager) {
+      // 跨工作表搜索
+      const allSheets = this.sheetManager.getAllSheets();
+      const activeSheet = this.sheetManager.getActiveSheet();
+
+      for (const sheet of allSheets) {
+        if (sheet.id === activeSheet.id) {
+          // 当前工作表直接使用 model
+          this.searchInModel(this.model, matchFn, results, sheet.name);
+        } else {
+          // 其他工作表通过 sheetManager 获取 model
+          const sheetModel = this.sheetManager.getModelBySheetId(sheet.id);
+          if (sheetModel) {
+            this.searchInModel(sheetModel, matchFn, results, sheet.name);
+          }
         }
       }
+    } else {
+      // 仅搜索当前工作表
+      this.searchInModel(this.model, matchFn, results);
     }
 
     return results;
   }
 
+  /** 构建匹配函数 */
+  private buildMatchFunction(keyword: string, options: SearchOptions): ((content: string) => boolean) | null {
+    try {
+      if (options.useRegex) {
+        // 正则模式
+        const flags = options.caseSensitive ? 'g' : 'gi';
+        const regex = new RegExp(keyword, flags);
+        if (options.wholeWord) {
+          const wordRegex = new RegExp(`\\b(?:${keyword})\\b`, flags);
+          return (content: string) => wordRegex.test(content);
+        }
+        return (content: string) => regex.test(content);
+      } else {
+        // 普通文本模式
+        if (options.wholeWord) {
+          // 全字匹配：转义特殊字符后用 \b 包裹
+          const escaped = keyword.split('').map(ch => /[.*+?^${}()|[\]\\]/.test(ch) ? '\\' + ch : ch).join('');
+          const flags = options.caseSensitive ? 'g' : 'gi';
+          const regex = new RegExp(`\\b${escaped}\\b`, flags);
+          return (content: string) => regex.test(content);
+        }
+        if (options.caseSensitive) {
+          return (content: string) => content.includes(keyword);
+        }
+        const lowerKeyword = keyword.toLowerCase();
+        return (content: string) => content.toLowerCase().includes(lowerKeyword);
+      }
+    } catch {
+      return null;
+    }
+  }
+
+  /** 在指定 model 中搜索 */
+  private searchInModel(model: SpreadsheetModel, matchFn: (content: string) => boolean, results: SearchResult[], sheetName?: string): void {
+    for (let row = 0; row < model.getRowCount(); row++) {
+      for (let col = 0; col < model.getColCount(); col++) {
+        const cell = model.getCell(row, col);
+        if (cell && cell.content && matchFn(cell.content)) {
+          results.push({ row, col, content: cell.content, sheetName });
+        }
+      }
+    }
+  }
+
+  /** 在当前工作表中搜索 */
+
   // 处理搜索结果导航
   private handleSearchNavigate(result: SearchResult): void {
+    // 如果是跨工作表搜索结果，先切换到目标工作表
+    if (result.sheetName && this.sheetManager) {
+      const currentSheet = this.sheetManager.getActiveSheet();
+      if (currentSheet.name !== result.sheetName) {
+        const targetSheet = this.sheetManager.getSheetByName(result.sheetName);
+        if (targetSheet) {
+          this.sheetManager.switchSheet(targetSheet.id);
+        }
+      }
+    }
+
     // 选中找到的单元格
     this.multiSelection.setSingle({
       startRow: result.row,
@@ -3100,7 +3171,7 @@ export class SpreadsheetApp {
   }
 
   // 替换当前匹配单元格内容
-  private handleReplace(searchText: string, replaceText: string): boolean {
+  private handleReplace(searchText: string, replaceText: string, options?: SearchOptions): boolean {
     const activeSelection = this.multiSelection.getActiveSelection();
     if (!activeSelection) return false;
 
@@ -3108,17 +3179,15 @@ export class SpreadsheetApp {
     const cell = this.model.getCell(row, col);
     if (!cell || !cell.content) return false;
 
-    const lowerSearch = searchText.toLowerCase();
-    if (!cell.content.toLowerCase().includes(lowerSearch)) return false;
+    // 使用搜索选项构建匹配函数
+    const searchOpts = options || this.searchDialog.getOptions();
+    const matchFn = this.buildMatchFunction(searchText, searchOpts);
+    if (!matchFn || !matchFn(cell.content)) return false;
 
     const oldContent = cell.content;
-    // 替换所有出现的搜索文本（不区分大小写）
-    // 转义正则特殊字符
-    const escapedSearch = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const newContent = cell.content.replace(
-      new RegExp(escapedSearch, 'gi'),
-      replaceText
-    );
+    const replaceRegex = this.buildReplaceRegex(searchText, searchOpts);
+    if (!replaceRegex) return false;
+    const newContent = cell.content.replace(replaceRegex, replaceText);
 
     // 使用 setCellContentNoHistory 写入，手动记录历史
     this.model.setCellContentNoHistory(row, col, newContent);
@@ -3134,23 +3203,50 @@ export class SpreadsheetApp {
   }
 
 
+
+  /** 构建替换用的正则表达式 */
+  private buildReplaceRegex(searchText: string, options: SearchOptions): RegExp | null {
+    try {
+      const flags = options.caseSensitive ? 'g' : 'gi';
+      if (options.useRegex) {
+        if (options.wholeWord) {
+          return new RegExp('\\b(?:' + searchText + ')\\b', flags);
+        }
+        return new RegExp(searchText, flags);
+      } else {
+        // 转义正则特殊字符
+        const escaped = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\' + String.fromCharCode(36) + '&');
+        if (options.wholeWord) {
+          return new RegExp('\\b' + escaped + '\\b', flags);
+        }
+        return new RegExp(escaped, flags);
+      }
+    } catch {
+      return null;
+    }
+  }
+
   // 全部替换所有匹配单元格内容
-  private handleReplaceAll(searchText: string, replaceText: string): number {
-    const results = this.handleSearch(searchText);
+  private handleReplaceAll(searchText: string, replaceText: string, options?: SearchOptions): number {
+    const searchOpts = options || this.searchDialog.getOptions();
+    const results = this.handleSearch(searchText, searchOpts);
     if (results.length === 0) return 0;
 
     // 收集所有需要替换的单元格旧内容
     const undoCells: Array<{ row: number; col: number; content: string }> = [];
     const redoCells: Array<{ row: number; col: number; content: string }> = [];
-    const regex = new RegExp(searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const replaceRegex = this.buildReplaceRegex(searchText, searchOpts);
+    if (!replaceRegex) return 0;
 
     for (const result of results) {
+      // 跨工作表替换暂不支持，仅替换当前工作表
+      if (result.sheetName) continue;
       const { row, col } = result;
       const cell = this.model.getCell(row, col);
       if (!cell) continue;
 
       const oldContent = cell.content;
-      const newContent = oldContent.replace(regex, replaceText);
+      const newContent = oldContent.replace(replaceRegex, replaceText);
 
       undoCells.push({ row, col, content: oldContent });
       redoCells.push({ row, col, content: newContent });
@@ -7639,6 +7735,12 @@ export class SpreadsheetApp {
     this.pivotTable = new PivotTable(this.model);
     this.pivotTablePanel = new PivotTablePanel(this.pivotTable, this.model);
 
+    // 名称管理器
+    this.nameManagerDialog = new NameManagerDialog(this.model.getNamedRangeManager());
+    this.nameManagerDialog.setUpdateCallback(() => {
+      this.renderer.render();
+    });
+
     // 脚本引擎和编辑器
     this.scriptEngine = new ScriptEngine(this.model, historyManager);
     this.scriptEditor = new ScriptEditor(this.scriptEngine);
@@ -7979,6 +8081,14 @@ export class SpreadsheetApp {
         // 同步当前选区到脚本引擎
         this.scriptEngine.setSelection(this.multiSelection.getActiveSelection());
         this.scriptEditor.show();
+      });
+    }
+
+    // 名称管理器按钮
+    const nameManagerBtn = document.getElementById('name-manager-btn');
+    if (nameManagerBtn) {
+      nameManagerBtn.addEventListener('click', () => {
+        this.nameManagerDialog.show();
       });
     }
 

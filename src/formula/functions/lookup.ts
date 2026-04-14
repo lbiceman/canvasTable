@@ -690,6 +690,71 @@ export function registerLookupFunctions(registry: FunctionRegistry): void {
     },
   });
 
+  // LOOKUP - 向量查找
+  registry.register({
+    name: 'LOOKUP',
+    category: 'lookup',
+    description: '在一行或一列中查找值，返回另一行或列中同一位置的值',
+    minArgs: 2,
+    maxArgs: 3,
+    params: [
+      { name: 'lookup_value', description: '要查找的值', type: 'any' },
+      { name: 'lookup_vector', description: '查找区域（单行或单列，必须升序排列）', type: 'range' },
+      { name: 'result_vector', description: '返回区域（单行或单列，与查找区域大小相同）', type: 'range', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const lookupValue = args[0];
+      if (isError(lookupValue)) return lookupValue;
+
+      // 获取查找向量
+      let lookupVector: FormulaValue[];
+      const rawLookup = args[1];
+      if (Array.isArray(rawLookup)) {
+        lookupVector = flattenToOneDimension(rawLookup as FormulaValue[][]);
+      } else {
+        lookupVector = [rawLookup];
+      }
+
+      // 获取结果向量（如果提供）
+      let resultVector: FormulaValue[];
+      if (args.length >= 3) {
+        const rawResult = args[2];
+        if (Array.isArray(rawResult)) {
+          resultVector = flattenToOneDimension(rawResult as FormulaValue[][]);
+        } else {
+          resultVector = [rawResult];
+        }
+      } else {
+        // 两参数形式：查找向量同时作为结果向量
+        resultVector = lookupVector;
+      }
+
+      // 近似匹配（升序排列）：找到小于等于 lookup_value 的最大值
+      let bestIndex = -1;
+      for (let i = 0; i < lookupVector.length; i++) {
+        const cellValue = lookupVector[i];
+        if (isError(cellValue)) continue;
+        const cmp = compareValues(cellValue, lookupValue);
+        if (cmp <= 0) {
+          bestIndex = i;
+        } else {
+          // 假设已升序排列，遇到大于目标值的就停止
+          break;
+        }
+      }
+
+      if (bestIndex === -1) {
+        return makeError('#N/A', 'LOOKUP 未找到匹配值');
+      }
+
+      // 返回结果向量中对应位置的值
+      if (bestIndex < resultVector.length) {
+        return resultVector[bestIndex];
+      }
+      return makeError('#N/A', 'LOOKUP 结果向量索引越界');
+    },
+  });
+
   // TRANSPOSE - 转置数组
   registry.register({
     name: 'TRANSPOSE',

@@ -1561,6 +1561,304 @@ h1 {
   white-space: nowrap;
 }
 
+/* 搜索选项行样式 */
+.search-options-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.search-option-btn {
+  width: 28px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--theme-status-text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', monospace;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.search-option-btn:hover {
+  background: var(--theme-button-hover-bg);
+  border-color: rgba(128, 128, 128, 0.3);
+}
+
+.search-option-btn.active {
+  background: rgba(0, 123, 255, 0.15);
+  color: #007bff;
+  border-color: rgba(0, 123, 255, 0.4);
+}
+
+.search-scope-select {
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 3px;
+  font-size: 11px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  outline: none;
+  cursor: pointer;
+}
+
+/* ============================================================
+   名称管理器对话框样式
+   ============================================================ */
+
+.name-manager-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.name-manager-dialog {
+  background: var(--theme-background);
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 560px;
+  max-height: 480px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.nm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--theme-grid-line);
+}
+
+.nm-header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+}
+
+.nm-close-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--theme-foreground);
+  cursor: pointer;
+}
+
+.nm-close-btn:hover {
+  background: var(--theme-button-hover-bg);
+}
+
+.nm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.nm-btn {
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 4px;
+  background: var(--theme-button-bg);
+  color: var(--theme-button-text);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.nm-btn:hover {
+  background: var(--theme-button-hover-bg);
+}
+
+.nm-filter-wrapper {
+  flex: 1;
+}
+
+.nm-filter-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.nm-filter-input:focus {
+  border-color: #007bff;
+}
+
+.nm-list-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  background: var(--theme-header-bg);
+  border-bottom: 1px solid var(--theme-grid-line);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--theme-status-text);
+}
+
+.nm-list {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 120px;
+  max-height: 300px;
+}
+
+.nm-list-item {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--theme-grid-line);
+  font-size: 12px;
+  color: var(--theme-foreground);
+  transition: background 0.1s;
+}
+
+.nm-list-item:hover {
+  background: var(--theme-highlight-bg);
+}
+
+.nm-col-name { flex: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nm-col-range { flex: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--theme-status-text); }
+.nm-col-scope { flex: 1; color: var(--theme-status-text); }
+.nm-col-actions { flex: 1; display: flex; gap: 4px; justify-content: flex-end; }
+
+.nm-action-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+.nm-action-btn:hover {
+  opacity: 1;
+  background: var(--theme-button-hover-bg);
+}
+
+.nm-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--theme-status-text);
+  font-size: 13px;
+}
+
+/* 名称管理器表单对话框 */
+.nm-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 2100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nm-form-dialog {
+  background: var(--theme-background);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  width: 360px;
+}
+
+.nm-form-dialog h4 {
+  margin: 0 0 16px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--theme-foreground);
+}
+
+.nm-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.nm-form-row label {
+  width: 70px;
+  font-size: 12px;
+  color: var(--theme-foreground);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.nm-form-row input {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--theme-grid-line);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--theme-input-bg);
+  color: var(--theme-foreground);
+  outline: none;
+}
+
+.nm-form-row input:focus {
+  border-color: #007bff;
+}
+
+.nm-form-row input[readonly] {
+  background: var(--theme-header-bg);
+  color: var(--theme-status-text);
+}
+
+.nm-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.nm-form-submit {
+  background: #007bff !important;
+  color: #fff !important;
+  border-color: #007bff !important;
+}
+
+.nm-form-submit:hover {
+  background: #0056b3 !important;
+}
+
 
 /* ============================================================
    协同编辑 UI 样式

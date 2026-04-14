@@ -1298,6 +1298,19 @@ function renderToolbarRow2(toolbar: HTMLElement): void {
   pivotTableBtn.appendChild(pivotSpan);
   toolbarGroup.appendChild(pivotTableBtn);
 
+  // 名称管理器按钮
+  const nameManagerBtn = document.createElement('button');
+  nameManagerBtn.id = 'name-manager-btn';
+  nameManagerBtn.title = '名称管理器';
+  nameManagerBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 3h11M2 7.5h11M2 12h7" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <circle cx="12" cy="11" r="2" stroke="currentColor" stroke-width="1"/>
+              </svg>`;
+  const nameManagerSpan = document.createElement('span');
+  nameManagerSpan.textContent = '名称';
+  nameManagerBtn.appendChild(nameManagerSpan);
+  toolbarGroup.appendChild(nameManagerBtn);
+
   // 分隔符
   const separator = document.createElement('div');
   separator.className = 'separator';
