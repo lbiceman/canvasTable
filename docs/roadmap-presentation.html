@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Canvas Excel - 功能路线图</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+body {
+  font-family: 'Inter', 'Microsoft YaHei', sans-serif;
+  background: #0f0f1a;
+  color: #fff;
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+}
+
+.slide {
+  display: none;
+  width: 100vw;
+  height: 100vh;
+  padding: 60px 80px;
+  position: absolute;
+  top: 0; left: 0;
+  animation: fadeIn 0.5s ease;
+}
+.slide.active { display: flex; flex-direction: column; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== 封面 ===== */
+.slide-cover {
+  background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0d2137 100%);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.slide-cover .logo {
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: 8px;
+  text-transform: uppercase;
+  color: #64ffda;
+  margin-bottom: 30px;
+}
+.slide-cover h1 {
+  font-size: 64px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #fff 0%, #64ffda 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 20px;
+  line-height: 1.2;
+}
+.slide-cover .subtitle {
+  font-size: 22px;
+  color: #8892b0;
+  font-weight: 300;
+}
+.slide-cover .date {
+  margin-top: 60px;
+  font-size: 16px;
+  color: #495670;
+  letter-spacing: 3px;
+}
+
+/* ===== 目录页 ===== */
+.slide-toc {
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+  justify-content: center;
+}
+.slide-toc h2 {
+  font-size: 42px;
+  font-weight: 700;
+  margin-bottom: 50px;
+  color: #ccd6f6;
+}
+.toc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  max-width: 900px;
+}
+.toc-item {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 30px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: all 0.3s;
+  cursor: pointer;
+}
+.toc-item:hover {
+  background: rgba(100,255,218,0.05);
+  border-color: rgba(100,255,218,0.2);
+  transform: translateX(8px);
+}
+.toc-num {
+  font-size: 36px;
+  font-weight: 800;
+  color: #64ffda;
+  min-width: 50px;
+}
+.toc-label {
+  font-size: 20px;
+  font-weight: 500;
+  color: #ccd6f6;
+}
+.toc-count {
+  font-size: 14px;
+  color: #495670;
+  margin-top: 4px;
+}
+
+/* ===== 内容页通用 ===== */
+.slide-content {
+  background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 100%);
+}
+.slide-header {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 50px;
+}
+.slide-tag {
+  padding: 8px 20px;
+  border-radius: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+.tag-p1 { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
+.tag-p2 { background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+.tag-p4 { background: rgba(236,72,153,0.15); color: #f472b6; border: 1px solid rgba(236,72,153,0.3); }
+.tag-p5 { background: rgba(34,211,238,0.15); color: #22d3ee; border: 1px solid rgba(34,211,238,0.3); }
+
+.slide-title {
+  font-size: 38px;
+  font-weight: 700;
+  color: #ccd6f6;
+}
+
+.cards-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  flex: 1;
+}
+.cards-grid-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.card {
+  padding: 36px;
+  border-radius: 20px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.06);
+  display: flex;
+  flex-direction: column;
+  transition: all 0.3s;
+}
+.card:hover {
+  background: rgba(255,255,255,0.05);
+  transform: translateY(-4px);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+.card-icon {
+  font-size: 40px;
+  margin-bottom: 20px;
+}
+.card h3 {
+  font-size: 22px;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 16px;
+}
+.card-desc {
+  font-size: 15px;
+  color: #8892b0;
+  line-height: 1.7;
+  flex: 1;
+}
+.card-status {
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #495670;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #fbbf24;
+}
+.status-dot.exists { background: #64ffda; }
+
+.card-tags {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+.card-tag {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  background: rgba(100,255,218,0.08);
+  color: #64ffda;
+  border: 1px solid rgba(100,255,218,0.15);
+}
+
+/* ===== 总结页 ===== */
+.slide-summary {
+  background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3e 50%, #0d2137 100%);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+}
+.summary-stats {
+  display: flex;
+  gap: 60px;
+  margin-bottom: 60px;
+}
+.stat-item {
+  text-align: center;
+}
+.stat-num {
+  font-size: 72px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #64ffda, #818cf8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.stat-label {
+  font-size: 16px;
+  color: #8892b0;
+  margin-top: 8px;
+}
+.summary-title {
+  font-size: 42px;
+  font-weight: 700;
+  color: #ccd6f6;
+  margin-bottom: 20px;
+}
+.summary-desc {
+  font-size: 18px;
+  color: #8892b0;
+  max-width: 600px;
+  line-height: 1.8;
+}
+
+/* ===== 导航 ===== */
+.nav {
+  position: fixed;
+  bottom: 30px;
+  right: 40px;
+  display: flex;
+  gap: 12px;
+  z-index: 100;
+}
+.nav button {
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+  color: #ccd6f6;
+  font-size: 18px;
+  cursor: pointer;
+  transition: all 0.3s;
+  backdrop-filter: blur(10px);
+}
+.nav button:hover {
+  background: rgba(100,255,218,0.1);
+  border-color: rgba(100,255,218,0.3);
+  color: #64ffda;
+}
+.page-indicator {
+  position: fixed;
+  bottom: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  z-index: 100;
+}
+.page-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.15);
+  transition: all 0.3s;
+}
+.page-dot.active {
+  background: #64ffda;
+  width: 24px;
+  border-radius: 4px;
+}
+</style>
+</head>
+<body>
+
+<!-- Slide 0: 封面 -->
+<div class="slide slide-cover active" data-index="0">
+  <div class="logo">Canvas Excel</div>
+  <h1>功能路线图</h1>
+  <div class="subtitle">P1 · P2 · P4 · P5 待开发需求规划</div>
+  <div class="date">2026 年 4 月</div>
+</div>
+
+<!-- Slide 1: 目录 -->
+<div class="slide slide-toc" data-index="1">
+  <h2>目录</h2>
+  <div class="toc-grid">
+    <div class="toc-item" onclick="goToSlide(2)">
+      <div class="toc-num">P1</div>
+      <div>
+        <div class="toc-label">数据与公式</div>
+        <div class="toc-count">4 项需求</div>
+      </div>
+    </div>
+    <div class="toc-item" onclick="goToSlide(3)">
+      <div class="toc-num">P2</div>
+      <div>
+        <div class="toc-label">编辑体验</div>
+        <div class="toc-count">4 项需求</div>
+      </div>
+    </div>
+    <div class="toc-item" onclick="goToSlide(4)">
+      <div class="toc-num">P4</div>
+      <div>
+        <div class="toc-label">协同与企业</div>
+        <div class="toc-count">3 项需求</div>
+      </div>
+    </div>
+    <div class="toc-item" onclick="goToSlide(5)">
+      <div class="toc-num">P5</div>
+      <div>
+        <div class="toc-label">扩展性</div>
+        <div class="toc-count">3 项需求</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 2: P1 数据与公式 -->
+<div class="slide slide-content" data-index="2">
+  <div class="slide-header">
+    <span class="slide-tag tag-p1">P1</span>
+    <h2 class="slide-title">数据与公式</h2>
+  </div>
+  <div class="cards-grid">
+    <div class="card">
+      <div class="card-icon">📊</div>
+      <h3>数据透视表交互完善</h3>
+      <div class="card-desc">
+        完善透视表 UI 操作体验，支持拖拽字段配置行/列/值区域，支持数据刷新和动态更新。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">pivot-table</span>
+        <span class="card-tag">拖拽交互</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 基础模块已存在，需完善交互
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🔍</div>
+      <h3>高级查找函数完善</h3>
+      <div class="card-desc">
+        确认并补全 VLOOKUP、HLOOKUP、INDEX、MATCH 等高级查找函数的覆盖度，确保公式引擎完整。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">formula-engine</span>
+        <span class="card-tag">函数库</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot"></span> 需评估现有覆盖度
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📐</div>
+      <h3>动态数组溢出 (Spill)</h3>
+      <div class="card-desc">
+        完善数组公式的动态溢出行为，支持公式结果自动扩展到相邻单元格，并正确处理溢出冲突。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">array-formula</span>
+        <span class="card-tag">渲染</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 数组公式已存在，需完善溢出
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🏷️</div>
+      <h3>名称管理器 UI</h3>
+      <div class="card-desc">
+        为已有的 named-range 模块提供可视化管理界面，支持命名范围的增删改查操作对话框。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">named-range</span>
+        <span class="card-tag">对话框</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 后端逻辑已存在，缺 UI
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 3: P2 编辑体验 -->
+<div class="slide slide-content" data-index="3">
+  <div class="slide-header">
+    <span class="slide-tag tag-p2">P2</span>
+    <h2 class="slide-title">编辑体验</h2>
+  </div>
+  <div class="cards-grid">
+    <div class="card">
+      <div class="card-icon">🔎</div>
+      <h3>查找替换增强</h3>
+      <div class="card-desc">
+        支持正则表达式搜索、按单元格格式查找、跨工作表全局搜索，提升大型工作簿的检索效率。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">search-dialog</span>
+        <span class="card-tag">正则</span>
+        <span class="card-tag">跨表搜索</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 基础搜索已有，需增强
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">✍️</div>
+      <h3>富文本编辑 UI</h3>
+      <div class="card-desc">
+        基于已定义的 RichTextSegment 类型，实现所见即所得的单元格内富文本编辑器，支持局部加粗、变色等。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">inline-editor</span>
+        <span class="card-tag">WYSIWYG</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot"></span> 类型已定义，需实现编辑器
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📋</div>
+      <h3>拖拽自动填充智能识别</h3>
+      <div class="card-desc">
+        增强填充手柄的模式识别能力：按月/年递增日期序列，自定义列表（周一~周日、一月~十二月）等。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">fill-series</span>
+        <span class="card-tag">日期序列</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 基础填充已有，需增强识别
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🖼️</div>
+      <h3>自由浮动图片/形状</h3>
+      <div class="card-desc">
+        在单元格内嵌图片基础上，支持自由浮动、可拖拽缩放的图片和形状图层，不受单元格网格约束。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">图片层</span>
+        <span class="card-tag">拖拽缩放</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot"></span> 需新建浮动图层模块
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 4: P4 协同与企业 -->
+<div class="slide slide-content" data-index="4">
+  <div class="slide-header">
+    <span class="slide-tag tag-p4">P4</span>
+    <h2 class="slide-title">协同与企业</h2>
+  </div>
+  <div class="cards-grid cards-grid-3">
+    <div class="card">
+      <div class="card-icon">👥</div>
+      <h3>实时协同光标显示</h3>
+      <div class="card-desc">
+        完善远程用户光标和选区的 Canvas 实时渲染，显示用户名标签和颜色区分，提升多人协作的感知体验。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">cursor-awareness</span>
+        <span class="card-tag">Canvas 渲染</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 感知模块已有，需完善渲染
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">💬</div>
+      <h3>评论/批注线程</h3>
+      <div class="card-desc">
+        将简单字符串批注升级为线程式评论系统，支持回复、标记已解决、@提及用户等协作功能。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">comment</span>
+        <span class="card-tag">线程</span>
+        <span class="card-tag">协作</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 简单批注已有，需升级
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">📁</div>
+      <h3>XLSX 样式保真度</h3>
+      <div class="card-desc">
+        提升复杂样式（渐变填充、条件格式、图表）在 XLSX 导入/导出过程中的往返保真度，减少样式丢失。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">xlsx-exporter</span>
+        <span class="card-tag">xlsx-importer</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 基础导入导出已有，需提升
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 5: P5 扩展性 -->
+<div class="slide slide-content" data-index="5">
+  <div class="slide-header">
+    <span class="slide-tag tag-p5">P5</span>
+    <h2 class="slide-title">扩展性</h2>
+  </div>
+  <div class="cards-grid cards-grid-3">
+    <div class="card">
+      <div class="card-icon">🧩</div>
+      <h3>插件动态加载机制</h3>
+      <div class="card-desc">
+        在现有 plugin 模块基础上，支持从 URL 或本地动态加载第三方插件，提供插件生命周期管理和沙箱隔离。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">plugin-manager</span>
+        <span class="card-tag">动态加载</span>
+        <span class="card-tag">沙箱</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 插件框架已有，需扩展加载
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">🎬</div>
+      <h3>宏录制与回放</h3>
+      <div class="card-desc">
+        在 script 模块基础上，支持录制用户操作序列并生成可编辑脚本，支持回放执行实现批量自动化操作。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">script-engine</span>
+        <span class="card-tag">录制</span>
+        <span class="card-tag">回放</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot exists"></span> 脚本引擎已有，需录制功能
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-icon">⚙️</div>
+      <h3>自定义函数注册 API</h3>
+      <div class="card-desc">
+        允许用户通过脚本注册自定义公式函数，提供标准化的函数注册接口、参数声明和使用文档生成。
+      </div>
+      <div class="card-tags">
+        <span class="card-tag">function-registry</span>
+        <span class="card-tag">API</span>
+      </div>
+      <div class="card-status">
+        <span class="status-dot"></span> 需设计注册接口
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Slide 6: 总结 -->
+<div class="slide slide-summary" data-index="6">
+  <div class="summary-stats">
+    <div class="stat-item">
+      <div class="stat-num">14</div>
+      <div class="stat-label">待开发需求</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">4</div>
+      <div class="stat-label">优先级分组</div>
+    </div>
+    <div class="stat-item">
+      <div class="stat-num">10</div>
+      <div class="stat-label">已有模块可复用</div>
+    </div>
+  </div>
+  <div class="summary-title">持续打造专业级电子表格体验</div>
+  <div class="summary-desc">
+    从数据处理到协同编辑，从编辑体验到插件生态，<br>
+    Canvas Excel 正在向全功能电子表格平台演进。
+  </div>
+</div>
+
+<!-- 导航 -->
+<div class="nav">
+  <button onclick="prevSlide()">&#8592;</button>
+  <button onclick="nextSlide()">&#8594;</button>
+</div>
+<div class="page-indicator" id="pageIndicator"></div>
+
+<script>
+const slides = document.querySelectorAll('.slide');
+let current = 0;
+const total = slides.length;
+
+function renderDots() {
+  const container = document.getElementById('pageIndicator');
+  container.innerHTML = '';
+  for (let i = 0; i < total; i++) {
+    const dot = document.createElement('div');
+    dot.className = 'page-dot' + (i === current ? ' active' : '');
+    dot.onclick = () => goToSlide(i);
+    container.appendChild(dot);
+  }
+}
+
+function goToSlide(index) {
+  slides[current].classList.remove('active');
+  current = Math.max(0, Math.min(index, total - 1));
+  slides[current].classList.add('active');
+  renderDots();
+}
+
+function nextSlide() { goToSlide(current + 1); }
+function prevSlide() { goToSlide(current - 1); }
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); nextSlide(); }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); prevSlide(); }
+  if (e.key === 'Home') { e.preventDefault(); goToSlide(0); }
+  if (e.key === 'End') { e.preventDefault(); goToSlide(total - 1); }
+});
+
+renderDots();
+</script>
+</body>
+</html>

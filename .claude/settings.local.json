@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Read(//mnt/d/work/self/file/**)",
-      "Read(//d/work/self/file/**)",
-      "Bash(mkdir:*)"
-    ]
-  }
-}

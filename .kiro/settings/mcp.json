@@ -5,7 +5,7 @@
       "args": [
         "@browsermcp/mcp@latest"
       ],
-      "disabled": true
+      "disabled": false
     },
     "memory": {
       "command": "npx",
