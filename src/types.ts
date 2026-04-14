@@ -190,6 +190,10 @@ export interface Cell {
   isArrayFormula?: boolean;        // 是否为数组公式
   arrayFormulaOrigin?: CellPosition; // 数组公式起始单元格位置
 
+  // === 动态溢出（Spill）相关字段 ===
+  isSpillCell?: boolean;           // 是否为溢出单元格
+  spillOrigin?: CellPosition;      // 溢出源单元格位置
+
   // === 边框与样式扩展字段 ===
   border?: CellBorder;             // 边框配置
   fontFamily?: string;             // 字体族名称
@@ -376,6 +380,7 @@ export interface FillPattern {
   sequenceValues?: string[];  // 预定义序列的完整值列表
   textPrefix?: string;        // 文本+数字模式的前缀
   textSuffix?: string;        // 文本+数字模式的后缀
+  dateUnit?: 'day' | 'month' | 'year';  // 日期递增单位
 }
 
 /** 选择性粘贴模式 */

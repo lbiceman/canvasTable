@@ -79,6 +79,73 @@ const DATE_FORMATS: DateFormat[] = [
 const MS_PER_DAY = 86400000;
 
 /**
+ * 按月增加日期（正确处理月末）
+ * 例如：2024-01-31 + 1月 = 2024-02-29（闰年）
+ */
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date.getTime());
+  const targetMonth = result.getMonth() + months;
+  result.setMonth(targetMonth);
+  // 处理月末溢出：如 1月31日 + 1月 → 3月3日，需要回退到2月最后一天
+  const expectedMonth = ((date.getMonth() + months) % 12 + 12) % 12;
+  if (result.getMonth() !== expectedMonth) {
+    // 回退到上个月的最后一天
+    result.setDate(0);
+  }
+  return result;
+}
+
+/**
+ * 按年增加日期（正确处理闰年2月29日）
+ * 例如：2024-02-29 + 1年 = 2025-02-28
+ */
+function addYears(date: Date, years: number): Date {
+  const result = new Date(date.getTime());
+  result.setFullYear(result.getFullYear() + years);
+  // 处理闰年2月29日 → 非闰年溢出到3月
+  if (date.getMonth() === 1 && date.getDate() === 29 && result.getMonth() !== 1) {
+    result.setDate(0); // 回退到2月最后一天
+  }
+  return result;
+}
+
+/**
+ * 计算两个日期之间的月份差
+ * 返回整数月份差，如果不是整月则返回 null
+ */
+function monthsBetween(a: Date, b: Date): number | null {
+  const months = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  // 验证：从 a 加上 months 个月后是否等于 b
+  const check = addMonths(a, months);
+  if (check.getDate() === b.getDate() ||
+      // 月末特殊情况：两个日期都是各自月份的最后一天
+      (isLastDayOfMonth(a) && isLastDayOfMonth(b))) {
+    return months;
+  }
+  return null;
+}
+
+/**
+ * 计算两个日期之间的年份差
+ * 返回整数年份差，如果不是整年则返回 null
+ */
+function yearsBetween(a: Date, b: Date): number | null {
+  const years = b.getFullYear() - a.getFullYear();
+  if (a.getMonth() !== b.getMonth()) return null;
+  if (a.getDate() === b.getDate() ||
+      (isLastDayOfMonth(a) && isLastDayOfMonth(b))) {
+    return years;
+  }
+  return null;
+}
+
+/** 判断日期是否是当月最后一天 */
+function isLastDayOfMonth(date: Date): boolean {
+  const next = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+  return date.getDate() === next.getDate();
+}
+
+/**
  * 尝试将字符串解析为日期
  * @returns 解析结果，包含 Date 对象和对应的格式化函数；解析失败返回 null
  */
@@ -159,8 +226,8 @@ export class FillSeriesEngine {
 
     // 4. 尝试日期模式
     if (FillSeriesEngine.isAllDates(values)) {
-      const step = FillSeriesEngine.calcDateStep(values);
-      return { type: 'date', step, values };
+      const { step, unit } = FillSeriesEngine.calcDateStep(values);
+      return { type: 'date', step, values, dateUnit: unit };
     }
 
     // 5. 文本复制模式
@@ -372,23 +439,56 @@ export class FillSeriesEngine {
   }
 
   /**
-   * 计算日期序列的步长（天数）
+   * 计算日期序列的步长和单位
+   * 优先检测按月/按年递增，最后回退到按天
    * - 单个日期：步长为 1 天
-   * - 两个及以上：如果间隔恒定则为该间隔，否则为 1 天
+   * - 两个及以上：检测月/年/天间隔
    */
-  private static calcDateStep(values: string[]): number {
+  private static calcDateStep(values: string[]): { step: number; unit: 'day' | 'month' | 'year' } {
     if (values.length === 1) {
-      return 1;
+      return { step: 1, unit: 'day' };
     }
 
     const dates = values.map((v) => tryParseDate(v)!.date);
+
+    // 尝试按年检测
+    if (dates.length >= 2) {
+      const firstYearDiff = yearsBetween(dates[0], dates[1]);
+      if (firstYearDiff !== null && firstYearDiff !== 0) {
+        const allYearConsistent = dates.every((_, i) => {
+          if (i === 0) return true;
+          const diff = yearsBetween(dates[i - 1], dates[i]);
+          return diff === firstYearDiff;
+        });
+        if (allYearConsistent) {
+          return { step: firstYearDiff, unit: 'year' };
+        }
+      }
+    }
+
+    // 尝试按月检测
+    if (dates.length >= 2) {
+      const firstMonthDiff = monthsBetween(dates[0], dates[1]);
+      if (firstMonthDiff !== null && firstMonthDiff !== 0) {
+        const allMonthConsistent = dates.every((_, i) => {
+          if (i === 0) return true;
+          const diff = monthsBetween(dates[i - 1], dates[i]);
+          return diff === firstMonthDiff;
+        });
+        if (allMonthConsistent) {
+          return { step: firstMonthDiff, unit: 'month' };
+        }
+      }
+    }
+
+    // 回退到按天
     const firstDiff = daysBetween(dates[0], dates[1]);
     const isConstant = dates.every((_, i) => {
       if (i === 0) return true;
       return daysBetween(dates[i - 1], dates[i]) === firstDiff;
     });
 
-    return isConstant ? firstDiff : 1;
+    return { step: isConstant ? firstDiff : 1, unit: 'day' };
   }
 
   /**
@@ -424,6 +524,7 @@ export class FillSeriesEngine {
 
   /**
    * 生成日期填充序列
+   * 支持按天、按月、按年递增
    * - down/right：从最后一个日期开始递增
    * - up/left：从第一个日期开始递减
    */
@@ -432,7 +533,7 @@ export class FillSeriesEngine {
     count: number,
     direction: FillDirection
   ): string[] {
-    const { step, values } = pattern;
+    const { step, values, dateUnit = 'day' } = pattern;
     const result: string[] = [];
 
     // 使用第一个值的格式作为输出格式
@@ -440,13 +541,22 @@ export class FillSeriesEngine {
     if (!formatInfo) return [];
     const { formatFn } = formatInfo;
 
+    /** 根据单位增加日期 */
+    const addDate = (base: Date, amount: number): Date => {
+      switch (dateUnit) {
+        case 'month': return addMonths(base, amount);
+        case 'year': return addYears(base, amount);
+        default: return addDays(base, amount);
+      }
+    };
+
     if (direction === 'down' || direction === 'right') {
       const lastDateInfo = tryParseDate(values[values.length - 1]);
       if (!lastDateInfo) return [];
       const baseDate = lastDateInfo.date;
 
       for (let i = 1; i <= count; i++) {
-        const newDate = addDays(baseDate, step * i);
+        const newDate = addDate(baseDate, step * i);
         result.push(formatFn(newDate));
       }
     } else {
@@ -456,7 +566,7 @@ export class FillSeriesEngine {
       const baseDate = firstDateInfo.date;
 
       for (let i = 1; i <= count; i++) {
-        const newDate = addDays(baseDate, -step * i);
+        const newDate = addDate(baseDate, -step * i);
         result.push(formatFn(newDate));
       }
       // 反转使得离源数据最近的值在数组末尾

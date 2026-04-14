@@ -5016,3 +5016,220 @@ h1 {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+
+/* ============================================================
+   评论面板样式
+   ============================================================ */
+.comment-panel {
+  position: fixed;
+  width: 320px;
+  max-height: 400px;
+  background: var(--theme-background);
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  z-index: 4000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.comment-panel-content {
+  display: flex;
+  flex-direction: column;
+  max-height: 400px;
+}
+
+.comment-thread-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--theme-grid-line);
+  font-size: 12px;
+}
+
+.comment-cell-ref {
+  font-weight: 600;
+  color: var(--theme-foreground);
+  flex: 1;
+}
+
+.comment-resolved-badge {
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.comment-resolve-btn,
+.comment-reopen-btn,
+.comment-delete-thread-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--theme-foreground);
+  opacity: 0.6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.comment-resolve-btn:hover,
+.comment-reopen-btn:hover,
+.comment-delete-thread-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.comment-list {
+  overflow-y: auto;
+  max-height: 250px;
+  padding: 8px 0;
+}
+
+.comment-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+}
+
+.comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.comment-author {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--theme-foreground);
+}
+
+.comment-time {
+  font-size: 11px;
+  color: var(--theme-foreground);
+  opacity: 0.5;
+}
+
+.comment-content {
+  font-size: 13px;
+  color: var(--theme-foreground);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.comment-edited {
+  font-size: 11px;
+  color: var(--theme-foreground);
+  opacity: 0.4;
+}
+
+.comment-mention {
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.comment-edit-btn,
+.comment-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--theme-foreground);
+  opacity: 0.4;
+  padding: 0;
+}
+
+.comment-edit-btn:hover,
+.comment-delete-btn:hover {
+  opacity: 1;
+}
+
+.comment-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--theme-grid-line);
+  align-items: flex-end;
+}
+
+.comment-input {
+  flex: 1;
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  resize: none;
+  background: var(--theme-background);
+  color: var(--theme-foreground);
+  font-family: inherit;
+}
+
+.comment-input:focus {
+  outline: none;
+  border-color: #1976d2;
+}
+
+.comment-submit-btn {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.comment-submit-btn:hover {
+  background: #1565c0;
+}
+
+.comment-edit-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.comment-edit-input {
+  width: 100%;
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 13px;
+  resize: none;
+  background: var(--theme-background);
+  color: var(--theme-foreground);
+  font-family: inherit;
+}
+
+.comment-save-edit-btn,
+.comment-cancel-edit-btn {
+  background: none;
+  border: 1px solid var(--theme-toolbar-border);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--theme-foreground);
+}
+
+.comment-save-edit-btn:hover {
+  background: #1976d2;
+  color: #fff;
+  border-color: #1976d2;
+}

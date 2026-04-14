@@ -93,6 +93,56 @@ function ensureArray(value: FormulaValue): FormulaValue[][] | null {
 }
 
 /**
+ * 将行序列化为字符串键（用于 UNIQUE 去重比较）
+ */
+function rowToKey(row: FormulaValue[]): string {
+  return row.map(v => {
+    if (v === null || v === undefined) return '\x00null';
+    if (typeof v === 'string') return `s:${v.toLowerCase()}`;
+    if (typeof v === 'number') return `n:${v}`;
+    if (typeof v === 'boolean') return `b:${v}`;
+    return `o:${String(v)}`;
+  }).join('\x01');
+}
+
+/**
+ * 获取唯一行（用于 UNIQUE 函数）
+ * @param arr 二维数组
+ * @param exactlyOnce 是否仅返回出现恰好一次的行
+ */
+function getUniqueRows(arr: FormulaValue[][], exactlyOnce: boolean): FormulaValue[][] {
+  const keyCount = new Map<string, number>();
+  const keyToFirstRow = new Map<string, FormulaValue[]>();
+
+  for (const row of arr) {
+    const key = rowToKey(row);
+    keyCount.set(key, (keyCount.get(key) || 0) + 1);
+    if (!keyToFirstRow.has(key)) {
+      keyToFirstRow.set(key, row);
+    }
+  }
+
+  const result: FormulaValue[][] = [];
+  const seen = new Set<string>();
+  for (const row of arr) {
+    const key = rowToKey(row);
+    if (exactlyOnce) {
+      // 仅返回出现恰好一次的行
+      if (keyCount.get(key) === 1) {
+        result.push([...row]);
+      }
+    } else {
+      // 返回去重后的行（保留首次出现）
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push([...row]);
+      }
+    }
+  }
+  return result;
+}
+
+/**
  * 将二维数组展平为一维数组（用于 MATCH 的 lookup_array）
  * 如果是单行或单列区域，返回一维数组
  */
@@ -779,6 +829,344 @@ export function registerLookupFunctions(registry: FunctionRegistry): void {
         result.push(newRow);
       }
       return result;
+    },
+  });
+
+  // ============================================================
+  // 动态数组函数：FILTER, UNIQUE, SORT, SORTBY
+  // ============================================================
+
+  // FILTER - 动态筛选数组
+  registry.register({
+    name: 'FILTER',
+    category: 'lookup',
+    description: '根据条件筛选数组，返回满足条件的行',
+    minArgs: 2,
+    maxArgs: 3,
+    params: [
+      { name: 'array', description: '要筛选的区域', type: 'range' },
+      { name: 'include', description: '布尔条件数组（TRUE 的行保留）', type: 'range' },
+      { name: 'if_empty', description: '无匹配时返回的值', type: 'any', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return makeError('#VALUE!', 'FILTER 的第一个参数必须是区域引用');
+      }
+
+      // include 可以是一维布尔数组或二维单列/单行数组
+      let includeFlags: boolean[];
+      const rawInclude = args[1];
+      if (Array.isArray(rawInclude)) {
+        const includeArr = rawInclude as FormulaValue[][];
+        // 判断是单列还是单行
+        if (includeArr.length === arr.length) {
+          // 按行筛选
+          includeFlags = includeArr.map(row => {
+            const val = row[0];
+            if (typeof val === 'boolean') return val;
+            if (typeof val === 'number') return val !== 0;
+            return false;
+          });
+        } else if (includeArr.length === 1 && includeArr[0].length === arr[0].length) {
+          // 按列筛选（转置处理）
+          includeFlags = includeArr[0].map(val => {
+            if (typeof val === 'boolean') return val;
+            if (typeof val === 'number') return val !== 0;
+            return false;
+          });
+          // 按列筛选：返回满足条件的列
+          const resultRows: FormulaValue[][] = [];
+          for (let r = 0; r < arr.length; r++) {
+            const newRow: FormulaValue[] = [];
+            for (let c = 0; c < arr[r].length; c++) {
+              if (includeFlags[c]) {
+                newRow.push(arr[r][c]);
+              }
+            }
+            resultRows.push(newRow);
+          }
+          if (resultRows.length === 0 || resultRows[0].length === 0) {
+            return args.length >= 3 ? args[2] : makeError('#N/A', 'FILTER 无匹配结果');
+          }
+          return resultRows;
+        } else {
+          return makeError('#VALUE!', 'FILTER 条件数组大小与数据区域不匹配');
+        }
+      } else {
+        return makeError('#VALUE!', 'FILTER 的第二个参数必须是区域引用');
+      }
+
+      // 按行筛选
+      const result: FormulaValue[][] = [];
+      for (let i = 0; i < arr.length; i++) {
+        if (i < includeFlags.length && includeFlags[i]) {
+          result.push([...arr[i]]);
+        }
+      }
+
+      if (result.length === 0) {
+        return args.length >= 3 ? args[2] : makeError('#N/A', 'FILTER 无匹配结果');
+      }
+      return result;
+    },
+  });
+
+  // UNIQUE - 返回数组中的唯一值
+  registry.register({
+    name: 'UNIQUE',
+    category: 'lookup',
+    description: '返回数组中的唯一行',
+    minArgs: 1,
+    maxArgs: 3,
+    params: [
+      { name: 'array', description: '要去重的区域', type: 'range' },
+      { name: 'by_col', description: 'TRUE=按列去重，FALSE=按行去重（默认）', type: 'boolean', optional: true },
+      { name: 'exactly_once', description: 'TRUE=仅返回出现一次的行', type: 'boolean', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return makeError('#VALUE!', 'UNIQUE 的参数必须是区域引用');
+      }
+
+      const byCol = args.length >= 2 && typeof args[1] === 'boolean' ? args[1] : false;
+      const exactlyOnce = args.length >= 3 && typeof args[2] === 'boolean' ? args[2] : false;
+
+      if (byCol) {
+        // 按列去重：转置 → 按行去重 → 转置回来
+        const cols = arr[0].length;
+        const rows = arr.length;
+        const transposed: FormulaValue[][] = [];
+        for (let c = 0; c < cols; c++) {
+          const col: FormulaValue[] = [];
+          for (let r = 0; r < rows; r++) {
+            col.push(arr[r][c]);
+          }
+          transposed.push(col);
+        }
+        const uniqueCols = getUniqueRows(transposed, exactlyOnce);
+        // 转置回来
+        if (uniqueCols.length === 0) return makeError('#N/A', 'UNIQUE 无结果');
+        const result: FormulaValue[][] = [];
+        for (let r = 0; r < uniqueCols[0].length; r++) {
+          const row: FormulaValue[] = [];
+          for (let c = 0; c < uniqueCols.length; c++) {
+            row.push(uniqueCols[c][r]);
+          }
+          result.push(row);
+        }
+        return result;
+      }
+
+      const result = getUniqueRows(arr, exactlyOnce);
+      if (result.length === 0) return makeError('#N/A', 'UNIQUE 无结果');
+      return result;
+    },
+  });
+
+  // SORT - 对数组排序
+  registry.register({
+    name: 'SORT',
+    category: 'lookup',
+    description: '对数组按指定列排序',
+    minArgs: 1,
+    maxArgs: 4,
+    params: [
+      { name: 'array', description: '要排序的区域', type: 'range' },
+      { name: 'sort_index', description: '排序依据的列号（从1开始，默认1）', type: 'number', optional: true },
+      { name: 'sort_order', description: '1=升序（默认），-1=降序', type: 'number', optional: true },
+      { name: 'by_col', description: 'TRUE=按列排序，FALSE=按行排序（默认）', type: 'boolean', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return makeError('#VALUE!', 'SORT 的参数必须是区域引用');
+      }
+
+      const sortIndex = args.length >= 2 ? toNumber(args[1]) : 1;
+      if (isError(sortIndex)) return sortIndex;
+      const colIdx = Math.floor(sortIndex as number) - 1;
+
+      const sortOrder = args.length >= 3 ? toNumber(args[2]) : 1;
+      if (isError(sortOrder)) return sortOrder;
+      const ascending = (sortOrder as number) >= 0;
+
+      const byCol = args.length >= 4 && typeof args[3] === 'boolean' ? args[3] : false;
+
+      if (byCol) {
+        // 按列排序
+        if (colIdx < 0 || colIdx >= arr.length) {
+          return makeError('#VALUE!', 'SORT 排序行号超出范围');
+        }
+        const colCount = arr[0].length;
+        const indices = Array.from({ length: colCount }, (_, i) => i);
+        indices.sort((a, b) => {
+          const cmp = compareValues(arr[colIdx][a], arr[colIdx][b]);
+          return ascending ? cmp : -cmp;
+        });
+        return arr.map(row => indices.map(i => row[i]));
+      }
+
+      // 按行排序
+      if (colIdx < 0 || colIdx >= arr[0].length) {
+        return makeError('#VALUE!', 'SORT 排序列号超出范围');
+      }
+      const sorted = [...arr].map(row => [...row]);
+      sorted.sort((a, b) => {
+        const cmp = compareValues(a[colIdx], b[colIdx]);
+        return ascending ? cmp : -cmp;
+      });
+      return sorted;
+    },
+  });
+
+  // SORTBY - 按另一列排序
+  registry.register({
+    name: 'SORTBY',
+    category: 'lookup',
+    description: '按指定的排序依据数组对数据排序',
+    minArgs: 2,
+    maxArgs: -1,
+    params: [
+      { name: 'array', description: '要排序的区域', type: 'range' },
+      { name: 'by_array1', description: '排序依据数组', type: 'range' },
+      { name: 'sort_order1', description: '1=升序，-1=降序（默认1）', type: 'number', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const arr = ensureArray(args[0]);
+      if (!arr || arr.length === 0) {
+        return makeError('#VALUE!', 'SORTBY 的第一个参数必须是区域引用');
+      }
+
+      // 收集排序键：(byArray, order) 对
+      const sortKeys: { values: FormulaValue[]; ascending: boolean }[] = [];
+      let i = 1;
+      while (i < args.length) {
+        const byArr = ensureArray(args[i]);
+        if (!byArr) {
+          return makeError('#VALUE!', 'SORTBY 排序依据必须是区域引用');
+        }
+        const byValues = flattenToOneDimension(byArr);
+        if (byValues.length !== arr.length) {
+          return makeError('#VALUE!', 'SORTBY 排序依据大小与数据区域不匹配');
+        }
+        const order = (i + 1 < args.length) ? toNumber(args[i + 1]) : 1;
+        if (isError(order)) return order;
+        sortKeys.push({ values: byValues, ascending: (order as number) >= 0 });
+        i += 2;
+      }
+
+      if (sortKeys.length === 0) {
+        return makeError('#VALUE!', 'SORTBY 至少需要一个排序依据');
+      }
+
+      // 创建索引数组并排序
+      const indices = Array.from({ length: arr.length }, (_, idx) => idx);
+      indices.sort((a, b) => {
+        for (const key of sortKeys) {
+          const cmp = compareValues(key.values[a], key.values[b]);
+          if (cmp !== 0) return key.ascending ? cmp : -cmp;
+        }
+        return 0;
+      });
+
+      return indices.map(idx => [...arr[idx]]);
+    },
+  });
+
+  // ============================================================
+  // 辅助函数：ADDRESS, TYPE
+  // ============================================================
+
+  // ADDRESS - 根据行列号生成单元格引用文本
+  registry.register({
+    name: 'ADDRESS',
+    category: 'lookup',
+    description: '根据行号和列号生成单元格引用文本',
+    minArgs: 2,
+    maxArgs: 5,
+    params: [
+      { name: 'row_num', description: '行号', type: 'number' },
+      { name: 'column_num', description: '列号', type: 'number' },
+      { name: 'abs_num', description: '引用类型：1=绝对，2=行绝对，3=列绝对，4=相对', type: 'number', optional: true },
+      { name: 'a1', description: 'TRUE=A1样式，FALSE=R1C1样式', type: 'boolean', optional: true },
+      { name: 'sheet_text', description: '工作表名称', type: 'string', optional: true },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const rowRaw = toNumber(args[0]);
+      if (isError(rowRaw)) return rowRaw;
+      const colRaw = toNumber(args[1]);
+      if (isError(colRaw)) return colRaw;
+      const row = Math.floor(rowRaw as number);
+      const col = Math.floor(colRaw as number);
+
+      if (row < 1 || col < 1) {
+        return makeError('#VALUE!', 'ADDRESS 行号和列号必须大于0');
+      }
+
+      const absNum = args.length >= 3 ? toNumber(args[2]) : 1;
+      if (isError(absNum)) return absNum;
+      const absType = Math.floor(absNum as number);
+
+      const a1Style = args.length >= 4 ? (typeof args[3] === 'boolean' ? args[3] : true) : true;
+      const sheetName = args.length >= 5 && typeof args[4] === 'string' ? args[4] : '';
+
+      // 列号转字母
+      let colStr = '';
+      let c = col;
+      while (c > 0) {
+        c--;
+        colStr = String.fromCharCode(65 + (c % 26)) + colStr;
+        c = Math.floor(c / 26);
+      }
+
+      let result = '';
+      if (a1Style) {
+        switch (absType) {
+          case 1: result = `$${colStr}$${row}`; break;    // 绝对
+          case 2: result = `${colStr}$${row}`; break;     // 行绝对
+          case 3: result = `$${colStr}${row}`; break;     // 列绝对
+          case 4: result = `${colStr}${row}`; break;      // 相对
+          default: result = `$${colStr}$${row}`; break;
+        }
+      } else {
+        // R1C1 样式
+        switch (absType) {
+          case 1: result = `R${row}C${col}`; break;
+          case 2: result = `R${row}C[${col}]`; break;
+          case 3: result = `R[${row}]C${col}`; break;
+          case 4: result = `R[${row}]C[${col}]`; break;
+          default: result = `R${row}C${col}`; break;
+        }
+      }
+
+      if (sheetName) {
+        result = `${sheetName}!${result}`;
+      }
+
+      return result;
+    },
+  });
+
+  // TYPE - 返回值的类型编号
+  registry.register({
+    name: 'TYPE',
+    category: 'lookup',
+    description: '返回值的类型编号（1=数字，2=文本，4=逻辑，16=错误，64=数组）',
+    minArgs: 1,
+    maxArgs: 1,
+    params: [
+      { name: 'value', description: '要检测类型的值', type: 'any' },
+    ],
+    handler: (args: FormulaValue[]): FormulaValue => {
+      const value = args[0];
+      if (isError(value)) return 16;
+      if (typeof value === 'number') return 1;
+      if (typeof value === 'string') return 2;
+      if (typeof value === 'boolean') return 4;
+      if (Array.isArray(value)) return 64;
+      return 1; // 默认数字
     },
   });
 }

@@ -535,6 +535,126 @@ export class SpreadsheetModel {
     return this.formulaEngine.getArrayFormulaManager().getArrayFormula(row, col);
   }
 
+  // ============================================================
+  // 动态溢出（Spill）管理
+  // ============================================================
+
+  /**
+   * 处理公式结果的动态溢出
+   * 当公式返回数组结果时，自动填充到相邻空单元格
+   * @param row 公式所在行
+   * @param col 公式所在列
+   * @param formula 公式字符串
+   * @param result 公式求值结果（可能是数组）
+   * @returns 是否成功溢出（false 表示被阻挡，显示 #SPILL!）
+   */
+  public handleSpill(row: number, col: number, formula: string, result: FormulaValue): boolean {
+    const arrayMgr = this.formulaEngine.getArrayFormulaManager();
+
+    // 如果结果不是二维数组，或者是 1x1 数组，不需要溢出
+    if (!Array.isArray(result)) {
+      // 清除之前的溢出（如果有）
+      arrayMgr.deleteSpill(row, col);
+      return true;
+    }
+
+    const arr = result as FormulaValue[][];
+    if (arr.length <= 1 && (!arr[0] || arr[0].length <= 1)) {
+      arrayMgr.deleteSpill(row, col);
+      return true;
+    }
+
+    const rows = arr.length;
+    const cols = arr[0]?.length || 1;
+
+    // 检查溢出区域是否被阻挡
+    const blocked = arrayMgr.checkSpillBlocked(
+      { row, col },
+      rows,
+      cols,
+      (r: number, c: number) => {
+        // 排除当前溢出区域内的单元格
+        const existingSpill = arrayMgr.getSpillSource(r, c);
+        if (existingSpill && existingSpill.originRow === row && existingSpill.originCol === col) {
+          return ''; // 自己的溢出区域不算阻挡
+        }
+        const cell = this.getCell(r, c);
+        return cell?.content ?? '';
+      }
+    );
+
+    if (blocked.length > 0) {
+      // 溢出被阻挡，清除旧溢出并返回 false
+      this.clearSpillCells(row, col);
+      arrayMgr.deleteSpill(row, col);
+      return false;
+    }
+
+    // 先清除旧的溢出单元格
+    this.clearSpillCells(row, col);
+
+    // 注册新的溢出区域
+    const resultRange = {
+      startRow: row,
+      startCol: col,
+      endRow: row + rows - 1,
+      endCol: col + cols - 1,
+    };
+    arrayMgr.registerSpill({ row, col }, formula, resultRange);
+
+    // 填充溢出单元格
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const targetRow = row + r;
+        const targetCol = col + c;
+        if (r === 0 && c === 0) continue; // 跳过源单元格
+
+        if (!this.isValidPosition(targetRow, targetCol)) continue;
+
+        const value = (arr[r] && arr[r][c] !== undefined) ? String(arr[r][c]) : '';
+        const cell = this.data.cells[targetRow][targetCol];
+        cell.content = value;
+        cell.isSpillCell = true;
+        cell.spillOrigin = { row, col };
+        this.contentCache[`${targetRow}-${targetCol}`] = value;
+        this.notifyCellDirty(targetRow, targetCol);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * 清除溢出单元格内容
+   */
+  private clearSpillCells(originRow: number, originCol: number): void {
+    const arrayMgr = this.formulaEngine.getArrayFormulaManager();
+    const spillInfo = arrayMgr.getSpillSource(originRow, originCol);
+    if (!spillInfo || spillInfo.originRow !== originRow || spillInfo.originCol !== originCol) return;
+
+    const { startRow, startCol, endRow, endCol } = spillInfo.range;
+    for (let r = startRow; r <= endRow; r++) {
+      for (let c = startCol; c <= endCol; c++) {
+        if (r === originRow && c === originCol) continue;
+        if (!this.isValidPosition(r, c)) continue;
+
+        const cell = this.data.cells[r][c];
+        cell.content = '';
+        cell.isSpillCell = undefined;
+        cell.spillOrigin = undefined;
+        this.contentCache[`${r}-${c}`] = '';
+        this.notifyCellDirty(r, c);
+      }
+    }
+  }
+
+  /**
+   * 检查单元格是否是溢出单元格
+   */
+  public isSpillCell(row: number, col: number): boolean {
+    return this.formulaEngine.getArrayFormulaManager().isSpillCell(row, col);
+  }
+
   // 批量清除范围内单元格内容
   public clearRangeContent(startRow: number, startCol: number, endRow: number, endCol: number): void {
     const minRow = Math.min(startRow, endRow);
