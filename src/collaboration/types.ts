@@ -39,7 +39,14 @@ export type OperationType =
   | 'sheetTabColor'
   | 'setBorder'
   | 'setFontFamily'
-  | 'setStrikethrough';
+  | 'setStrikethrough'
+  | 'commentCreate'
+  | 'commentAdd'
+  | 'commentEdit'
+  | 'commentDelete'
+  | 'commentResolve'
+  | 'commentReopen'
+  | 'commentDeleteThread';
 
 // 基础操作接口
 export interface BaseOperation {
@@ -240,6 +247,64 @@ export interface SetStrikethroughOp extends BaseOperation {
   strikethrough: boolean;
 }
 
+// ============================================================
+// 评论操作类型
+// ============================================================
+
+// 创建评论线程操作
+export interface CommentCreateOp extends BaseOperation {
+  type: 'commentCreate';
+  row: number;
+  col: number;
+  content: string;
+  threadId: string;
+  commentId: string;
+  author: string;
+}
+
+// 添加评论回复操作
+export interface CommentAddOp extends BaseOperation {
+  type: 'commentAdd';
+  threadId: string;
+  content: string;
+  commentId: string;
+  author: string;
+}
+
+// 编辑评论操作
+export interface CommentEditOp extends BaseOperation {
+  type: 'commentEdit';
+  threadId: string;
+  commentId: string;
+  content: string;
+}
+
+// 删除评论操作
+export interface CommentDeleteOp extends BaseOperation {
+  type: 'commentDelete';
+  threadId: string;
+  commentId: string;
+}
+
+// 标记线程已解决操作
+export interface CommentResolveOp extends BaseOperation {
+  type: 'commentResolve';
+  threadId: string;
+  resolvedBy: string;
+}
+
+// 重新打开线程操作
+export interface CommentReopenOp extends BaseOperation {
+  type: 'commentReopen';
+  threadId: string;
+}
+
+// 删除整个线程操作
+export interface CommentDeleteThreadOp extends BaseOperation {
+  type: 'commentDeleteThread';
+  threadId: string;
+}
+
 // 联合操作类型
 export type CollabOperation =
   | CellEditOp
@@ -272,7 +337,14 @@ export type CollabOperation =
   | SheetReorderOp
   | SheetDuplicateOp
   | SheetVisibilityOp
-  | SheetTabColorOp;
+  | SheetTabColorOp
+  | CommentCreateOp
+  | CommentAddOp
+  | CommentEditOp
+  | CommentDeleteOp
+  | CommentResolveOp
+  | CommentReopenOp
+  | CommentDeleteThreadOp;
 
 // ============================================================
 // Sheet 级操作类型

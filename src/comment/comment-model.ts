@@ -297,6 +297,136 @@ export class CommentModel {
   }
 
   /**
+   * 应用远程创建线程操作（协同同步用）
+   * 不触发本地事件，避免循环广播
+   */
+  public applyRemoteCreateThread(row: number, col: number, content: string, threadId: string, commentId: string, author: string): void {
+    const key = this.cellKey(row, col);
+    if (this.threads.has(key)) return; // 已存在则跳过
+
+    const comment: Comment = {
+      id: commentId,
+      author,
+      content,
+      createdAt: Date.now(),
+      mentions: this.extractMentions(content),
+    };
+
+    const thread: CommentThread = {
+      id: threadId,
+      row,
+      col,
+      comments: [comment],
+      resolved: false,
+      createdAt: Date.now(),
+    };
+
+    this.threads.set(key, thread);
+    this.threadIndex.set(threadId, key);
+  }
+
+  /**
+   * 应用远程添加评论操作（协同同步用）
+   */
+  public applyRemoteAddComment(threadId: string, content: string, commentId: string, author: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+    const thread = this.threads.get(key);
+    if (!thread) return;
+
+    const comment: Comment = {
+      id: commentId,
+      author,
+      content,
+      createdAt: Date.now(),
+      mentions: this.extractMentions(content),
+    };
+    thread.comments.push(comment);
+
+    if (thread.resolved) {
+      thread.resolved = false;
+      thread.resolvedAt = undefined;
+      thread.resolvedBy = undefined;
+    }
+  }
+
+  /**
+   * 应用远程编辑评论操作（协同同步用）
+   */
+  public applyRemoteEditComment(threadId: string, commentId: string, content: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+    const thread = this.threads.get(key);
+    if (!thread) return;
+
+    const comment = thread.comments.find(c => c.id === commentId);
+    if (!comment) return;
+
+    comment.content = content;
+    comment.updatedAt = Date.now();
+    comment.mentions = this.extractMentions(content);
+  }
+
+  /**
+   * 应用远程删除评论操作（协同同步用）
+   */
+  public applyRemoteDeleteComment(threadId: string, commentId: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+    const thread = this.threads.get(key);
+    if (!thread) return;
+
+    const index = thread.comments.findIndex(c => c.id === commentId);
+    if (index === -1) return;
+
+    thread.comments.splice(index, 1);
+
+    if (thread.comments.length === 0) {
+      this.threads.delete(key);
+      this.threadIndex.delete(threadId);
+    }
+  }
+
+  /**
+   * 应用远程标记已解决操作（协同同步用）
+   */
+  public applyRemoteResolveThread(threadId: string, resolvedBy: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+    const thread = this.threads.get(key);
+    if (!thread) return;
+
+    thread.resolved = true;
+    thread.resolvedAt = Date.now();
+    thread.resolvedBy = resolvedBy;
+  }
+
+  /**
+   * 应用远程重新打开操作（协同同步用）
+   */
+  public applyRemoteReopenThread(threadId: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+    const thread = this.threads.get(key);
+    if (!thread) return;
+
+    thread.resolved = false;
+    thread.resolvedAt = undefined;
+    thread.resolvedBy = undefined;
+  }
+
+  /**
+   * 应用远程删除线程操作（协同同步用）
+   */
+  public applyRemoteDeleteThread(threadId: string): void {
+    const key = this.threadIndex.get(threadId);
+    if (!key) return;
+
+    this.threads.delete(key);
+    this.threadIndex.delete(threadId);
+  }
+
+  /**
    * 序列化为 JSON（用于持久化）
    */
   public serialize(): CommentThread[] {

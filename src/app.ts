@@ -37,6 +37,7 @@ import { ScriptEngine } from './script/script-engine';
 import { ScriptEditor } from './script/script-editor';
 import { PluginManager } from './plugin/plugin-manager';
 import type { PluginAPICallbacks } from './plugin/plugin-api';
+import { PluginCenter } from './plugin/plugin-center';
 import { PageConfig } from './print-export/page-config';
 import { PrintArea } from './print-export/print-area';
 import { HeaderFooter } from './print-export/header-footer';
@@ -161,6 +162,7 @@ export class SpreadsheetApp {
   private scriptEngine!: ScriptEngine;
   private scriptEditor!: ScriptEditor;
   private pluginManager!: PluginManager;
+  private pluginCenter!: PluginCenter;
 
   // 打印与导出相关配置
   private pageConfig: PageConfig = new PageConfig();
@@ -7772,6 +7774,7 @@ export class SpreadsheetApp {
       },
     };
     this.pluginManager = new PluginManager(pluginCallbacks);
+    this.pluginCenter = new PluginCenter(this.pluginManager);
 
     // 绑定工具栏按钮事件
     this.bindExtensionToolbarEvents();
@@ -8097,6 +8100,14 @@ export class SpreadsheetApp {
     if (validationBtn) {
       validationBtn.addEventListener('click', () => {
         this.openValidationDialog();
+      });
+    }
+
+    // 插件中心按钮
+    const pluginCenterBtn = document.getElementById('plugin-center-btn');
+    if (pluginCenterBtn) {
+      pluginCenterBtn.addEventListener('click', () => {
+        this.pluginCenter.show();
       });
     }
   }

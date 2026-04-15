@@ -10,6 +10,7 @@ import type {
   CellFormat,
   BorderSide,
   BorderStyle,
+  RichTextSegment,
   SheetMeta,
   WorkbookData,
   WorkbookSheetEntry,
@@ -113,15 +114,31 @@ function mapExcelBorderStyle(excelStyle: string): { style: BorderStyle; width: n
       return { style: 'solid', width: 2 };
     case 'thick':
       return { style: 'solid', width: 3 };
+    case 'hair':
+      // 极细线 → 1px 实线（最接近的映射）
+      return { style: 'solid', width: 1 };
     case 'dashed':
-    case 'mediumDashed':
       return { style: 'dashed', width: 1 };
+    case 'mediumDashed':
+      return { style: 'dashed', width: 2 };
     case 'dotted':
       return { style: 'dotted', width: 1 };
     case 'double':
       return { style: 'double', width: 1 };
+    case 'dashDot':
+    case 'slantDashDot':
+      // 点划线 → 降级为虚线（最接近的映射）
+      return { style: 'dashed', width: 1 };
+    case 'dashDotDot':
+      // 双点划线 → 降级为点线（最接近的映射）
+      return { style: 'dotted', width: 1 };
+    case 'mediumDashDot':
+      // 中等点划线 → 降级为中等虚线
+      return { style: 'dashed', width: 2 };
+    case 'mediumDashDotDot':
+      // 中等双点划线 → 降级为中等点线
+      return { style: 'dotted', width: 2 };
     default:
-      // hair、dashDot 等不常见样式回退为 thin solid
       return { style: 'solid', width: 1 };
   }
 }
@@ -680,8 +697,34 @@ export class XlsxImporter {
 
     // 富文本类型
     if (typeof value === 'object' && 'richText' in value) {
-      const richTextObj = value as { richText: Array<{ text: string }> };
+      const richTextObj = value as { richText: Array<{ text: string; font?: Partial<ExcelJS.Font> }> };
+      // 提取纯文本内容
       cell.content = richTextObj.richText.map((seg) => seg.text).join('');
+      // 解析富文本段落为 RichTextSegment[]
+      const segments: RichTextSegment[] = [];
+      for (const seg of richTextObj.richText) {
+        const segment: RichTextSegment = { text: seg.text };
+        if (seg.font) {
+          if (seg.font.bold) segment.fontBold = true;
+          if (seg.font.italic) segment.fontItalic = true;
+          if (seg.font.underline) segment.fontUnderline = true;
+          if (seg.font.size) segment.fontSize = seg.font.size;
+          // 解析字体颜色
+          if (seg.font.color) {
+            const fontObj = seg.font.color as { argb?: string; theme?: number };
+            if (fontObj.argb) {
+              const cssColor = argbToCssColor(fontObj.argb);
+              if (cssColor) segment.fontColor = cssColor;
+            }
+          }
+        }
+        segments.push(segment);
+      }
+      // 只有当存在格式差异时才设置 richText（避免无意义的富文本标记）
+      const hasFormatting = segments.some(s => s.fontBold || s.fontItalic || s.fontUnderline || s.fontColor || s.fontSize);
+      if (hasFormatting) {
+        cell.richText = segments;
+      }
       return;
     }
 

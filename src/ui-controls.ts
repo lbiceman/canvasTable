@@ -1311,6 +1311,22 @@ function renderToolbarRow2(toolbar: HTMLElement): void {
   nameManagerBtn.appendChild(nameManagerSpan);
   toolbarGroup.appendChild(nameManagerBtn);
 
+  // 插件中心按钮
+  const pluginCenterBtn = document.createElement('button');
+  pluginCenterBtn.id = 'plugin-center-btn';
+  pluginCenterBtn.title = '插件中心';
+  pluginCenterBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="1" y="1" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1"/>
+                <rect x="8.5" y="1" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1"/>
+                <rect x="1" y="8.5" width="5.5" height="5.5" rx="1" stroke="currentColor" stroke-width="1"/>
+                <line x1="11.25" y1="9.5" x2="11.25" y2="13" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <line x1="9.5" y1="11.25" x2="13" y2="11.25" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>`;
+  const pluginSpan = document.createElement('span');
+  pluginSpan.textContent = '插件';
+  pluginCenterBtn.appendChild(pluginSpan);
+  toolbarGroup.appendChild(pluginCenterBtn);
+
   // 分隔符
   const separator = document.createElement('div');
   separator.className = 'separator';

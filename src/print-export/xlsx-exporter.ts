@@ -402,13 +402,32 @@ export class XlsxExporter {
    * 设置 ExcelJS 单元格的值
    */
   private setCellValue(excelCell: ExcelJS.Cell, cellData: Cell): void {
-    // 优先级：公式 > 数值 > 文本
+    // 优先级：公式 > 富文本 > 数值 > 文本
     if (cellData.formulaContent) {
       // 公式：去掉开头的 = 号
       const formula = cellData.formulaContent.startsWith('=')
         ? cellData.formulaContent.slice(1)
         : cellData.formulaContent;
       excelCell.value = { formula, result: cellData.rawValue ?? cellData.content };
+    } else if (cellData.richText && cellData.richText.length > 0) {
+      // 富文本：转换为 ExcelJS 富文本格式
+      excelCell.value = {
+        richText: cellData.richText.map(seg => {
+          const richSeg: { text: string; font?: Partial<ExcelJS.Font> } = { text: seg.text };
+          const font: Partial<ExcelJS.Font> = {};
+          let hasFont = false;
+          if (seg.fontBold) { font.bold = true; hasFont = true; }
+          if (seg.fontItalic) { font.italic = true; hasFont = true; }
+          if (seg.fontUnderline) { font.underline = true; hasFont = true; }
+          if (seg.fontSize) { font.size = seg.fontSize; hasFont = true; }
+          if (seg.fontColor) {
+            const argb = cssColorToArgb(seg.fontColor);
+            if (argb) { font.color = { argb }; hasFont = true; }
+          }
+          if (hasFont) richSeg.font = font;
+          return richSeg;
+        }),
+      };
     } else if (cellData.rawValue !== undefined) {
       // 数值
       excelCell.value = cellData.rawValue;
@@ -552,6 +571,8 @@ export class XlsxExporter {
         if (width <= 2) return 'medium';
         return 'thick';
       case 'dashed':
+        // 宽度感知：中等虚线使用 mediumDashed
+        if (width >= 2) return 'mediumDashed';
         return 'dashed';
       case 'dotted':
         return 'dotted';

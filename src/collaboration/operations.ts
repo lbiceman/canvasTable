@@ -21,6 +21,13 @@ import {
   SetBorderOp,
   SetFontFamilyOp,
   SetStrikethroughOp,
+  CommentCreateOp,
+  CommentAddOp,
+  CommentEditOp,
+  CommentDeleteOp,
+  CommentResolveOp,
+  CommentReopenOp,
+  CommentDeleteThreadOp,
 } from './types';
 
 // 所有合法的操作类型
@@ -45,6 +52,13 @@ const VALID_OPERATION_TYPES: ReadonlySet<OperationType> = new Set([
   'setBorder',
   'setFontFamily',
   'setStrikethrough',
+  'commentCreate',
+  'commentAdd',
+  'commentEdit',
+  'commentDelete',
+  'commentResolve',
+  'commentReopen',
+  'commentDeleteThread',
 ]);
 
 /**
@@ -164,6 +178,34 @@ export const deserializeOperation = (json: string): CollabOperation => {
     case 'setStrikethrough':
       validateSetStrikethroughOp(obj);
       return obj as unknown as SetStrikethroughOp;
+
+    case 'commentCreate':
+      validateCommentCreateOp(obj);
+      return obj as unknown as CommentCreateOp;
+
+    case 'commentAdd':
+      validateCommentAddOp(obj);
+      return obj as unknown as CommentAddOp;
+
+    case 'commentEdit':
+      validateCommentEditOp(obj);
+      return obj as unknown as CommentEditOp;
+
+    case 'commentDelete':
+      validateCommentDeleteOp(obj);
+      return obj as unknown as CommentDeleteOp;
+
+    case 'commentResolve':
+      validateCommentResolveOp(obj);
+      return obj as unknown as CommentResolveOp;
+
+    case 'commentReopen':
+      validateCommentReopenOp(obj);
+      return obj as unknown as CommentReopenOp;
+
+    case 'commentDeleteThread':
+      validateCommentDeleteThreadOp(obj);
+      return obj as unknown as CommentDeleteThreadOp;
 
     default:
       throw new Error(`未知的操作类型: ${type}`);
@@ -303,4 +345,48 @@ const validateSetStrikethroughOp = (obj: Record<string, unknown>): void => {
   if (typeof obj.row !== 'number') throw new Error('setStrikethrough: 缺少 row');
   if (typeof obj.col !== 'number') throw new Error('setStrikethrough: 缺少 col');
   if (typeof obj.strikethrough !== 'boolean') throw new Error('setStrikethrough: 缺少 strikethrough');
+};
+
+// ============================================================
+// 评论操作类型的字段校验函数
+// ============================================================
+
+const validateCommentCreateOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.row !== 'number') throw new Error('commentCreate: 缺少 row');
+  if (typeof obj.col !== 'number') throw new Error('commentCreate: 缺少 col');
+  if (typeof obj.content !== 'string') throw new Error('commentCreate: 缺少 content');
+  if (typeof obj.threadId !== 'string') throw new Error('commentCreate: 缺少 threadId');
+  if (typeof obj.commentId !== 'string') throw new Error('commentCreate: 缺少 commentId');
+  if (typeof obj.author !== 'string') throw new Error('commentCreate: 缺少 author');
+};
+
+const validateCommentAddOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentAdd: 缺少 threadId');
+  if (typeof obj.content !== 'string') throw new Error('commentAdd: 缺少 content');
+  if (typeof obj.commentId !== 'string') throw new Error('commentAdd: 缺少 commentId');
+  if (typeof obj.author !== 'string') throw new Error('commentAdd: 缺少 author');
+};
+
+const validateCommentEditOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentEdit: 缺少 threadId');
+  if (typeof obj.commentId !== 'string') throw new Error('commentEdit: 缺少 commentId');
+  if (typeof obj.content !== 'string') throw new Error('commentEdit: 缺少 content');
+};
+
+const validateCommentDeleteOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentDelete: 缺少 threadId');
+  if (typeof obj.commentId !== 'string') throw new Error('commentDelete: 缺少 commentId');
+};
+
+const validateCommentResolveOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentResolve: 缺少 threadId');
+  if (typeof obj.resolvedBy !== 'string') throw new Error('commentResolve: 缺少 resolvedBy');
+};
+
+const validateCommentReopenOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentReopen: 缺少 threadId');
+};
+
+const validateCommentDeleteThreadOp = (obj: Record<string, unknown>): void => {
+  if (typeof obj.threadId !== 'string') throw new Error('commentDeleteThread: 缺少 threadId');
 };
